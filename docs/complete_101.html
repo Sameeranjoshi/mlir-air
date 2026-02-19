@@ -1,0 +1,2287 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MLIR-AIR Complete Developer Reference</title>
+    <style>
+        :root {
+            --bg: #0f1117;
+            --surface: #1a1d27;
+            --surface2: #22263a;
+            --border: #2e3350;
+            --accent: #6c8ef0;
+            --accent2: #a78bfa;
+            --accent3: #34d399;
+            --accent4: #fb923c;
+            --accent5: #f472b6;
+            --text: #e2e8f0;
+            --muted: #8892b0;
+            --code-bg: #0d1117;
+            --code-border: #30363d;
+            --tag-bg: rgba(108, 142, 240, 0.15);
+            --warning: #fbbf24;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            font-size: 15px;
+            line-height: 1.7;
+        }
+
+        /* Layout */
+        .layout {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 280px;
+            min-width: 280px;
+            background: var(--surface);
+            border-right: 1px solid var(--border);
+            position: sticky;
+            top: 0;
+            height: 100vh;
+            overflow-y: auto;
+            padding: 0;
+        }
+
+        .sidebar-logo {
+            padding: 20px 20px 16px;
+            border-bottom: 1px solid var(--border);
+            background: linear-gradient(135deg, #1a1d27 0%, #16192a 100%);
+        }
+
+        .sidebar-logo .logo-chip {
+            display: inline-block;
+            background: var(--accent);
+            color: white;
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            margin-bottom: 6px;
+        }
+
+        .sidebar-logo h2 {
+            font-size: 17px;
+            font-weight: 700;
+            color: var(--text);
+        }
+
+        .sidebar-logo p {
+            font-size: 11px;
+            color: var(--muted);
+            margin-top: 2px;
+        }
+
+        .nav-section {
+            padding: 12px 0 4px;
+        }
+
+        .nav-label {
+            padding: 4px 20px;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 1.2px;
+            text-transform: uppercase;
+            color: var(--muted);
+        }
+
+        .nav-item {
+            display: block;
+            padding: 7px 20px;
+            font-size: 13px;
+            color: var(--muted);
+            text-decoration: none;
+            transition: all 0.15s;
+            border-left: 2px solid transparent;
+            cursor: pointer;
+        }
+
+        .nav-item:hover {
+            color: var(--text);
+            background: var(--surface2);
+            border-left-color: var(--accent);
+        }
+
+        .nav-item.active {
+            color: var(--accent);
+            background: var(--tag-bg);
+            border-left-color: var(--accent);
+        }
+
+        /* Main */
+        .main {
+            flex: 1;
+            overflow-x: hidden;
+        }
+
+        .section {
+            padding: 60px 64px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .section:last-child {
+            border-bottom: none;
+        }
+
+        /* Hero */
+        .hero {
+            background: linear-gradient(135deg, #0f1117 0%, #161b36 50%, #0f1117 100%);
+            border-bottom: 1px solid var(--border);
+            padding: 72px 64px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .hero::before {
+            content: '';
+            position: absolute;
+            top: -100px;
+            right: -100px;
+            width: 500px;
+            height: 500px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(108, 142, 240, 0.08) 0%, transparent 70%);
+            pointer-events: none;
+        }
+
+        .hero-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: var(--tag-bg);
+            border: 1px solid rgba(108, 142, 240, 0.3);
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            color: var(--accent);
+            margin-bottom: 20px;
+        }
+
+        .hero h1 {
+            font-size: 42px;
+            font-weight: 800;
+            line-height: 1.2;
+            margin-bottom: 16px;
+            background: linear-gradient(135deg, #fff 0%, #a0aec0 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .hero p {
+            font-size: 17px;
+            color: var(--muted);
+            max-width: 600px;
+            line-height: 1.8;
+        }
+
+        .hero-meta {
+            display: flex;
+            gap: 24px;
+            margin-top: 28px;
+            flex-wrap: wrap;
+        }
+
+        .hero-badge-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            color: var(--muted);
+        }
+
+        .hero-badge-item .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+
+        /* Section header */
+        .section-id {
+            font-size: 11px;
+            color: var(--accent);
+            font-weight: 700;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+
+        h2 {
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--text);
+            margin-bottom: 12px;
+        }
+
+        h3 {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--text);
+            margin: 28px 0 10px;
+        }
+
+        h4 {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--accent2);
+            margin: 20px 0 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        p {
+            color: #94a3b8;
+            margin-bottom: 14px;
+        }
+
+        /* Code */
+        pre {
+            background: var(--code-bg);
+            border: 1px solid var(--code-border);
+            border-radius: 8px;
+            padding: 20px;
+            overflow-x: auto;
+            margin: 16px 0;
+            font-size: 13px;
+            line-height: 1.6;
+            font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace;
+        }
+
+        code {
+            font-family: 'JetBrains Mono', 'Cascadia Code', monospace;
+            font-size: 0.875em;
+        }
+
+        p code,
+        li code {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            padding: 1px 6px;
+            border-radius: 4px;
+            color: var(--accent2);
+        }
+
+        /* Comment colors */
+        .cm {
+            color: #6a737d;
+        }
+
+        .kw {
+            color: #ff7b72;
+        }
+
+        .fn {
+            color: #79c0ff;
+        }
+
+        .st {
+            color: #a5d6ff;
+        }
+
+        .ty {
+            color: #ffa657;
+        }
+
+        .nu {
+            color: #79c0ff;
+        }
+
+        .op {
+            color: #ff7b72;
+        }
+
+        .at {
+            color: #d2a8ff;
+        }
+
+        /* Cards */
+        .cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 16px;
+            margin: 24px 0;
+        }
+
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 20px;
+            transition: border-color 0.2s;
+        }
+
+        .card:hover {
+            border-color: var(--accent);
+        }
+
+        .card-icon {
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+
+        .card h3 {
+            margin: 0 0 6px;
+            font-size: 15px;
+            color: var(--text);
+        }
+
+        .card p {
+            font-size: 13px;
+            color: var(--muted);
+            margin: 0;
+        }
+
+        /* API blocks */
+        .api-block {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            margin: 20px 0;
+            overflow: hidden;
+        }
+
+        .api-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 14px 20px;
+            border-bottom: 1px solid var(--border);
+            background: var(--surface2);
+        }
+
+        .api-method {
+            font-size: 11px;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .api-method.op {
+            background: rgba(52, 211, 153, 0.15);
+            color: var(--accent3);
+        }
+
+        .api-method.pass {
+            background: rgba(167, 139, 250, 0.15);
+            color: var(--accent2);
+        }
+
+        .api-method.type {
+            background: rgba(251, 146, 60, 0.15);
+            color: var(--accent4);
+        }
+
+        .api-method.conv {
+            background: rgba(244, 114, 182, 0.15);
+            color: var(--accent5);
+        }
+
+        .api-name {
+            font-family: monospace;
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        .api-desc {
+            font-size: 13px;
+            color: var(--muted);
+            margin-left: auto;
+        }
+
+        .api-body {
+            padding: 16px 20px;
+        }
+
+        .api-body p {
+            font-size: 13px;
+            color: var(--muted);
+            margin-bottom: 8px;
+        }
+
+        /* Param table */
+        .param-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 12px 0;
+            font-size: 13px;
+        }
+
+        .param-table th {
+            text-align: left;
+            padding: 8px 12px;
+            background: var(--surface2);
+            color: var(--muted);
+            font-weight: 600;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border: 1px solid var(--border);
+        }
+
+        .param-table td {
+            padding: 8px 12px;
+            border: 1px solid var(--border);
+            color: var(--muted);
+            vertical-align: top;
+        }
+
+        .param-table td:first-child {
+            font-family: monospace;
+            color: var(--accent2);
+            font-size: 12px;
+        }
+
+        .param-table td:nth-child(2) {
+            color: var(--accent3);
+            font-family: monospace;
+            font-size: 12px;
+        }
+
+        /* Pipeline viz */
+        .pipeline {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 0;
+            margin: 24px 0;
+            padding: 20px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+        }
+
+        .pipeline-step {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 10px 14px;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text);
+            white-space: nowrap;
+        }
+
+        .pipeline-arrow {
+            color: var(--muted);
+            font-size: 18px;
+            padding: 0 8px;
+        }
+
+        .pipeline-step.highlight {
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        .pipeline-step.warn {
+            border-color: var(--accent4);
+            color: var(--accent4);
+        }
+
+        /* Tip boxes */
+        .tip {
+            display: flex;
+            gap: 12px;
+            padding: 14px 16px;
+            border-radius: 8px;
+            margin: 16px 0;
+            border-left: 3px solid;
+            font-size: 13px;
+        }
+
+        .tip.info {
+            background: rgba(108, 142, 240, 0.08);
+            border-color: var(--accent);
+            color: var(--muted);
+        }
+
+        .tip.warn {
+            background: rgba(251, 191, 36, 0.08);
+            border-color: var(--warning);
+            color: var(--muted);
+        }
+
+        .tip.success {
+            background: rgba(52, 211, 153, 0.08);
+            border-color: var(--accent3);
+            color: var(--muted);
+        }
+
+        .tip-icon {
+            font-size: 16px;
+            flex-shrink: 0;
+            margin-top: 1px;
+        }
+
+        /* Level tags */
+        .tag {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            margin-right: 4px;
+        }
+
+        .tag.L1 {
+            background: rgba(244, 114, 182, 0.15);
+            color: var(--accent5);
+        }
+
+        .tag.L2 {
+            background: rgba(167, 139, 250, 0.15);
+            color: var(--accent2);
+        }
+
+        .tag.L3 {
+            background: rgba(52, 211, 153, 0.15);
+            color: var(--accent3);
+        }
+
+        .tag.async {
+            background: rgba(251, 146, 60, 0.15);
+            color: var(--accent4);
+        }
+
+        /* Memory diagram */
+        .mem-diagram {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            margin: 20px 0;
+            max-width: 500px;
+        }
+
+        .mem-layer {
+            padding: 14px 20px;
+            border-radius: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .mem-l1 {
+            background: rgba(244, 114, 182, 0.12);
+            border: 1px solid rgba(244, 114, 182, 0.3);
+        }
+
+        .mem-l2 {
+            background: rgba(167, 139, 250, 0.12);
+            border: 1px solid rgba(167, 139, 250, 0.3);
+        }
+
+        .mem-l3 {
+            background: rgba(52, 211, 153, 0.12);
+            border: 1px solid rgba(52, 211, 153, 0.3);
+        }
+
+        .mem-layer .name {
+            font-weight: 700;
+            font-size: 14px;
+        }
+
+        .mem-layer .info {
+            font-size: 12px;
+            color: var(--muted);
+        }
+
+        /* TOC */
+        .toc {
+            columns: 2;
+            column-gap: 40px;
+            margin: 16px 0;
+        }
+
+        .toc a {
+            display: block;
+            color: var(--muted);
+            text-decoration: none;
+            font-size: 13px;
+            padding: 3px 0;
+        }
+
+        .toc a:hover {
+            color: var(--accent);
+        }
+
+        /* Optimization table */
+        .opt-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 16px 0;
+            font-size: 13px;
+        }
+
+        .opt-table th {
+            text-align: left;
+            padding: 10px 14px;
+            background: var(--surface2);
+            color: var(--muted);
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border: 1px solid var(--border);
+        }
+
+        .opt-table td {
+            padding: 10px 14px;
+            border: 1px solid var(--border);
+            vertical-align: top;
+        }
+
+        .opt-table td:first-child {
+            font-family: monospace;
+            color: var(--accent);
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .opt-table tr:hover td {
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        hr {
+            border: none;
+            border-top: 1px solid var(--border);
+            margin: 32px 0;
+        }
+
+        ul,
+        ol {
+            padding-left: 20px;
+            color: var(--muted);
+        }
+
+        li {
+            margin: 4px 0;
+            font-size: 14px;
+        }
+
+        @media (max-width: 900px) {
+            .sidebar {
+                display: none;
+            }
+
+            .section {
+                padding: 40px 24px;
+            }
+
+            .hero {
+                padding: 48px 24px;
+            }
+
+            .toc {
+                columns: 1;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="layout">
+
+        <!-- SIDEBAR -->
+        <nav class="sidebar">
+            <div class="sidebar-logo">
+                <div class="logo-chip">AMD</div>
+                <h2>MLIR-AIR Docs</h2>
+                <p>Complete Developer Reference</p>
+            </div>
+
+            <div class="nav-section">
+                <div class="nav-label">Overview</div>
+                <a class="nav-item" href="#overview">Introduction</a>
+                <a class="nav-item" href="#architecture">Architecture</a>
+                <a class="nav-item" href="#memory-model">Memory Model</a>
+            </div>
+
+            <div class="nav-section">
+                <div class="nav-label">AIR Dialect API</div>
+                <a class="nav-item" href="#hierarchy-ops">Hierarchy Ops</a>
+                <a class="nav-item" href="#data-movement">Data Movement Ops</a>
+                <a class="nav-item" href="#channel-ops">Channel Ops</a>
+                <a class="nav-item" href="#async-ops">Async Ops</a>
+                <a class="nav-item" href="#types">Types</a>
+            </div>
+
+            <div class="nav-section">
+                <div class="nav-label">Optimizations</div>
+                <a class="nav-item" href="#async-concurrency">Async Concurrency</a>
+                <a class="nav-item" href="#cdfg-passes">CDFG Passes</a>
+                <a class="nav-item" href="#transform-passes">Transform Passes</a>
+            </div>
+
+            <div class="nav-section">
+                <div class="nav-label">Compilation</div>
+                <a class="nav-item" href="#conversion-passes">Conversion Passes</a>
+                <a class="nav-item" href="#e2e-flow">E2E Flow</a>
+                <a class="nav-item" href="#aircc">aircc.py Driver</a>
+            </div>
+
+            <div class="nav-section">
+                <div class="nav-label">Examples</div>
+                <a class="nav-item" href="#ex-memcpy">Basic Memcpy</a>
+                <a class="nav-item" href="#ex-matmul">Matrix Multiply</a>
+                <a class="nav-item" href="#ex-pipeline">Pipelined Tile</a>
+                <a class="nav-item" href="#ex-broadcast">Broadcasting</a>
+            </div>
+
+            <div class="nav-section">
+                <div class="nav-label">Tools</div>
+                <a class="nav-item" href="#air-runner">AIR Runner</a>
+                <a class="nav-item" href="#airrt">AIRRt Dialect</a>
+                <a class="nav-item" href="#python-api">Python API</a>
+            </div>
+        </nav>
+
+        <!-- MAIN -->
+        <main class="main">
+
+            <!-- HERO -->
+            <div class="hero" id="overview">
+                <div class="hero-badge">⚡ AMD AI Engine Compiler Infrastructure</div>
+                <h1>MLIR-AIR<br>Developer Reference</h1>
+                <p>Complete API documentation, optimization guide, and end-to-end compilation flows for building AIR
+                    platforms targeting AMD AI Engine (AIE) devices — including Versal™ and Ryzen™ AI NPUs.</p>
+                <div class="hero-meta">
+                    <div class="hero-badge-item">
+                        <div class="dot" style="background:#6c8ef0"></div>C++ / MLIR / Python
+                    </div>
+                    <div class="hero-badge-item">
+                        <div class="dot" style="background:#34d399"></div>MIT License
+                    </div>
+                    <div class="hero-badge-item">
+                        <div class="dot" style="background:#fb923c"></div>Targets NPU1/NPU2
+                    </div>
+                    <div class="hero-badge-item">
+                        <div class="dot" style="background:#f472b6"></div>VCK5000 Platform
+                    </div>
+                </div>
+            </div>
+
+            <!-- ARCHITECTURE -->
+            <section class="section" id="architecture">
+                <div class="section-id">01 — Architecture</div>
+                <h2>System Architecture</h2>
+                <p>MLIR-AIR is a multi-level compiler stack that progressively lowers high-level parallel programs to
+                    bare-metal AIE core configurations. It sits above the AIE dialect (mlir-aie) and below the user's ML
+                    framework or linalg operations.</p>
+
+                <div class="cards">
+                    <div class="card">
+                        <div class="card-icon">🗂️</div>
+                        <h3>AIR Dialect</h3>
+                        <p>High-level spatial IR: <code>air.launch</code>, <code>air.segment</code>,
+                            <code>air.herd</code>. Captures the 3-level hierarchy of compute and memory.</p>
+                    </div>
+                    <div class="card">
+                        <div class="card-icon">⚙️</div>
+                        <h3>Transform Passes</h3>
+                        <p>Optimizations: async dependency extraction, ping-pong buffering, channel fusion, broadcast
+                            detection, loop tiling, pipelining.</p>
+                    </div>
+                    <div class="card">
+                        <div class="card-icon">🔄</div>
+                        <h3>Conversion Passes</h3>
+                        <p>Lowering: AIR → AIE dialect (tile/DMA/lock allocation), AIR → AIRRt (host control), AIRRt →
+                            NPU instructions.</p>
+                    </div>
+                    <div class="card">
+                        <div class="card-icon">🏃</div>
+                        <h3>Runtime (AIRRt)</h3>
+                        <p>Runtime metadata dialect + host library. Describes segments, herds, DMA allocations for the
+                            AIR runtime.</p>
+                    </div>
+                    <div class="card">
+                        <div class="card-icon">🐍</div>
+                        <h3>Python Bindings</h3>
+                        <p>Full Python API via <code>air.compiler.aircc</code> and MLIR Python bindings for programmatic
+                            IR construction.</p>
+                    </div>
+                    <div class="card">
+                        <div class="card-icon">🔬</div>
+                        <h3>air-runner</h3>
+                        <p>Performance simulator that models concurrent AIE execution without requiring physical
+                            hardware.</p>
+                    </div>
+                </div>
+
+                <h3>Compilation Stack</h3>
+                <div class="pipeline">
+                    <div class="pipeline-step">Linalg / SCF / Tensor</div>
+                    <div class="pipeline-arrow">→</div>
+                    <div class="pipeline-step highlight">AIR Dialect</div>
+                    <div class="pipeline-arrow">→</div>
+                    <div class="pipeline-step">Optimize (CDFG)</div>
+                    <div class="pipeline-arrow">→</div>
+                    <div class="pipeline-step">air-to-aie</div>
+                    <div class="pipeline-arrow">→</div>
+                    <div class="pipeline-step">AIE Dialect</div>
+                    <div class="pipeline-arrow">→</div>
+                    <div class="pipeline-step warn">NPU Binary + Host Lib</div>
+                </div>
+            </section>
+
+            <!-- MEMORY MODEL -->
+            <section class="section" id="memory-model">
+                <div class="section-id">02 — Memory Model</div>
+                <h2>Three-Level Memory Hierarchy</h2>
+                <p>The AIR dialect has an explicit three-level memory hierarchy. Every <code>memref</code> in AIR code
+                    carries a memory space attribute that determines which level it occupies.</p>
+
+                <div class="mem-diagram">
+                    <div class="mem-layer mem-l3">
+                        <div>
+                            <div class="name" style="color:#34d399">L3 — DDR / External DRAM</div>
+                            <div class="info">Host-accessible. Shared across all partitions. GBs of capacity.</div>
+                        </div>
+                        <span class="tag L3">memref&lt;...&gt;</span>
+                    </div>
+                    <div class="mem-layer mem-l2" style="margin: 0 20px;">
+                        <div>
+                            <div class="name" style="color:#a78bfa">L2 — Memtile / Shared SRAM</div>
+                            <div class="info">Segment-local scratchpad. KBs–MBs. Accessible by multiple AIE tiles.</div>
+                        </div>
+                        <span class="tag L2">memref&lt;..., 1&gt;</span>
+                    </div>
+                    <div class="mem-layer mem-l1" style="margin: 0 40px;">
+                        <div>
+                            <div class="name" style="color:#f472b6">L1 — AIE Tile Memory</div>
+                            <div class="info">Core-local scratchpad. KBs only. Ultra-low latency for SIMD ops.</div>
+                        </div>
+                        <span class="tag L1">memref&lt;..., 2&gt;</span>
+                    </div>
+                </div>
+
+                <table class="param-table">
+                    <tr>
+                        <th>Level</th>
+                        <th>Memory Space Attr</th>
+                        <th>Typical Size</th>
+                        <th>Accessible By</th>
+                    </tr>
+                    <tr>
+                        <td>L3 (DDR)</td>
+                        <td><code>(none)</code></td>
+                        <td>GBs</td>
+                        <td>Host CPU, Shim DMA</td>
+                    </tr>
+                    <tr>
+                        <td>L2 (Memtile)</td>
+                        <td><code>1</code></td>
+                        <td>512KB–2MB</td>
+                        <td>Segment-wide DMAs</td>
+                    </tr>
+                    <tr>
+                        <td>L1 (Tile)</td>
+                        <td><code>2</code></td>
+                        <td>32KB–128KB</td>
+                        <td>Single AIE core + local DMA</td>
+                    </tr>
+                </table>
+
+                <div class="tip info">
+                    <div class="tip-icon">ℹ️</div>
+                    <div>Data movement between levels always goes through DMA operations (<code>air.dma_memcpy_nd</code>
+                        or <code>air.channel.put/get</code>). Direct load/store across levels is not legal in the AIR
+                        dialect.</div>
+                </div>
+            </section>
+
+            <!-- HIERARCHY OPS -->
+            <section class="section" id="hierarchy-ops">
+                <div class="section-id">03 — AIR Dialect API</div>
+                <h2>Hierarchy Operations</h2>
+                <p>AIR programs are structured by three nested scope operations that mirror the physical hierarchy of
+                    the device.</p>
+
+                <!-- air.launch -->
+                <div class="api-block">
+                    <div class="api-header">
+                        <span class="api-method op">OP</span>
+                        <span class="api-name">air.launch</span>
+                        <span class="api-desc">Host-level parallel launch scope</span>
+                    </div>
+                    <div class="api-body">
+                        <p>Groups segments and L3 allocations that must be co-resident on the device. Optionally defines
+                            a parallel iteration space (host-side parallelism, not mapped to tiles).</p>
+                        <pre><span class="cm">// Syntax</span>
+<span class="kw">air.launch</span> <span class="at">@name</span> [<span class="st">%async_deps</span>] (<span class="st">%iv0, %iv1</span>) <span class="kw">in</span> (<span class="st">%sz0=%bound0, %sz1=%bound1</span>)
+    <span class="kw">args</span>(<span class="st">%arg0=%host_buf</span>) : <span class="ty">memref&lt;...&gt;</span>
+    <span class="kw">attributes</span> {<span class="at">id</span> = <span class="nu">1</span> : <span class="ty">i32</span>} {
+  <span class="cm">// body: contains air.segment or direct computation</span>
+  <span class="kw">air.launch_terminator</span>
+}
+
+<span class="cm">// Async variant (returns a token for dependency tracking)</span>
+<span class="st">%tok</span> = <span class="kw">air.launch</span> <span class="at">async</span> [<span class="st">%dep</span>] (<span class="st">%iv</span>) <span class="kw">in</span> (<span class="st">%sz=%c4</span>) ... { ... }</pre>
+                        <table class="param-table">
+                            <tr>
+                                <th>Attribute</th>
+                                <th>Type</th>
+                                <th>Description</th>
+                            </tr>
+                            <tr>
+                                <td>async_token</td>
+                                <td><code>!air.async.token</code></td>
+                                <td>Optional. Return token for dependency chaining.</td>
+                            </tr>
+                            <tr>
+                                <td>async_dependencies</td>
+                                <td><code>variadic&lt;!air.async.token&gt;</code></td>
+                                <td>List of tokens this op must wait on before starting.</td>
+                            </tr>
+                            <tr>
+                                <td>sizes</td>
+                                <td><code>variadic&lt;index&gt;</code></td>
+                                <td>Upper bounds of the parallel iteration space.</td>
+                            </tr>
+                            <tr>
+                                <td>ids</td>
+                                <td><code>variadic&lt;index&gt;</code></td>
+                                <td>Block arguments for iteration indices.</td>
+                            </tr>
+                            <tr>
+                                <td>operands</td>
+                                <td>variadic</td>
+                                <td>Values passed into the launch body from outside scope.</td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- air.segment -->
+                <div class="api-block">
+                    <div class="api-header">
+                        <span class="api-method op">OP</span>
+                        <span class="api-name">air.segment</span>
+                        <span class="api-desc">Physically contiguous AIE core grouping</span>
+                    </div>
+                    <div class="api-body">
+                        <p>Represents a physically contiguous grouping of AIE cores, L1 and L2 memory, and controllers
+                            sufficient for the enclosed herds. Can define a spatial "stamp-out" iteration space that
+                            multiplies physical resources.</p>
+                        <pre><span class="kw">air.segment</span> <span class="at">@seg_name</span> [<span class="st">%deps</span>] (<span class="st">%iv0, %iv1</span>) <span class="kw">in</span> (<span class="st">%s0=%c2, %s1=%c4</span>)
+    <span class="kw">args</span>(<span class="st">%a=%buf</span>) : <span class="ty">memref&lt;256xf32, 1&gt;</span>
+    <span class="kw">attributes</span> {<span class="at">x_loc</span> = <span class="nu">0</span> : <span class="ty">i32</span>, <span class="at">y_loc</span> = <span class="nu">2</span> : <span class="ty">i32</span>,
+                 <span class="at">x_size</span> = <span class="nu">4</span> : <span class="ty">i32</span>, <span class="at">y_size</span> = <span class="nu">4</span> : <span class="ty">i32</span>} {
+  <span class="cm">// Can alloc L2 memory here</span>
+  <span class="st">%l2_buf</span> = <span class="kw">memref.alloc</span>() : <span class="ty">memref&lt;128xf32, 1&gt;</span>
+  <span class="cm">// Contains air.herd ops</span>
+  <span class="kw">air.segment_terminator</span>
+}</pre>
+                        <table class="param-table">
+                            <tr>
+                                <th>Placement Attr</th>
+                                <th>Description</th>
+                            </tr>
+                            <tr>
+                                <td>x_loc, y_loc</td>
+                                <td>Top-left corner of segment on device array (column, row).</td>
+                            </tr>
+                            <tr>
+                                <td>x_size, y_size</td>
+                                <td>Number of columns/rows the segment occupies.</td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- air.herd -->
+                <div class="api-block">
+                    <div class="api-header">
+                        <span class="api-method op">OP</span>
+                        <span class="api-name">air.herd</span>
+                        <span class="api-desc">2D array of AIE tile instances</span>
+                    </div>
+                    <div class="api-body">
+                        <p>Defines a 2D spatial array of AIE compute instances. Each point in the iteration space
+                            becomes an <code>aie.core</code> operation after lowering. The body is cloned into each
+                            generated tile core.</p>
+                        <pre><span class="kw">air.herd</span> <span class="at">@herd_name</span> <span class="kw">tile</span>(<span class="st">%tx, %ty</span>) <span class="kw">in</span> (<span class="st">%sx=%c4, %sy=%c2</span>)
+    <span class="kw">args</span>(<span class="st">%a=%l1_ptr, %b=%wgt_ptr</span>) : <span class="ty">memref&lt;...&gt;</span>, <span class="ty">memref&lt;...&gt;</span>
+    <span class="kw">attributes</span> {<span class="at">link_with</span> = <span class="st">"kernel.o"</span>} {
+  <span class="cm">// L1 local buffer</span>
+  <span class="st">%buf</span> = <span class="kw">memref.alloc</span>() : <span class="ty">memref&lt;32xf32, 2&gt;</span>
+  <span class="cm">// Use tile IDs to specialize per-core behavior</span>
+  <span class="kw">affine.if</span> <span class="at">#set</span>[<span class="st">%tx, %ty</span>] {
+    <span class="kw">linalg.generic</span> { ... }
+  }
+  <span class="kw">air.herd_terminator</span>
+}</pre>
+                        <p><strong>Key insight:</strong> <code>%tx, %ty</code> are the tile coordinates (0-based). Use
+                            <code>affine.if</code> with tile IDs to specialize logic per core — after
+                            <code>air-to-aie</code>, these become compile-time constants and the branches are folded.
+                        </p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- DATA MOVEMENT -->
+            <section class="section" id="data-movement">
+                <h2>Data Movement Operations</h2>
+
+                <div class="api-block">
+                    <div class="api-header">
+                        <span class="api-method op">OP</span>
+                        <span class="api-name">air.dma_memcpy_nd</span>
+                        <span class="api-desc">N-dimensional strided DMA transfer</span>
+                    </div>
+                    <div class="api-body">
+                        <p>The primary data movement primitive in AIR. Performs a strided memory copy between two
+                            memrefs. The <code>nd</code> suffix means it supports up to 4D access patterns via offsets,
+                            sizes, and strides arrays.</p>
+                        <pre><span class="cm">// Synchronous: copy 16x32 tile from L3 matrix to L1 buffer</span>
+<span class="kw">air.dma_memcpy_nd</span> (<span class="st">%dst</span>[] [] [],                    <span class="cm">// dst: no offset/size/stride (full)</span>
+                   <span class="st">%src</span>[<span class="st">%row, %col</span>] [<span class="st">%c16, %c32</span>] [<span class="st">%stride_r, %c1</span>])
+    {<span class="at">id</span> = <span class="nu">1</span> : <span class="ty">i32</span>}
+    : (<span class="ty">memref&lt;16x32xf32, 2&gt;</span>, <span class="ty">memref&lt;128x128xf32&gt;</span>)
+
+<span class="cm">// Async: returns a token, depends on %prev_tok</span>
+<span class="st">%tok</span> = <span class="kw">air.dma_memcpy_nd</span> <span class="at">async</span> [<span class="st">%prev_tok</span>]
+    (<span class="st">%l1_buf</span>[] [] [], <span class="st">%l3_mat</span>[<span class="st">%r, %c</span>] [<span class="st">%M, %K</span>] [<span class="st">%lda, %c1</span>])
+    {<span class="at">id</span> = <span class="nu">2</span> : <span class="ty">i32</span>, <span class="at">broadcast_pattern</span> = <span class="st">#set</span>}
+    : (<span class="ty">memref&lt;MxKxf32, 2&gt;</span>, <span class="ty">memref&lt;512x512xf32&gt;</span>)</pre>
+                        <table class="param-table">
+                            <tr>
+                                <th>Parameter</th>
+                                <th>Type</th>
+                                <th>Description</th>
+                            </tr>
+                            <tr>
+                                <td>dst / src</td>
+                                <td>memref</td>
+                                <td>Destination and source buffers. Direction: src → dst.</td>
+                            </tr>
+                            <tr>
+                                <td>offsets</td>
+                                <td>variadic&lt;index&gt;</td>
+                                <td>Starting indices into the buffer (up to 4 dims).</td>
+                            </tr>
+                            <tr>
+                                <td>sizes</td>
+                                <td>variadic&lt;index&gt;</td>
+                                <td>Number of elements to transfer per dimension.</td>
+                            </tr>
+                            <tr>
+                                <td>strides</td>
+                                <td>variadic&lt;index&gt;</td>
+                                <td>Stride in elements between consecutive accesses per dim.</td>
+                            </tr>
+                            <tr>
+                                <td>id</td>
+                                <td>i32</td>
+                                <td>Unique ID used for DMA allocation metadata.</td>
+                            </tr>
+                            <tr>
+                                <td>broadcast_pattern</td>
+                                <td>affine_set</td>
+                                <td>Optional. Labels broadcast recipients detected by -air-dependency-schedule-opt.</td>
+                            </tr>
+                        </table>
+                        <div class="tip warn">
+                            <div class="tip-icon">⚠️</div>
+                            <div>Empty <code>[]</code> means "access the whole buffer contiguously." Non-empty
+                                <code>[offsets][sizes][strides]</code> describes a sub-view — the DMA lowering generates
+                                the correct BD (Buffer Descriptor) chain for AIE hardware.</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- CHANNEL OPS -->
+            <section class="section" id="channel-ops">
+                <h2>Channel Operations</h2>
+                <p>Channels provide a higher-level, producer-consumer model for data movement between herd levels. They
+                    decouple the producer and consumer, enabling pipelining and double-buffering patterns.</p>
+
+                <div class="api-block">
+                    <div class="api-header">
+                        <span class="api-method op">OP</span>
+                        <span class="api-name">air.channel</span>
+                        <span class="api-desc">Channel declaration (module-level symbol)</span>
+                    </div>
+                    <div class="api-body">
+                        <pre><span class="cm">// Declare a 1x1 channel (simple)</span>
+<span class="kw">air.channel</span> <span class="at">@chan_A</span> [<span class="nu">1</span>, <span class="nu">1</span>]
+<span class="cm">// Declare a 4x2 channel array (for 4x2 herd)</span>
+<span class="kw">air.channel</span> <span class="at">@chan_B</span> [<span class="nu">4</span>, <span class="nu">2</span>]</pre>
+                    </div>
+                </div>
+
+                <div class="api-block">
+                    <div class="api-header">
+                        <span class="api-method op">OP</span>
+                        <span class="api-name">air.channel.put</span>
+                        <span class="api-desc">Send data into a channel (producer side)</span>
+                    </div>
+                    <div class="api-body">
+                        <pre><span class="cm">// Producer (typically in air.segment or air.launch body)</span>
+<span class="kw">air.channel.put</span> <span class="at">@chan_A</span> (<span class="st">%src</span>[<span class="st">%offset</span>] [<span class="st">%size</span>] [<span class="st">%stride</span>]) : (<span class="ty">memref&lt;1024xf32&gt;</span>)
+
+<span class="cm">// Async variant</span>
+<span class="st">%t</span> = <span class="kw">air.channel.put</span> <span class="at">async</span> [<span class="st">%dep</span>] <span class="at">@chan_A</span>[<span class="st">%ix, %iy</span>]
+    (<span class="st">%src</span>[<span class="st">%off</span>] [<span class="st">%sz</span>] [<span class="st">%str</span>]) : (<span class="ty">memref&lt;256xf32, 1&gt;</span>)</pre>
+                    </div>
+                </div>
+
+                <div class="api-block">
+                    <div class="api-header">
+                        <span class="api-method op">OP</span>
+                        <span class="api-name">air.channel.get</span>
+                        <span class="api-desc">Receive data from a channel (consumer side)</span>
+                    </div>
+                    <div class="api-body">
+                        <pre><span class="cm">// Consumer (typically in air.herd body)</span>
+<span class="kw">air.channel.get</span> <span class="at">@chan_A</span> (<span class="st">%dst</span>[] [] []) : (<span class="ty">memref&lt;32xf32, 2&gt;</span>)
+
+<span class="cm">// Async variant — consumer gets triggered asynchronously</span>
+<span class="st">%t2</span> = <span class="kw">air.channel.get</span> <span class="at">async</span> [<span class="st">%t1</span>] <span class="at">@chan_B</span>[<span class="st">%tx, %ty</span>]
+    (<span class="st">%l1</span>[] [] []) : (<span class="ty">memref&lt;16x32xf32, 2&gt;</span>)</pre>
+                        <div class="tip success">
+                            <div class="tip-icon">✅</div>
+                            <div>Use channels (instead of <code>dma_memcpy_nd</code>) when implementing pipelined
+                                double-buffering between the L2 feeder segment and L1 tile cores. The channel model
+                                makes producer-consumer synchronization explicit and optimizable.</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ASYNC OPS -->
+            <section class="section" id="async-ops">
+                <h2>Asynchronous Operations</h2>
+
+                <div class="api-block">
+                    <div class="api-header">
+                        <span class="api-method type">TYPE</span>
+                        <span class="api-name">!air.async.token</span>
+                        <span class="api-desc">Dependency edge in the CDFG</span>
+                    </div>
+                    <div class="api-body">
+                        <p>An async token represents the completion of an async operation. Tokens are consumed as
+                            dependencies by subsequent operations to encode ordering constraints. Multiple tokens can be
+                            waited on simultaneously.</p>
+                    </div>
+                </div>
+
+                <div class="api-block">
+                    <div class="api-header">
+                        <span class="api-method op">OP</span>
+                        <span class="api-name">air.execute</span>
+                        <span class="api-desc">Wraps synchronous ops for async scheduling</span>
+                    </div>
+                    <div class="api-body">
+                        <p>Wraps non-async operations (like <code>memref.alloc</code>, <code>linalg.matmul</code>)
+                            inside an async context. The <code>-air-dependency</code> pass automatically introduces
+                            <code>air.execute</code> wrappers around synchronous operations that need to participate in
+                            the dependency graph.</p>
+                        <pre><span class="cm">// Wrap a matmul inside async context</span>
+<span class="st">%tok</span> = <span class="kw">air.execute</span> [<span class="st">%dep_a, %dep_b, %dep_c</span>] {
+  <span class="kw">linalg.matmul</span>
+    <span class="kw">ins</span>(<span class="st">%A, %B</span> : <span class="ty">memref&lt;16x32xf32, 2&gt;</span>, <span class="ty">memref&lt;32x64xf32, 2&gt;</span>)
+    <span class="kw">outs</span>(<span class="st">%C</span> : <span class="ty">memref&lt;16x64xf32, 2&gt;</span>)
+} {<span class="at">id</span> = <span class="nu">11</span> : <span class="ty">i32</span>}
+
+<span class="cm">// Wrap alloc, return result via execute_terminator</span>
+<span class="st">%async_tok, %buf</span> = <span class="kw">air.execute</span> -> (<span class="ty">memref&lt;16x32xf32, 2&gt;</span>) {
+  <span class="st">%alloc</span> = <span class="kw">memref.alloc</span>() : <span class="ty">memref&lt;16x32xf32, 2&gt;</span>
+  <span class="kw">air.execute_terminator</span> <span class="st">%alloc</span> : <span class="ty">memref&lt;16x32xf32, 2&gt;</span>
+} {<span class="at">id</span> = <span class="nu">8</span> : <span class="ty">i32</span>}</pre>
+                    </div>
+                </div>
+
+                <div class="api-block">
+                    <div class="api-header">
+                        <span class="api-method op">OP</span>
+                        <span class="api-name">air.wait_all</span>
+                        <span class="api-desc">Barrier / join point for async tokens</span>
+                    </div>
+                    <div class="api-body">
+                        <pre><span class="cm">// Wait for two tokens, produce one combined token</span>
+<span class="st">%barrier</span> = <span class="kw">air.wait_all</span> <span class="at">async</span> [<span class="st">%tok_a, %tok_b</span>] {<span class="at">id</span> = <span class="nu">2</span> : <span class="ty">i32</span>}
+<span class="cm">// Any op depending on %barrier now implicitly waits for both %tok_a and %tok_b</span></pre>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TYPES -->
+            <section class="section" id="types">
+                <h2>Types Reference</h2>
+                <table class="param-table">
+                    <tr>
+                        <th>Type</th>
+                        <th>Description</th>
+                        <th>Usage</th>
+                    </tr>
+                    <tr>
+                        <td>!air.async.token</td>
+                        <td>Completion token for async ops</td>
+                        <td>Dependency edges in CDFG</td>
+                    </tr>
+                    <tr>
+                        <td>memref&lt;...&gt;</td>
+                        <td>L3 memory (no space attr)</td>
+                        <td>DDR / host buffers</td>
+                    </tr>
+                    <tr>
+                        <td>memref&lt;..., 1&gt;</td>
+                        <td>L2 memory (space=1)</td>
+                        <td>Segment-level buffers / memtile</td>
+                    </tr>
+                    <tr>
+                        <td>memref&lt;..., 2&gt;</td>
+                        <td>L1 memory (space=2)</td>
+                        <td>Per-core tile buffers</td>
+                    </tr>
+                    <tr>
+                        <td>index</td>
+                        <td>MLIR index type</td>
+                        <td>Loop bounds, sizes, strides</td>
+                    </tr>
+                </table>
+            </section>
+
+            <!-- ASYNC CONCURRENCY -->
+            <section class="section" id="async-concurrency">
+                <div class="section-id">04 — Optimizations</div>
+                <h2>Async Concurrency & CDFG</h2>
+                <p>MLIR-AIR models asynchronous execution as a <strong>Control/Data Flow Graph (CDFG)</strong>. The
+                    compiler progressively extracts, analyzes, and optimizes this graph to expose maximum parallelism on
+                    AIE cores.</p>
+
+                <h3>Step 1: Extract the CDFG — <code>-air-dependency</code></h3>
+                <p>This pass analyzes synchronous code and injects async tokens to represent true data dependencies. It
+                    wraps operations in <code>air.execute</code> and connects them with token chains.</p>
+
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:16px 0;">
+                    <div>
+                        <h4>Before (synchronous)</h4>
+                        <pre><span class="kw">scf.for</span> <span class="st">%k</span> = <span class="st">%c0</span> to <span class="st">%c128</span> step <span class="st">%c32</span> {
+  <span class="st">%A</span> = <span class="kw">memref.alloc</span>() : <span class="ty">memref&lt;16x32xf32, 2&gt;</span>
+  <span class="st">%B</span> = <span class="kw">memref.alloc</span>() : <span class="ty">memref&lt;32x64xf32, 2&gt;</span>
+  <span class="kw">air.dma_memcpy_nd</span> (<span class="st">%A</span>[] [] [], <span class="st">%src_A</span>[...])
+  <span class="kw">air.dma_memcpy_nd</span> (<span class="st">%B</span>[] [] [], <span class="st">%src_B</span>[...])
+  <span class="kw">linalg.matmul</span> <span class="kw">ins</span>(<span class="st">%A, %B</span>...) <span class="kw">outs</span>(<span class="st">%C</span>...)
+  <span class="kw">air.dma_memcpy_nd</span> (<span class="st">%dst</span>[...], <span class="st">%C</span>[] [] [])
+}</pre>
+                    </div>
+                    <div>
+                        <h4>After (-air-dependency)</h4>
+                        <pre><span class="st">%3</span> = <span class="kw">scf.for</span> ... <span class="kw">iter_args</span>(<span class="st">%arg12</span> = <span class="st">%2</span>) {
+  <span class="st">%tA, %A</span> = <span class="kw">air.execute</span> -> (<span class="ty">memref&lt;...&gt;</span>) {
+    <span class="st">%alloc</span> = <span class="kw">memref.alloc</span>()
+    <span class="kw">air.execute_terminator</span> <span class="st">%alloc</span>
+  }
+  <span class="st">%tB, %B</span> = <span class="kw">air.execute</span> -> (<span class="ty">memref&lt;...&gt;</span>) { ... }
+  <span class="st">%d1</span> = <span class="kw">air.dma_memcpy_nd</span> <span class="at">async</span> [<span class="st">%tA, %arg12</span>] (%A ...)
+  <span class="st">%d2</span> = <span class="kw">air.dma_memcpy_nd</span> <span class="at">async</span> [<span class="st">%tB, %arg12</span>] (%B ...)
+  <span class="st">%compute</span> = <span class="kw">air.execute</span> [<span class="st">%d1, %d2</span>] {
+    <span class="kw">linalg.matmul</span> ...
+  }
+  <span class="st">%d3</span> = <span class="kw">air.dma_memcpy_nd</span> <span class="at">async</span> [<span class="st">%compute</span>] ...
+  <span class="kw">scf.yield</span> <span class="st">%d3</span>
+}</pre>
+                    </div>
+                </div>
+                <div class="tip info">
+                    <div class="tip-icon">ℹ️</div>
+                    <div>Notice that the two DMA loads (<code>%d1</code>, <code>%d2</code>) have NO dependency on each
+                        other — they can run in parallel on the DMA engine while the core waits.</div>
+                </div>
+            </section>
+
+            <!-- CDFG PASSES -->
+            <section class="section" id="cdfg-passes">
+                <h2>CDFG Analysis Passes</h2>
+
+                <table class="opt-table">
+                    <tr>
+                        <th>Pass</th>
+                        <th>Category</th>
+                        <th>What it does</th>
+                    </tr>
+                    <tr>
+                        <td>-air-dependency</td>
+                        <td><span class="tag async">Async</span></td>
+                        <td>Analyzes data/loop-carried dependencies; wraps ops in air.execute; annotates with tokens.
+                            <em>Always run first.</em></td>
+                    </tr>
+                    <tr>
+                        <td>-air-dependency-canonicalize</td>
+                        <td><span class="tag async">Async</span></td>
+                        <td>Removes redundant dependency edges using <strong>transitive reduction</strong>. Shrinks the
+                            CDFG to its minimal form for cleaner code gen.</td>
+                    </tr>
+                    <tr>
+                        <td>-air-dependency-schedule-opt</td>
+                        <td><span class="tag async">Async</span></td>
+                        <td>Detects inefficient CDFG patterns (e.g., unnecessary serialization) and auto-detects
+                            <strong>broadcast opportunities</strong>; labels with <code>broadcast_pattern</code> affine
+                            set.</td>
+                    </tr>
+                    <tr>
+                        <td>-air-dependency-parse-graph</td>
+                        <td><span class="tag async">Debug</span></td>
+                        <td>Emits a <code>.dot</code> file for Graphviz visualization of the CDFG. Invaluable for
+                            debugging dependency analysis.</td>
+                    </tr>
+                </table>
+
+                <h3>Example: Transitive Reduction</h3>
+                <p>Before canonicalization, a token might appear multiple times as a dep for the same op.
+                    <code>-air-dependency-canonicalize</code> removes these without changing semantics:</p>
+                <pre><span class="cm">// BEFORE (redundant edge): matmul depends on %arg12 twice</span>
+<span class="st">%compute</span> = <span class="kw">air.execute</span> [<span class="st">%arg12, %d2, %d1, %arg12</span>] { ... }
+
+<span class="cm">// AFTER (after canonicalize): minimal deps</span>
+<span class="st">%compute</span> = <span class="kw">air.execute</span> [<span class="st">%d2, %d1</span>] { ... }
+<span class="cm">// %arg12 is transitively reachable through %d1 and %d2</span></pre>
+            </section>
+
+            <!-- TRANSFORM PASSES -->
+            <section class="section" id="transform-passes">
+                <h2>Transform Passes</h2>
+                <p>These optimization passes transform the AIR program structure to improve performance on the AIE
+                    hardware.</p>
+
+                <h3>Tiling & Pipelining</h3>
+
+                <div class="api-block">
+                    <div class="api-header">
+                        <span class="api-method pass">PASS</span>
+                        <span class="api-name">-air-loop-fusion</span>
+                        <span class="api-desc">Fuse perfectly nested herd loops</span>
+                    </div>
+                    <div class="api-body">
+                        <p>Fuses a perfectly nested pair of <code>air.herd</code> loops into a single herd. Preserves
+                            the iteration space and semantics. The new herd's 2D tile shape is formed from the outer ×
+                            inner dimensions.</p>
+                        <pre><span class="cm">// BEFORE: two nested air.herd loops</span>
+<span class="kw">air.herd</span> tile(%x) in (%sx=%c4) { <span class="cm">// outer: 4 tiles</span>
+  <span class="kw">air.herd</span> tile(%y) in (%sy=%c2) { <span class="cm">// inner: 2 tiles</span>
+    ...
+  }
+}
+
+<span class="cm">// AFTER: single 4x2 herd (or 2x4 depending on ordering)</span>
+<span class="kw">air.herd</span> tile(%x, %y) in (%sx=%c4, %sy=%c2) {
+  ...
+}</pre>
+                    </div>
+                </div>
+
+                <div class="api-block">
+                    <div class="api-header">
+                        <span class="api-method pass">PASS</span>
+                        <span class="api-name">-air-ping-pong-transform</span>
+                        <span class="api-desc">Ping-pong / double-buffer transformation</span>
+                    </div>
+                    <div class="api-body">
+                        <p>Converts a single-buffered loop to a double-buffered (ping-pong) pattern. Detects the target
+                            buffers and surrounding <code>scf.for</code>, then builds explicit dependency edges
+                            representing the alternating ping/pong scheduling to overlap DMA and compute.</p>
+                        <pre><span class="cm">// Before: serial load → compute → load → compute</span>
+<span class="kw">scf.for</span> <span class="st">%i</span> = ... {
+  <span class="kw">air.channel.get</span> <span class="at">@chan</span>(<span class="st">%buf</span>[] [] [])   <span class="cm">// LOAD</span>
+  <span class="kw">air.execute</span> { <span class="kw">linalg.generic</span> {...} }  <span class="cm">// COMPUTE</span>
+}
+
+<span class="cm">// After: ping-pong — load[i+1] overlaps compute[i]</span>
+<span class="st">%ping</span> = <span class="kw">memref.alloc</span>() : <span class="ty">memref&lt;64xf32, 2&gt;</span>
+<span class="st">%pong</span> = <span class="kw">memref.alloc</span>() : <span class="ty">memref&lt;64xf32, 2&gt;</span>
+<span class="cm">// Explicit dependency edges ensure ping and pong never clash</span></pre>
+                        <table class="param-table">
+                            <tr>
+                                <th>Option</th>
+                                <th>Description</th>
+                            </tr>
+                            <tr>
+                                <td>-keep-memref-dealloc</td>
+                                <td>Preserve deallocs for air-to-aie lock generation.</td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="api-block">
+                    <div class="api-header">
+                        <span class="api-method pass">PASS</span>
+                        <span class="api-name">-air-fuse-channels</span>
+                        <span class="api-desc">Merge multiple channel ops to reduce DMA overhead</span>
+                    </div>
+                    <div class="api-body">
+                        <p>Fuses multiple <code>air.channel</code> operations into one when they share the same control
+                            loop hierarchy with matching loop bounds. Reduces the number of DMA transactions, lowering
+                            latency and freeing up DMA channels.</p>
+                        <table class="param-table">
+                            <tr>
+                                <th>Option</th>
+                                <th>Description</th>
+                            </tr>
+                            <tr>
+                                <td>-aggressive-mode L1/L2/L3</td>
+                                <td>Enable time-multiplexing so puts/gets share the same channel symbol. Use as few
+                                    channels as possible.</td>
+                            </tr>
+                        </table>
+                        <pre><span class="cm">// Example: fuse two sequential channel.gets sharing the same loop</span>
+<span class="kw">scf.for</span> <span class="st">%i</span> = ... {
+  <span class="kw">air.channel.get</span> <span class="at">@chan_A</span>(<span class="st">%bufA</span>[] [] [])  <span class="cm">// } Fused into</span>
+  <span class="kw">air.channel.get</span> <span class="at">@chan_B</span>(<span class="st">%bufB</span>[] [] [])  <span class="cm">// } one channel</span>
+}
+<span class="cm">// → single channel with merged transfer descriptor</span></pre>
+                    </div>
+                </div>
+
+                <div class="api-block">
+                    <div class="api-header">
+                        <span class="api-method pass">PASS</span>
+                        <span class="api-name">-air-specialize-channel-wrap-and-stride</span>
+                        <span class="api-desc">Optimize BD (Buffer Descriptor) chains</span>
+                    </div>
+                    <div class="api-body">
+                        <p>Transforms logical <code>air.channel.put/get</code> operations into physically efficient
+                            representations of AIE DMA block descriptors. Exploits hardware wrap-and-stride capabilities
+                            to express complex access patterns in a single BD chain rather than many individual
+                            transfers.</p>
+                    </div>
+                </div>
+
+                <h3>Placement & Tiling</h3>
+
+                <div class="api-block">
+                    <div class="api-header">
+                        <span class="api-method pass">PASS</span>
+                        <span class="api-name">-air-place-herds</span>
+                        <span class="api-desc">Place herds onto physical segment grid</span>
+                    </div>
+                    <div class="api-body">
+                        <p>Assigns physical row/column coordinates to each herd. Placement starts bottom-left, placing
+                            the largest herd first, moving right. Ensures the placement fits within physical board
+                            dimensions.</p>
+                        <table class="param-table">
+                            <tr>
+                                <th>Option</th>
+                                <th>Description</th>
+                            </tr>
+                            <tr>
+                                <td>-num-rows</td>
+                                <td>Number of rows in the segment grid.</td>
+                            </tr>
+                            <tr>
+                                <td>-num-cols</td>
+                                <td>Number of columns in the segment grid.</td>
+                            </tr>
+                            <tr>
+                                <td>-anchor-point</td>
+                                <td>Top-left (row, col) anchor for segment placement.</td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="api-block">
+                    <div class="api-header">
+                        <span class="api-method pass">PASS</span>
+                        <span class="api-name">-air-linalg-to-affine</span>
+                        <span class="api-desc">Linalg → affine loop lowering for AIE cores</span>
+                    </div>
+                    <div class="api-body">
+                        <p>Three-stage lowering pipeline: (1) Bufferize with
+                            <code>linalg::populateLinalgBufferizePatterns</code>, (2) peephole cleanup, (3) lower
+                            GenericOps to loops. Biased toward <code>aie.core</code> regions; intended to run after
+                            <code>air-to-aie</code>.</p>
+                    </div>
+                </div>
+
+                <h3>Loop Labeling Passes (for Pipelining)</h3>
+                <table class="opt-table">
+                    <tr>
+                        <th>Pass</th>
+                        <th>What it does</th>
+                    </tr>
+                    <tr>
+                        <td>-air-label-scf-for-in-air-segment</td>
+                        <td>Labels <code>scf.for</code> loops in segments (not in herds) with an <code>unroll</code>
+                            attribute for subsequent unrolling by <code>-air-unroll-loop-for-pipelining-pattern</code>.
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>-air-label-scf-for-in-air-segment-ping-pong</td>
+                        <td>Labels <code>scf.for</code> loops containing <code>air.execute(memref.alloc)</code> as
+                            candidates for ping-pong transformation. Adds hoisting attributes to alloc ops and sets
+                            unroll factor.</td>
+                    </tr>
+                    <tr>
+                        <td>-air-label-broadcast-channel-op</td>
+                        <td>Labels detected broadcast channel ops with their tile coordinates for explicit broadcast
+                            routing.</td>
+                    </tr>
+                </table>
+            </section>
+
+            <!-- CONVERSION PASSES -->
+            <section class="section" id="conversion-passes">
+                <div class="section-id">05 — Conversion Passes</div>
+                <h2>Conversion Passes</h2>
+                <p>These passes lower the AIR dialect to lower-level dialects and ultimately to hardware-specific binary
+                    artifacts.</p>
+
+                <div class="api-block">
+                    <div class="api-header">
+                        <span class="api-method conv">CONVERSION</span>
+                        <span class="api-name">-air-to-aie</span>
+                        <span class="api-desc">AIR → AIE dialect + AIRRt metadata</span>
+                    </div>
+                    <div class="api-body">
+                        <p>The most important lowering pass. For each <code>air.segment</code>, generates an
+                            <code>aie.device</code> module containing:</p>
+                        <ul>
+                            <li><code>aie.tile</code> operations for each point in the herd's 2D iteration space</li>
+                            <li><code>aie.buffer</code> for L1 allocations (converted from <code>memref.alloc</code>)
+                            </li>
+                            <li><code>aie.lock</code> and <code>aie.mem</code> for DMA synchronization</li>
+                            <li><code>aie.flow</code> routing between tile DMAs and shim DMAs</li>
+                            <li><code>aie.core</code> with the herd body cloned for each tile</li>
+                        </ul>
+                        <table class="param-table">
+                            <tr>
+                                <th>Option</th>
+                                <th>Description</th>
+                            </tr>
+                            <tr>
+                                <td>-row-offset</td>
+                                <td>Default start row for herds without y_loc attribute.</td>
+                            </tr>
+                            <tr>
+                                <td>-col-offset</td>
+                                <td>Default start column for herds without x_loc attribute.</td>
+                            </tr>
+                            <tr>
+                                <td>-device</td>
+                                <td>Target device (e.g., npu1, npu1_1col, npu2, vck5000).</td>
+                            </tr>
+                            <tr>
+                                <td>-use-objectfifo</td>
+                                <td>Lower data movement to aie.objectFifo instead of aie.locks.</td>
+                            </tr>
+                            <tr>
+                                <td>-generate-shim-dma</td>
+                                <td>Generate AIE shim DMA program vs AIR runtime scheduling.</td>
+                            </tr>
+                            <tr>
+                                <td>-emit-while-loop</td>
+                                <td>Emit while(1) loop around herd code in aie.core ops.</td>
+                            </tr>
+                            <tr>
+                                <td>-use-pkt-flow-at-shim-dma</td>
+                                <td>Use packet flows for shim DMA (enables time-multiplex with control packets).</td>
+                            </tr>
+                            <tr>
+                                <td>-insert-trace-packet-flow</td>
+                                <td>Add packet-routed trace for profiling cores and memtiles.</td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="api-block">
+                    <div class="api-header">
+                        <span class="api-method conv">CONVERSION</span>
+                        <span class="api-name">-air-to-std</span>
+                        <span class="api-desc">AIR → AIRRt host control code</span>
+                    </div>
+                    <div class="api-body">
+                        <p>Converts <code>air.herd</code> launch operations into loop nests that represent the host-side
+                            control program. Converts <code>air.dma_memcpy_nd</code> into
+                            <code>airrt.dma_memcpy_nd</code> runtime calls.</p>
+                        <pre><span class="cm">// input: air.herd (1x1), then lowered to:</span>
+<span class="st">%h</span> = <span class="kw">airrt.herd_load</span> <span class="st">"herd_0"</span> : <span class="ty">i64</span>
+<span class="kw">affine.for</span> <span class="st">%tx</span> = <span class="nu">0</span> to <span class="nu">1</span> {
+  <span class="kw">affine.for</span> <span class="st">%ty</span> = <span class="nu">0</span> to <span class="nu">1</span> {
+    <span class="kw">airrt.dma_memcpy_nd</span>(<span class="st">%id, %x, %y, %buf</span>[...], [...], [...]) : ...
+  }
+}</pre>
+                    </div>
+                </div>
+
+                <div class="api-block">
+                    <div class="api-header">
+                        <span class="api-method conv">CONVERSION</span>
+                        <span class="api-name">-airrt-to-npu</span>
+                        <span class="api-desc">AIRRt → AIEX.npu instruction sequence</span>
+                    </div>
+                    <div class="api-body">
+                        <p>Converts the AIRRt runtime program into NPU-specific DMA instructions for the Ryzen AI
+                            platform. The affine loops and DMA calls become static <code>aiex.npu.dma_memcpy_nd</code>
+                            instructions with precomputed offsets and strides.</p>
+                        <pre><span class="cm">// Input: affine loops with airrt.dma_memcpy_nd</span>
+<span class="cm">// Output: static instruction sequence</span>
+<span class="kw">aiex.npu.dma_memcpy_nd</span>(<span class="nu">0</span>, <span class="nu">0</span>, <span class="st">%arg0</span>[<span class="nu">0</span>, <span class="nu">0</span>, <span class="nu">0</span>, <span class="nu">0</span>][<span class="nu">4</span>, <span class="nu">4</span>, <span class="nu">32</span>, <span class="nu">256</span>][<span class="nu">0</span>, <span class="nu">256</span>, <span class="nu">1024</span>])
+  {<span class="at">id</span> = <span class="nu">0</span> : <span class="ty">i64</span>, <span class="at">metadata</span> = <span class="at">@airMemcpyId19</span>} : <span class="ty">memref&lt;512x1024xi32&gt;</span>
+<span class="kw">aiex.npu.dma_memcpy_nd</span>(<span class="nu">0</span>, <span class="nu">0</span>, <span class="st">%arg0</span>[<span class="nu">0</span>, <span class="nu">0</span>, <span class="nu">128</span>, <span class="nu">0</span>][<span class="nu">4</span>, <span class="nu">4</span>, <span class="nu">32</span>, <span class="nu">256</span>][<span class="nu">0</span>, <span class="nu">256</span>, <span class="nu">1024</span>])
+  {<span class="at">id</span> = <span class="nu">1</span> : <span class="ty">i64</span>, <span class="at">metadata</span> = <span class="at">@airMemcpyId19</span>} : <span class="ty">memref&lt;512x1024xi32&gt;</span>
+<span class="cm">// ... (loop unrolled into static sequence)</span></pre>
+                        <table class="param-table">
+                            <tr>
+                                <th>Option</th>
+                                <th>Description</th>
+                            </tr>
+                            <tr>
+                                <td>-trace-size</td>
+                                <td>Trace buffer size in bytes for core/memtile profiling.</td>
+                            </tr>
+                            <tr>
+                                <td>-trace-offset</td>
+                                <td>DDR offset for trace buffer (appended to ddr_id=2).</td>
+                            </tr>
+                            <tr>
+                                <td>-output-elf</td>
+                                <td>ELF output mode: wraps output in configure/run ops.</td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="api-block">
+                    <div class="api-header">
+                        <span class="api-method conv">CONVERSION</span>
+                        <span class="api-name">-airrt-to-llvm</span>
+                        <span class="api-desc">AIRRt → LLVM dialect (host library)</span>
+                    </div>
+                    <div class="api-body">
+                        <p>Lowers AIRRt dialect to LLVM dialect function calls and data structures matching
+                            <code>air_host.h</code>. Generates globals with external linkage for segment/herd/DMA
+                            metadata. Changes here must be mirrored in the AIR runtime header.</p>
+                    </div>
+                </div>
+
+                <h3>Structural Conversion Passes</h3>
+                <table class="opt-table">
+                    <tr>
+                        <th>Pass</th>
+                        <th>Description</th>
+                    </tr>
+                    <tr>
+                        <td>-air-par-to-herd</td>
+                        <td>Convert <code>scf.parallel</code> / <code>affine.parallel</code> (1D or 2D) to
+                            <code>air.herd</code>. Options: <code>-depth</code> (which nesting level),
+                            <code>-first-dim</code> (x or y mapping).</td>
+                    </tr>
+                    <tr>
+                        <td>-air-par-to-segment</td>
+                        <td>Convert parallel loops to <code>air.segment</code>. Option: <code>-depth</code>.</td>
+                    </tr>
+                    <tr>
+                        <td>-air-par-to-launch</td>
+                        <td>Convert parallel loops to <code>air.launch</code>. Options: <code>-depth</code>,
+                            <code>-has-air-segment</code>.</td>
+                    </tr>
+                    <tr>
+                        <td>-air-copy-to-dma</td>
+                        <td>Convert <code>memcpy</code> style ops to <code>air.dma_memcpy_nd</code>. Optimizes data
+                            transfer via DMA.</td>
+                    </tr>
+                    <tr>
+                        <td>-air-insert-launch-around-herd</td>
+                        <td>Wraps orphaned <code>air.herd</code> in an <code>air.launch</code> (and optionally
+                            <code>air.segment</code>) if <code>-insert-segment</code> set.</td>
+                    </tr>
+                    <tr>
+                        <td>-air-linalg-to-func</td>
+                        <td>Replace linalg ops with calls to a precompiled object file. Option: <code>-link-with</code>.
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>-air-to-async</td>
+                        <td>Lower AIR dialect to std async ops.</td>
+                    </tr>
+                    <tr>
+                        <td>-air-split-devices</td>
+                        <td>Split input into one output file per <code>aie.device</code> op. Option:
+                            <code>-output-prefix</code>.</td>
+                    </tr>
+                    <tr>
+                        <td>-air-wrap-func-with-parallel</td>
+                        <td>Wrap a function body in <code>scf.parallel</code>. Option: <code>-loop-bounds</code>.</td>
+                    </tr>
+                </table>
+            </section>
+
+            <!-- E2E FLOW -->
+            <section class="section" id="e2e-flow">
+                <div class="section-id">06 — End-to-End Flow</div>
+                <h2>Complete Compilation Flow</h2>
+                <p>Here is the complete pipeline from a high-level linalg program to NPU binary, showing each pass and
+                    what it produces.</p>
+
+                <h3>Stage 1: Mapping Parallel Loops to AIR Hierarchy</h3>
+                <pre><span class="cm"># Start: linalg.matmul on tensors + scf.parallel tiling
+# Options: -air-par-to-herd -depth=1 -first-dim=0</span>
+mlir-opt input.mlir \
+  <span class="kw">-air-par-to-herd</span> \                     <span class="cm"># scf.parallel → air.herd</span>
+  <span class="kw">-air-insert-launch-around-herd</span> \        <span class="cm"># wrap herd in launch+segment</span>
+  <span class="kw">--insert-segment</span>                        <span class="cm"># add air.segment too</span>
+  -o stage1.mlir</pre>
+
+                <h3>Stage 2: Dependency Analysis and Optimization</h3>
+                <pre>mlir-opt stage1.mlir \
+  <span class="kw">-air-dependency</span> \                       <span class="cm"># extract CDFG, add async tokens</span>
+  <span class="kw">-canonicalize</span> \                          <span class="cm"># MLIR canonicalization</span>
+  <span class="kw">-air-dependency-canonicalize</span> \           <span class="cm"># transitive reduction on CDFG</span>
+  <span class="kw">-air-dependency-schedule-opt</span> \           <span class="cm"># detect broadcasts, optimize order</span>
+  <span class="kw">-air-fuse-channels</span> \                    <span class="cm"># merge compatible channel ops</span>
+  <span class="kw">-air-place-herds</span> <span class="kw">-num-rows</span>=<span class="nu">4</span> <span class="kw">-num-cols</span>=<span class="nu">4</span> \ <span class="cm"># tile placement</span>
+  -o stage2.mlir</pre>
+
+                <h3>Stage 3: Lower to AIE Dialect</h3>
+                <pre>mlir-opt stage2.mlir \
+  <span class="kw">-air-to-aie</span> \                           <span class="cm"># → aie.device + airrt metadata</span>
+    <span class="kw">-device</span>=npu1_1col \
+    <span class="kw">-use-objectfifo</span> \
+    <span class="kw">-generate-shim-dma</span> \
+  <span class="kw">-air-to-std</span> \                           <span class="cm"># → airrt control code (host)</span>
+  <span class="kw">-airrt-to-npu</span> \                         <span class="cm"># → aiex.npu instruction sequence</span>
+  -o stage3.mlir</pre>
+
+                <h3>Stage 4: Lower to LLVM and Compile (via aircc.py)</h3>
+                <pre><span class="cm"># aircc.py orchestrates all remaining steps:</span>
+aircc.py stage3.mlir \
+  -o my_kernel.a \               <span class="cm"># output static library</span>
+  --host-target x86_64 \         <span class="cm"># host architecture</span>
+  -num-rows 4 -num-cols 4
+
+<span class="cm"># Internally, aircc.py runs:
+# 1. airrt-to-llvm: AIRRt → LLVM dialect
+# 2. Bufferize remaining tensors
+# 3. Lower std dialects (linalg, scf, memref) → LLVM
+# 4. aie-translate: LLVM dialect → LLVM IR
+# 5. opt + clang: LLVM IR → .o
+# 6. aiecc.py on each AIE module: → .elf + C++ config code
+# 7. Link everything into my_kernel.a</span></pre>
+
+                <h3>Python API Flow</h3>
+                <pre><span class="kw">import</span> air.compiler.aircc.main <span class="kw">as</span> aircc
+<span class="kw">from</span> air.mlir.ir <span class="kw">import</span> Context, Module
+
+<span class="cm"># Load your AIR MLIR module</span>
+<span class="kw">with</span> Context() <span class="kw">as</span> ctx:
+    module = Module.parse(open(<span class="st">"my_design.air.mlir"</span>).read())
+
+<span class="cm"># Run the compiler driver</span>
+aircc_options = [
+    <span class="st">'my_design.air.mlir'</span>,
+    <span class="st">'--shared'</span>,
+    <span class="st">'-o'</span>, <span class="st">'my_kernel.so'</span>,
+    <span class="st">'-num-rows'</span>, <span class="st">'4'</span>,
+    <span class="st">'-num-cols'</span>, <span class="st">'4'</span>,
+]
+aircc.run(module, aircc_options)</pre>
+            </section>
+
+            <!-- AIRCC -->
+            <section class="section" id="aircc">
+                <h2>aircc.py — Compiler Driver</h2>
+
+                <pre><span class="cm">usage:</span> aircc [-h] [-o OUTPUT_FILE] [--tmpdir tmpdir] [-v]
+             [-row-offset N] [-col-offset N]
+             [-num-rows N] [-num-cols N]
+             [-cc CC] [--sysroot PATH] [--host-target ARCH]
+             [--shared] [-xbridge]
+             air_mlir_file
+
+positional:
+  air_mlir_file       AIR Dialect .mlir file (required)
+
+output:
+  -o OUTPUT_FILE      Output filename (.a or .so)
+  --shared            Generate .so (shared lib) instead of .a (static)
+
+placement:
+  -row-offset N       Default row offset for generated partitions
+  -col-offset N       Default column offset for generated partitions
+  -num-rows N         Number of rows for generated partitions
+  -num-cols N         Number of columns for generated partitions
+
+compilation:
+  -cc CC              Compiler to use (default: clang)
+  --sysroot PATH      Sysroot for cross-compilation
+  --host-target ARCH  Target architecture (e.g., aarch64-linux-gnu)
+  -xbridge            Pass --xbridge to aiecc (vs --no-xbridge)
+
+debug:
+  -v                  Verbose: trace all commands as executed
+  --tmpdir DIR        Directory for temporary intermediate files</pre>
+            </section>
+
+            <!-- EXAMPLES -->
+            <section class="section" id="ex-memcpy">
+                <div class="section-id">07 — Examples</div>
+                <h2>Example 1: Basic DMA Copy (L3 → L1)</h2>
+                <p>A 1x1 herd that copies a 1024-element vector from L3 DDR into an L1 tile buffer.</p>
+
+                <pre><span class="cm">// Full AIR program for a 1x1 copy kernel</span>
+<span class="kw">func.func</span> @copy(%<span class="st">src</span>: <span class="ty">memref&lt;1024xi32&gt;</span>, %<span class="st">dst</span>: <span class="ty">memref&lt;1024xi32&gt;</span>) {
+  %<span class="st">c1</span> = <span class="kw">arith.constant</span> <span class="nu">1</span> : <span class="ty">index</span>
+
+  <span class="kw">air.launch</span> (<span class="st">%iv</span>) <span class="kw">in</span> (<span class="st">%sz</span>=%<span class="st">c1</span>) {
+    <span class="kw">air.segment</span> {
+      <span class="kw">air.herd</span> <span class="at">@copy_herd</span> <span class="kw">tile</span>(%<span class="st">tx</span>, %<span class="st">ty</span>) <span class="kw">in</span> (%<span class="st">sx</span>=%<span class="st">c1</span>, %<span class="st">sy</span>=%<span class="st">c1</span>)
+          <span class="kw">args</span>(%<span class="st">in</span>=%<span class="st">src</span>, %<span class="st">out</span>=%<span class="st">dst</span>) : <span class="ty">memref&lt;1024xi32&gt;</span>, <span class="ty">memref&lt;1024xi32&gt;</span> {
+
+        <span class="cm">// Allocate 1KB L1 buffer</span>
+        %<span class="st">buf</span> = <span class="kw">memref.alloc</span>() : <span class="ty">memref&lt;1024xi32, 2&gt;</span>
+
+        <span class="cm">// DMA copy from L3 → L1</span>
+        <span class="kw">air.dma_memcpy_nd</span> (%<span class="st">buf</span>[] [] [], %<span class="st">in</span>[] [] [])
+            {<span class="at">id</span> = <span class="nu">1</span> : <span class="ty">i32</span>} : (<span class="ty">memref&lt;1024xi32, 2&gt;</span>, <span class="ty">memref&lt;1024xi32&gt;</span>)
+
+        <span class="cm">// DMA copy from L1 → L3 (write back)</span>
+        <span class="kw">air.dma_memcpy_nd</span> (%<span class="st">out</span>[] [] [], %<span class="st">buf</span>[] [] [])
+            {<span class="at">id</span> = <span class="nu">2</span> : <span class="ty">i32</span>} : (<span class="ty">memref&lt;1024xi32&gt;</span>, <span class="ty">memref&lt;1024xi32, 2&gt;</span>)
+
+        <span class="kw">memref.dealloc</span> %<span class="st">buf</span> : <span class="ty">memref&lt;1024xi32, 2&gt;</span>
+        <span class="kw">air.herd_terminator</span>
+      }
+      <span class="kw">air.segment_terminator</span>
+    }
+    <span class="kw">air.launch_terminator</span>
+  }
+  <span class="kw">return</span>
+}
+
+<span class="cm">// Compile:
+// aircc.py copy.mlir -o copy.a -num-rows 1 -num-cols 1</span></pre>
+            </section>
+
+            <section class="section" id="ex-matmul">
+                <h2>Example 2: Tiled Matrix Multiplication (4×4 Herd)</h2>
+                <p>A 4×4 herd of AIE cores performing tiled matrix multiplication with async DMA prefetching.</p>
+
+                <pre><span class="cm">// 128x128 matmul tiled across a 4x4 herd (each tile: 32x32 submatrix)</span>
+<span class="kw">func.func</span> @matmul(
+    %<span class="st">A</span>: <span class="ty">memref&lt;128x128xf32&gt;</span>, %<span class="st">B</span>: <span class="ty">memref&lt;128x128xf32&gt;</span>,
+    %<span class="st">C</span>: <span class="ty">memref&lt;128x128xf32&gt;</span>) {
+  %<span class="st">c4</span> = <span class="kw">arith.constant</span> <span class="nu">4</span> : <span class="ty">index</span>
+  %<span class="st">c32</span> = <span class="kw">arith.constant</span> <span class="nu">32</span> : <span class="ty">index</span>
+
+  <span class="kw">air.launch</span> (<span class="st">%l_iv</span>) <span class="kw">in</span> (%<span class="st">l_sz</span>=%<span class="st">c4</span>)
+      <span class="kw">args</span>(%<span class="st">a0</span>=%<span class="st">A</span>, %<span class="st">b0</span>=%<span class="st">B</span>, %<span class="st">c0</span>=%<span class="st">C</span>) : ... {
+    <span class="kw">air.segment</span> <span class="at">@seg</span> <span class="kw">args</span>(%<span class="st">a1</span>=%<span class="st">a0</span>, %<span class="st">b1</span>=%<span class="st">b0</span>, %<span class="st">c1</span>=%<span class="st">c0</span>) : ... {
+
+      <span class="cm">// 4x4 herd: %tx ∈ [0,4), %ty ∈ [0,4)</span>
+      <span class="kw">air.herd</span> <span class="at">@matmul_herd</span> <span class="kw">tile</span>(%<span class="st">tx</span>, %<span class="st">ty</span>) <span class="kw">in</span> (%<span class="st">sx</span>=%<span class="st">c4</span>, %<span class="st">sy</span>=%<span class="st">c4</span>)
+          <span class="kw">args</span>(%<span class="st">a</span>=%<span class="st">a1</span>, %<span class="st">b</span>=%<span class="st">b1</span>, %<span class="st">c</span>=%<span class="st">c1</span>) : ... {
+
+        <span class="cm">// L1 buffers for each tile's slice</span>
+        %<span class="st">tA</span> = <span class="kw">memref.alloc</span>() : <span class="ty">memref&lt;32x32xf32, 2&gt;</span>
+        %<span class="st">tB</span> = <span class="kw">memref.alloc</span>() : <span class="ty">memref&lt;32x32xf32, 2&gt;</span>
+        %<span class="st">tC</span> = <span class="kw">memref.alloc</span>() : <span class="ty">memref&lt;32x32xf32, 2&gt;</span>
+
+        <span class="cm">// Row offset = ty * 32, Col offset = tx * 32</span>
+        %<span class="st">row_off</span> = <span class="kw">affine.apply</span> <span class="at">#map</span>()[%<span class="st">ty</span>]  <span class="cm">// ty * 32</span>
+        %<span class="st">col_off</span> = <span class="kw">affine.apply</span> <span class="at">#map</span>()[%<span class="st">tx</span>]  <span class="cm">// tx * 32</span>
+
+        <span class="cm">// Load from L3 → L1 (parallel, covered by -air-dependency)</span>
+        <span class="kw">air.dma_memcpy_nd</span> (%<span class="st">tA</span>[] [] [], %<span class="st">a</span>[%<span class="st">row_off</span>, %<span class="st">c0</span>] [%<span class="st">c32</span>, %<span class="st">c128</span>] [%<span class="st">c128</span>, %<span class="st">c1</span>]) {<span class="at">id</span>=<span class="nu">1</span>:<span class="ty">i32</span>} : ...
+        <span class="kw">air.dma_memcpy_nd</span> (%<span class="st">tB</span>[] [] [], %<span class="st">b</span>[%<span class="st">c0</span>, %<span class="st">col_off</span>] [%<span class="st">c128</span>, %<span class="st">c32</span>] [%<span class="st">c128</span>, %<span class="st">c1</span>]) {<span class="at">id</span>=<span class="nu">2</span>:<span class="ty">i32</span>} : ...
+        <span class="kw">air.dma_memcpy_nd</span> (%<span class="st">tC</span>[] [] [], %<span class="st">c</span>[%<span class="st">row_off</span>, %<span class="st">col_off</span>] [%<span class="st">c32</span>, %<span class="st">c32</span>] [%<span class="st">c128</span>, %<span class="st">c1</span>]) {<span class="at">id</span>=<span class="nu">3</span>:<span class="ty">i32</span>} : ...
+
+        <span class="cm">// Compute 32x32 matmul on each core</span>
+        <span class="kw">linalg.matmul</span> <span class="kw">ins</span>(%<span class="st">tA</span>, %<span class="st">tB</span> : ...) <span class="kw">outs</span>(%<span class="st">tC</span> : ...)
+
+        <span class="cm">// Write result back to L3</span>
+        <span class="kw">air.dma_memcpy_nd</span> (%<span class="st">c</span>[%<span class="st">row_off</span>, %<span class="st">col_off</span>] [...], %<span class="st">tC</span>[] [] []) {<span class="at">id</span>=<span class="nu">4</span>:<span class="ty">i32</span>} : ...
+
+        <span class="kw">memref.dealloc</span> %<span class="st">tA</span>; <span class="kw">memref.dealloc</span> %<span class="st">tB</span>; <span class="kw">memref.dealloc</span> %<span class="st">tC</span>
+        <span class="kw">air.herd_terminator</span>
+      }
+      <span class="kw">air.segment_terminator</span>
+    }
+    <span class="kw">air.launch_terminator</span>
+  }
+  <span class="kw">return</span>
+}</pre>
+            </section>
+
+            <section class="section" id="ex-pipeline">
+                <h2>Example 3: Pipelined Double-Buffered Tiling</h2>
+                <p>Using <code>air.channel</code> for explicit ping-pong buffering between L3 feeder and L1 consumer.
+                    This is the high-performance pattern for streaming workloads.</p>
+
+                <pre><span class="cm">// Declare channels: one per tile in herd (4x1 here)</span>
+<span class="kw">air.channel</span> <span class="at">@chan_in</span>  [<span class="nu">4</span>, <span class="nu">1</span>]  <span class="cm">// one channel per column</span>
+<span class="kw">air.channel</span> <span class="at">@chan_out</span> [<span class="nu">4</span>, <span class="nu">1</span>]
+
+<span class="kw">func.func</span> @streaming(%<span class="st">input</span>: <span class="ty">memref&lt;1024xf32&gt;</span>, %<span class="st">output</span>: <span class="ty">memref&lt;1024xf32&gt;</span>) {
+  %<span class="st">c4</span> = <span class="kw">arith.constant</span> <span class="nu">4</span> : <span class="ty">index</span>
+  %<span class="st">c256</span> = <span class="kw">arith.constant</span> <span class="nu">256</span> : <span class="ty">index</span>
+  %<span class="st">c0</span> = <span class="kw">arith.constant</span> <span class="nu">0</span> : <span class="ty">index</span>
+  %<span class="st">c1</span> = <span class="kw">arith.constant</span> <span class="nu">1</span> : <span class="ty">index</span>
+
+  <span class="kw">air.launch</span> (<span class="st">%iv</span>) <span class="kw">in</span> (%<span class="st">sz</span>=%<span class="st">c1</span>) <span class="kw">args</span>(%<span class="st">in</span>=%<span class="st">input</span>, %<span class="st">out</span>=%<span class="st">output</span>) : ... {
+    <span class="kw">air.segment</span> <span class="at">@seg</span> <span class="kw">args</span>(%<span class="st">in</span>=%<span class="st">in</span>, %<span class="st">out</span>=%<span class="st">out</span>) : ... {
+
+      <span class="cm">// === FEEDER (segment-level, runs on shim/host DMA) ===</span>
+      <span class="kw">scf.for</span> %<span class="st">col</span> = %<span class="st">c0</span> to %<span class="st">c4</span> step %<span class="st">c1</span> {
+        %<span class="st">off</span> = <span class="kw">arith.muli</span> %<span class="st">col</span>, %<span class="st">c256</span> : <span class="ty">index</span>
+        <span class="cm">// Push 256 floats to each column's channel</span>
+        <span class="kw">air.channel.put</span> <span class="at">@chan_in</span>[%<span class="st">col</span>, %<span class="st">c0</span>]
+            (%<span class="st">in</span>[%<span class="st">off</span>][%<span class="st">c256</span>][%<span class="st">c1</span>]) : (<span class="ty">memref&lt;1024xf32&gt;</span>)
+      }
+
+      <span class="cm">// === CONSUMER (herd, runs on AIE cores) ===</span>
+      <span class="kw">air.herd</span> <span class="at">@proc_herd</span> <span class="kw">tile</span>(%<span class="st">tx</span>, %<span class="st">ty</span>) <span class="kw">in</span> (%<span class="st">sx</span>=%<span class="st">c4</span>, %<span class="st">sy</span>=%<span class="st">c1</span>)
+          <span class="kw">args</span>(%<span class="st">res</span>=%<span class="st">out</span>) : ... {
+
+        <span class="cm">// L1 ping-pong buffers (allocated and managed by -air-ping-pong-transform)</span>
+        %<span class="st">ping</span> = <span class="kw">memref.alloc</span>() : <span class="ty">memref&lt;256xf32, 2&gt;</span>
+        %<span class="st">pong</span> = <span class="kw">memref.alloc</span>() : <span class="ty">memref&lt;256xf32, 2&gt;</span>
+
+        <span class="cm">// Receive from channel (tile-indexed)</span>
+        <span class="kw">air.channel.get</span> <span class="at">@chan_in</span>[%<span class="st">tx</span>, %<span class="st">ty</span>] (%<span class="st">ping</span>[] [] []) : (<span class="ty">memref&lt;256xf32, 2&gt;</span>)
+        <span class="kw">air.channel.get</span> <span class="at">@chan_in</span>[%<span class="st">tx</span>, %<span class="st">ty</span>] (%<span class="st">pong</span>[] [] []) : (<span class="ty">memref&lt;256xf32, 2&gt;</span>)
+
+        <span class="cm">// After -air-ping-pong-transform: gets interleaved with compute</span>
+        <span class="kw">linalg.generic</span> {... elementwise ...} <span class="kw">ins</span>(%<span class="st">ping</span>) <span class="kw">outs</span>(%<span class="st">res_slice</span>)
+
+        <span class="kw">air.herd_terminator</span>
+      }
+      <span class="kw">air.segment_terminator</span>
+    }
+    <span class="kw">air.launch_terminator</span>
+  }
+  <span class="kw">return</span>
+}</pre>
+            </section>
+
+            <section class="section" id="ex-broadcast">
+                <h2>Example 4: Broadcasting with Async Dependency</h2>
+                <p>Demonstrating the <code>broadcast_pattern</code> annotation and how the scheduler detects that the
+                    same row of matrix A is shared across all column tiles.</p>
+
+                <pre><span class="cm">// After -air-dependency-schedule-opt:
+// DMA for A is tagged broadcast_pattern — sent once, used by all 8 column tiles</span>
+
+<span class="at">#set_A</span> = <span class="kw">affine_set</span>&lt;(d0, d1)[s0] : (d0 - s0 == 0, d1 >= 0, -d1 + 7 >= 0)&gt;
+<span class="at">#set_B</span> = <span class="kw">affine_set</span>&lt;(d0, d1)[s0] : (d0 >= 0, -d0 + 7 >= 0, d1 - s0 == 0)&gt;
+
+<span class="cm">// In the herd body (8x8 matmul herd):</span>
+<span class="st">%4</span> = <span class="kw">air.dma_memcpy_nd</span> <span class="at">async</span> [<span class="st">%tA, %loop_tok</span>]
+    (%<span class="st">localA</span>[] [] [], %<span class="st">A</span>[%<span class="st">row_off</span>, %<span class="st">k</span>] [%<span class="st">c16</span>, %<span class="st">c32</span>] [%<span class="st">c128</span>, %<span class="st">c1</span>])
+    {<span class="at">broadcast_pattern</span> = <span class="at">#set_A</span>, <span class="at">id</span> = <span class="nu">1</span> : <span class="ty">i32</span>}
+    : (<span class="ty">memref&lt;16x32xf32, 2&gt;</span>, <span class="ty">memref&lt;128x128xf32&gt;</span>)
+<span class="cm">// broadcast_pattern #set_A says: tiles where d0==s0 (same row) share this DMA
+// → hardware emits 1 transfer, fan-out to 8 L1 memories via AIE flow routing</span>
+
+<span class="st">%5</span> = <span class="kw">air.dma_memcpy_nd</span> <span class="at">async</span> [<span class="st">%tB, %loop_tok</span>]
+    (%<span class="st">localB</span>[] [] [], %<span class="st">B</span>[%<span class="st">k</span>, %<span class="st">col_off</span>] [%<span class="st">c32</span>, %<span class="st">c64</span>] [%<span class="st">c128</span>, %<span class="st">c1</span>])
+    {<span class="at">broadcast_pattern</span> = <span class="at">#set_B</span>, <span class="at">id</span> = <span class="nu">2</span> : <span class="ty">i32</span>}
+    : (<span class="ty">memref&lt;32x64xf32, 2&gt;</span>, <span class="ty">memref&lt;128x128xf32&gt;</span>)
+<span class="cm">// broadcast_pattern #set_B: tiles where d1==s0 (same col) share this DMA</span></pre>
+
+                <div class="tip success">
+                    <div class="tip-icon">✅</div>
+                    <div><strong>Performance impact:</strong> Without broadcast detection, each of 8 tiles would
+                        independently DMA the same data — 8× the bandwidth. With broadcast, the hardware uses a single
+                        DMA + multicast flow, reducing DDR bandwidth by up to 8×.</div>
+                </div>
+            </section>
+
+            <!-- AIR RUNNER -->
+            <section class="section" id="air-runner">
+                <div class="section-id">08 — Tools</div>
+                <h2>AIR Runner — Performance Simulator</h2>
+                <p><code>air-runner</code> simulates concurrent AIE execution and estimates performance without physical
+                    hardware. It models the async dependency graph and DMA timing.</p>
+
+                <pre>air-runner [options] &lt;input.mlir&gt;
+
+<span class="cm">Required:</span>
+  -f &lt;function&gt;     Top-level function name to simulate
+  -m &lt;model.json&gt;   Hardware model JSON file (timing parameters)
+
+<span class="cm">Optional:</span>
+  -o &lt;output.json&gt;  Output file for simulation results
+  -v                Verbose output (shows per-op timing)
+  --version         Print version
+
+<span class="cm">Typical usage:</span>
+air-runner -f matmul -m npu1.json -o results.json matmul.async.mlir</pre>
+
+                <p>The JSON model file specifies per-operation latencies for the target device. The simulator replays
+                    the CDFG and estimates total execution time, DMA utilization, and compute vs. memory overlap.</p>
+            </section>
+
+            <!-- AIRRT DIALECT -->
+            <section class="section" id="airrt">
+                <h2>AIRRt Dialect</h2>
+                <p>The AIRRt (AIR Runtime) dialect carries metadata about the compiled program and generates the
+                    host-side control interface. It's an intermediate between AIR dialect and LLVM IR.</p>
+
+                <h3>Key Operations</h3>
+                <table class="opt-table">
+                    <tr>
+                        <th>Operation</th>
+                        <th>Description</th>
+                    </tr>
+                    <tr>
+                        <td>airrt.module_metadata</td>
+                        <td>Top-level container for segment/herd metadata. Describes the entire program's resource
+                            allocation.</td>
+                    </tr>
+                    <tr>
+                        <td>airrt.segment_metadata</td>
+                        <td>Metadata for one AIE segment: symbol name, contained herds.</td>
+                    </tr>
+                    <tr>
+                        <td>airrt.herd_metadata</td>
+                        <td>Per-herd metadata: DMA allocation table (channel, col, row, id, location).</td>
+                    </tr>
+                    <tr>
+                        <td>airrt.herd_load</td>
+                        <td>Host-side: load/initialize a herd configuration. Returns an i64 handle.</td>
+                    </tr>
+                    <tr>
+                        <td>airrt.dma_memcpy_nd</td>
+                        <td>Host-side runtime DMA call. Arguments match the AIR dialect version plus runtime routing
+                            metadata.</td>
+                    </tr>
+                </table>
+
+                <pre><span class="cm">// Example AIRRt metadata generated by air-to-aie</span>
+<span class="kw">airrt.module_metadata</span> {
+  <span class="kw">airrt.segment_metadata</span> <span class="kw">attributes</span> {<span class="at">sym_name</span> = <span class="st">"segment_0"</span>} {
+    <span class="kw">airrt.herd_metadata</span> {
+      <span class="at">dma_allocations</span> = [
+        {<span class="at">channel</span> = <span class="nu">2</span> : <span class="ty">i64</span>, <span class="at">col</span> = <span class="nu">0</span> : <span class="ty">i64</span>, <span class="at">id</span> = <span class="nu">1</span> : <span class="ty">i64</span>,
+         <span class="at">location</span> = <span class="nu">2</span> : <span class="ty">i64</span>, <span class="at">row</span> = <span class="nu">0</span> : <span class="ty">i64</span>}
+      ],
+      <span class="at">sym_name</span> = <span class="st">"herd_0"</span>
+    }
+  }
+}</pre>
+            </section>
+
+            <!-- PYTHON API -->
+            <section class="section" id="python-api">
+                <h2>Python API Quick Reference</h2>
+
+                <pre><span class="kw">from</span> air.mlir.ir <span class="kw">import</span> Context, Module, InsertionPoint, Location
+<span class="kw">from</span> air.mlir.dialects <span class="kw">import</span> func, arith, memref, scf, linalg
+<span class="kw">from</span> air.dialects.air <span class="kw">import</span> (
+    LaunchOp, SegmentOp, HerdOp, DmaMemcpyNdOp,
+    ChannelOp, ChannelPutOp, ChannelGetOp,
+    WaitAllOp, ExecuteOp, HerdTerminatorOp
+)
+<span class="kw">import</span> air.compiler.aircc.main <span class="kw">as</span> aircc
+
+<span class="cm"># Build an AIR module programmatically</span>
+<span class="kw">with</span> Context() <span class="kw">as</span> ctx, Location.unknown():
+    module = Module.create()
+    <span class="kw">with</span> InsertionPoint(module.body):
+        
+        <span class="cm"># Define function</span>
+        @func.FuncOp.from_py_func(...)
+        <span class="kw">def</span> <span class="fn">my_kernel</span>(src, dst):
+            c1 = arith.ConstantOp(...)
+            
+            <span class="cm"># Create launch</span>
+            launch = LaunchOp(sizes=[c1], operands=[src, dst])
+            <span class="kw">with</span> InsertionPoint(launch.body.blocks[<span class="nu">0</span>]):
+                segment = SegmentOp(...)
+                <span class="kw">with</span> InsertionPoint(segment.body.blocks[<span class="nu">0</span>]):
+                    herd = HerdOp(sizes=[c1, c1], ...)
+                    <span class="kw">with</span> InsertionPoint(herd.body.blocks[<span class="nu">0</span>]):
+                        <span class="cm"># ... herd body ...</span>
+                        HerdTerminatorOp()
+
+<span class="cm"># Run compiler</span>
+aircc.run(module, [<span class="st">'kernel.mlir'</span>, <span class="st">'--shared'</span>, <span class="st">'-o'</span>, <span class="st">'kernel.so'</span>])</pre>
+
+                <h3>Key Python Modules</h3>
+                <table class="param-table">
+                    <tr>
+                        <th>Module</th>
+                        <th>Contents</th>
+                    </tr>
+                    <tr>
+                        <td>air.dialects.air</td>
+                        <td>Python bindings for all AIR dialect ops (LaunchOp, HerdOp, etc.)</td>
+                    </tr>
+                    <tr>
+                        <td>air.dialects.airrt</td>
+                        <td>Bindings for AIRRt dialect ops</td>
+                    </tr>
+                    <tr>
+                        <td>air.compiler.aircc.main</td>
+                        <td>aircc compiler driver Python API (<code>aircc.run(module, opts)</code>)</td>
+                    </tr>
+                    <tr>
+                        <td>air.mlir.ir</td>
+                        <td>Core MLIR Python bindings (Module, Context, InsertionPoint)</td>
+                    </tr>
+                    <tr>
+                        <td>air.mlir.passmanager</td>
+                        <td>Python interface to the MLIR pass manager for running passes programmatically</td>
+                    </tr>
+                </table>
+            </section>
+
+            <!-- QUICK REFERENCE CHEATSHEET -->
+            <section class="section" id="cheatsheet">
+                <div class="section-id">09 — Quick Reference</div>
+                <h2>Pass Cheatsheet</h2>
+
+                <h3>Recommended Optimization Pipeline Order</h3>
+                <pre><span class="cm"># 1. Structure: map parallel loops to AIR hierarchy</span>
+-air-par-to-herd -depth=-1
+-air-par-to-segment -depth=-1
+-air-insert-launch-around-herd -insert-segment
+
+<span class="cm"># 2. Dependency: extract and optimize CDFG</span>
+-air-dependency
+-canonicalize
+-air-dependency-canonicalize
+-air-dependency-schedule-opt
+
+<span class="cm"># 3. Memory: optimize data movement</span>
+-air-fuse-channels
+-air-specialize-channel-wrap-and-stride
+-air-label-scf-for-in-air-segment-ping-pong   <span class="cm"># label candidates</span>
+-air-ping-pong-transform -keep-memref-dealloc  <span class="cm"># apply double-buffering</span>
+
+<span class="cm"># 4. Placement</span>
+-air-place-herds -num-rows 4 -num-cols 4
+
+<span class="cm"># 5. Lower to AIE</span>
+-air-to-aie -device=npu1_1col -use-objectfifo -generate-shim-dma
+-air-to-std
+-airrt-to-npu
+
+<span class="cm"># 6. Final codegen (via aircc.py, or manually:)</span>
+-airrt-to-llvm
+# Then: aie-translate → opt → clang → aiecc.py → link</pre>
+
+                <h3>Memory Space Quick Reference</h3>
+                <table class="param-table">
+                    <tr>
+                        <th>What you want</th>
+                        <th>Code</th>
+                    </tr>
+                    <tr>
+                        <td>Allocate L1 tile buffer</td>
+                        <td><code>memref.alloc() : memref&lt;Nxf32, 2&gt;</code></td>
+                    </tr>
+                    <tr>
+                        <td>Allocate L2 segment buffer</td>
+                        <td><code>memref.alloc() : memref&lt;Nxf32, 1&gt;</code></td>
+                    </tr>
+                    <tr>
+                        <td>Copy L3→L1</td>
+                        <td><code>air.dma_memcpy_nd (%l1[] [] [], %l3[off][sz][str])</code></td>
+                    </tr>
+                    <tr>
+                        <td>Copy L2→L1</td>
+                        <td><code>air.dma_memcpy_nd (%l1[] [] [], %l2[off][sz][str])</code></td>
+                    </tr>
+                    <tr>
+                        <td>Stream (channel) L3→L1</td>
+                        <td><code>air.channel.put @ch(%l3[…])</code> + <code>air.channel.get @ch(%l1[])</code></td>
+                    </tr>
+                    <tr>
+                        <td>Tile-specific code</td>
+                        <td><code>affine.if #set[%tx, %ty] { ... }</code></td>
+                    </tr>
+                </table>
+
+                <h3>Common Errors & Fixes</h3>
+                <table class="param-table">
+                    <tr>
+                        <th>Error / Issue</th>
+                        <th>Fix</th>
+                    </tr>
+                    <tr>
+                        <td>Herd without launch/segment</td>
+                        <td>Run <code>-air-insert-launch-around-herd -insert-segment</code></td>
+                    </tr>
+                    <tr>
+                        <td>Missing async tokens</td>
+                        <td>Run <code>-air-dependency</code> before <code>-air-dependency-canonicalize</code></td>
+                    </tr>
+                    <tr>
+                        <td>L1 alloc too large</td>
+                        <td>Reduce tile size; AIE tile memory is 32–128KB depending on device</td>
+                    </tr>
+                    <tr>
+                        <td>DMA channel exhaustion</td>
+                        <td>Run <code>-air-fuse-channels</code> or reduce concurrently active DMAs per tile</td>
+                    </tr>
+                    <tr>
+                        <td>Wrong placement</td>
+                        <td>Add <code>x_loc</code>/<code>y_loc</code>/<code>x_size</code>/<code>y_size</code> to
+                            <code>air.segment</code> or use <code>-air-place-herds</code></td>
+                    </tr>
+                </table>
+            </section>
+
+            <!-- FOOTER -->
+            <div style="padding:40px 64px; border-top: 1px solid var(--border); color: var(--muted); font-size:13px;">
+                <p>Generated from <strong>MLIR-AIR</strong> official documentation at <a
+                        href="https://xilinx.github.io/mlir-air/"
+                        style="color:var(--accent)">xilinx.github.io/mlir-air</a> and <a
+                        href="https://github.com/Xilinx/mlir-air"
+                        style="color:var(--accent)">github.com/Xilinx/mlir-air</a>. Reference paper: <em>"From Loop
+                        Nests to Silicon: Mapping AI Workloads onto AMD NPUs with MLIR-AIR"</em> — arXiv:2510.14871.
+                    Copyright © 2019–2023 Advanced Micro Devices, Inc. MIT License.</p>
+            </div>
+
+        </main>
+    </div>
+
+    <script>
+        // Smooth scroll + active nav
+        document.querySelectorAll('.nav-item').forEach(a => {
+            a.addEventListener('click', e => {
+                e.preventDefault();
+                const id = a.getAttribute('href').slice(1);
+                document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
+                document.querySelectorAll('.nav-item').forEach(x => x.classList.remove('active'));
+                a.classList.add('active');
+            });
+        });
+        // Highlight on scroll
+        const observer = new IntersectionObserver(entries => {
+            entries.forEach(e => {
+                if (e.isIntersecting) {
+                    const id = e.target.id;
+                    document.querySelectorAll('.nav-item').forEach(a => {
+                        a.classList.toggle('active', a.getAttribute('href') === '#' + id);
+                    });
+                }
+            });
+        }, { threshold: 0.3 });
+        document.querySelectorAll('[id]').forEach(el => observer.observe(el));
+    </script>
+</body>
+
+</html>

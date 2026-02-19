@@ -32,11 +32,14 @@ module {
     return
   }
    func.func @test_matmul() {
+    // constants
     %0 = llvm.mlir.constant(0 : i32) : i32
     %c0 = arith.constant 0 : index
     %c1 = arith.constant 1 : index
     %c64 = arith.constant 64 : index
     %c4096 = arith.constant 4096 : index
+
+    // Host side memory allocation (CPU)
     %alloc = memref.alloc() : memref<4096x4096xf32>
     %alloc_0 = memref.alloc() : memref<4096x4096xf32>
     %alloc_1 = memref.alloc() : memref<4096x4096xf32>
@@ -50,27 +53,41 @@ module {
     %4 = llvm.inttoptr %2 : i64 to !llvm.ptr
     %5 = llvm.inttoptr %3 : i64 to !llvm.ptr
     %6 = arith.index_cast %c4096 : index to i64
+    
+    // Initialize the GPU
     llvm.call @mgpuInit(%4, %5, %6, %6) : (!llvm.ptr, !llvm.ptr, i64, i64) -> ()
+    
+    // Allocate memory on the GPU
     %memref = gpu.alloc  () : memref<4096x4096xf32>
     gpu.memcpy  %memref, %alloc : memref<4096x4096xf32>, memref<4096x4096xf32>
     %memref_5 = gpu.alloc  () : memref<4096x4096xf32>
     gpu.memcpy  %memref_5, %alloc_0 : memref<4096x4096xf32>, memref<4096x4096xf32>
     %memref_6 = gpu.alloc  () : memref<4096x4096xf32>
     gpu.memcpy  %memref_6, %alloc_1 : memref<4096x4096xf32>, memref<4096x4096xf32>
+
+    // Create a stream and events
     %7 = llvm.call @mgpuStreamCreate() : () -> !llvm.ptr
     %8 = llvm.call @mgpuEventCreate() : () -> !llvm.ptr
     %9 = llvm.call @mgpuEventCreate() : () -> !llvm.ptr
     llvm.call @mgpuEventRecord(%8, %7) : (!llvm.ptr, !llvm.ptr) -> ()
+
+    // Launch the kernel
     call @forward(%memref, %memref_5, %memref_6) : (memref<4096x4096xf32>, memref<4096x4096xf32>, memref<4096x4096xf32>) -> ()
+    
+    // Record the end event and synchronize
     llvm.call @mgpuEventRecord(%9, %7) : (!llvm.ptr, !llvm.ptr) -> ()
     llvm.call @mgpuEventSynchronize(%9) : (!llvm.ptr) -> ()
     %c1_i32 = arith.constant 1 : i32
     %10 = llvm.alloca %c1_i32 x f32 : (i32) -> !llvm.ptr
     %c0_i32 = arith.constant 0 : i32
     %11 = llvm.call @mgpuEventElapsedTime(%10, %8, %9) : (!llvm.ptr, !llvm.ptr, !llvm.ptr) -> i32
+    
+    // Destroy the stream and events
     llvm.call @mgpuStreamDestroy(%7) : (!llvm.ptr) -> ()
     llvm.call @mgpuEventDestroy(%8) : (!llvm.ptr) -> ()
     llvm.call @mgpuEventDestroy(%9) : (!llvm.ptr) -> ()
+    
+    // Copy the result back to the host
     gpu.memcpy  %alloc_1, %memref_6 : memref<4096x4096xf32>, memref<4096x4096xf32>
     %intptr_7 = memref.extract_aligned_pointer_as_index %alloc_1 : memref<4096x4096xf32> -> index
     %intptr_8 = memref.extract_aligned_pointer_as_index %alloc : memref<4096x4096xf32> -> index
@@ -84,10 +101,15 @@ module {
     llvm.call @mgpuCheckOutput(%15, %16, %17, %6, %6) : (!llvm.ptr, !llvm.ptr, !llvm.ptr, i64, i64) -> ()
     return
   }
+
+  // Kernel function
   func.func @forward(%arg0: memref<4096x4096xf32>, %arg1: memref<4096x4096xf32>, %arg2: memref<4096x4096xf32>) {
     %c32 = arith.constant 32 : index
+    // 
     air.launch (%arg3, %arg4) in (%arg5=%c32, %arg6=%c32) args(%arg7=%arg0, %arg8=%arg1, %arg9=%arg2) : memref<4096x4096xf32>, memref<4096x4096xf32>, memref<4096x4096xf32> {
       air.segment @forward_0  args(%arg10=%arg3, %arg11=%arg4, %arg12=%arg7, %arg13=%arg8, %arg14=%arg9) : index, index, memref<4096x4096xf32>, memref<4096x4096xf32>, memref<4096x4096xf32> {
+      
+        // Constants
         %c1 = arith.constant 1 : index
         %c4 = arith.constant 4 : index
         %c128 = arith.constant 128 : index
@@ -104,12 +126,17 @@ module {
         %0 = affine.apply #map()[%arg11]
         %1 = affine.apply #map()[%arg10]
         %c64 = arith.constant 64 : index
+
+        // Allocate local memory inside a PE and initialize it with 0.0
         %arg118 = memref.alloc() : memref<8xf32, 2>
         %arg119 = memref.alloc() : memref<8xf32, 2>
         %arg120 = memref.alloc() : memref<64xf32, 2>
         scf.for %i = %c0 to %c64 step %c1 {
            memref.store %cst, %arg120[%i] : memref<64xf32, 2>
         }
+
+
+        // loop over the global memory in tiles of 128x128
         scf.for %arg15 = %c0 to %c4096 step %c8 {
           %alloc = memref.alloc() : memref<128x128xf32, 1>
           %alloc_1 = memref.alloc() : memref<128x8xf32, 1>
@@ -143,13 +170,17 @@ module {
           }
           gpu.barrier
           air.herd @herd_0  tile (%arg31, %arg32) in (%arg33=%c256, %arg34=%c1) args(%arg16=%alloc_1, %arg17=%alloc_2, %arg18=%arg118, %arg19=%arg119, %arg20=%arg120) : memref<128x8xf32, 1>, memref<8x128xf32, 1>, memref<8xf32, 2>, memref<8xf32, 2>, memref<64xf32, 2> {
+            // constants
             %c128_4 = arith.constant 128 : index
             %c0_5 = arith.constant 0 : index
             %c1_10 = arith.constant 1 : index
             %c16 = arith.constant 16 : index
             %c8_6 = arith.constant 8 : index
+            // affine maps applied, layouts applied on input data.
             %2 = affine.apply #map1()[%arg31]
             %3 = affine.apply #map1()[%arg32]
+
+            // loop over ? 
             scf.for %arg22 = %c0_5 to %c8_6 step %c1_10 {
               %c0_13 = arith.constant 0 : index
               %c1_14 = arith.constant 1 : index
@@ -157,8 +188,8 @@ module {
                   %6 = arith.remsi %arg31, %c16 : index
                   %8 = arith.muli %6, %c8_6 : index
                   %idx = arith.addi %8, %arg23 : index
-                  %13 = memref.load %arg16[%idx, %arg22] : memref<128x8xf32, 1>
-                  memref.store %13, %arg18[%arg23] : memref<8xf32, 2>
+                  %13 = memref.load %arg16[%idx, %arg22] : memref<128x8xf32, 1> // do operations on tile local memory(L1)
+                  memref.store %13, %arg18[%arg23] : memref<8xf32, 2> // Later copy from tile memory into shared memory(L2)
               }
               scf.for %arg23 = %c0_13 to %c8_6 step %c1_14 {
                 %6 = arith.remsi %arg31, %c16 : index
