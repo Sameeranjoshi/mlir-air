@@ -5,6 +5,7 @@
 set(CONVERSION_SOURCES
   ConvertToAIRPass.cpp
   AIRToAsyncPass.cpp
+  AIRToCSLPass.cpp
   Passes.cpp
 )
 
