@@ -403,6 +403,89 @@ Compute inside `csl.func` and `csl.task` bodies uses standard MLIR (`arith`, `sc
 
 ---
 
+## 10. Phase 2 Implementation: CSL Dialect Prototype (v3)
+
+The `csl` dialect is implemented as a single MLIR dialect (`csl`) with ops organized into six conceptual sub-dialect categories via separate TableGen files.
+
+### 10.1 File Structure
+
+```
+mlir/include/air/Dialect/CSL/
+  CSLBase.td              -- Dialect def, types (color, dsd, imported_module), enums (Direction, DsdKind)
+  CSLLayoutOps.td         -- csl.layout, csl.set_rectangle
+  CSLPlacementOps.td      -- csl.set_tile_code
+  CSLRoutingOps.td        -- csl.color, csl.route
+  CSLKernelOps.td         -- csl.func, csl.task, csl.return, csl.var
+  CSLDataMovementOps.td   -- csl.get_mem_dsd, csl.get_fab_dsd, csl.mov
+  CSLRuntimeOps.td        -- csl.import_module, csl.export_name, csl.export_symbol,
+                              csl.comptime, csl.module, csl.param
+  CSLOps.td               -- Top-level include of all the above
+  CSLDialect.h            -- C++ dialect class + type declarations
+  CSLOps.h                -- Generated + custom op declarations
+  CMakeLists.txt
+
+mlir/lib/Dialect/CSL/IR/
+  CSLDialect.cpp          -- Dialect registration, type parser/printer
+  CSLOps.cpp              -- Custom op parsers (csl.func, csl.task)
+  CMakeLists.txt
+
+mlir/test/Dialect/CSL/
+  layout_ops.mlir         -- Layout op round-trip tests
+  placement_ops.mlir      -- Placement op round-trip tests
+  routing_ops.mlir        -- Routing op round-trip tests
+  kernel_ops.mlir         -- Kernel op round-trip tests
+  datamovement_ops.mlir   -- Data movement op round-trip tests
+  runtime_ops.mlir        -- Runtime op round-trip tests
+  complete_program.mlir   -- Integration test: full CSL program structure
+```
+
+### 10.2 CSL Types
+
+| Type | MLIR syntax | Purpose |
+|---|---|---|
+| `ColorType` | `!csl.color` | Communication color ID |
+| `DsdType` | `!csl.dsd` | Data Structure Descriptor handle |
+| `ImportedModuleType` | `!csl.imported_module` | Imported CSL module reference |
+
+### 10.3 CSL Enums
+
+| Enum | Values | Purpose |
+|---|---|---|
+| `Direction` | NORTH, SOUTH, EAST, WEST, RAMP | Fabric routing direction |
+| `DsdKind` | mem1d, mem2d, fabin, fabout | DSD backing type |
+
+### 10.4 Op Summary by Sub-Dialect
+
+| Category | Op | CSL Equivalent |
+|---|---|---|
+| Layout | `csl.layout { }` | `layout { }` |
+| Layout | `csl.set_rectangle W, H` | `@set_rectangle(W, H)` |
+| Placement | `csl.set_tile_code X, Y file("f.csl")` | `@set_tile_code(X, Y, "f.csl", ...)` |
+| Routing | `csl.color ID : !csl.color` | Color declaration |
+| Routing | `csl.route %c dir(DIR)` | Route configuration |
+| Kernel | `csl.func @name() { }` | `fn name() void { }` |
+| Kernel | `csl.task @name() color(ID)` | `task name() void { }` + `@bind_*_task` |
+| Kernel | `csl.return` | Return from func/task |
+| Kernel | `csl.var @name : type` | `var name: [N]T` |
+| DataMovement | `csl.get_mem_dsd %buf, %len` | `@get_dsd(mem1d_dsd, ...)` |
+| DataMovement | `csl.get_fab_dsd kind %c, %len` | `@get_dsd(fabin_dsd/fabout_dsd, ...)` |
+| DataMovement | `csl.mov %dst, %src` | `@mov32(dst, src)` |
+| Runtime | `csl.import_module "name"` | `@import_module("name", ...)` |
+| Runtime | `csl.export_name "name" : type` | `@export_name("name", type, ...)` |
+| Runtime | `csl.export_symbol @sym` | `@export_symbol(sym)` |
+| Runtime | `csl.comptime { }` | `comptime { }` |
+| Runtime | `csl.module @name { }` | PE program file |
+| Runtime | `csl.param @name : type` | `param name: type;` |
+
+### 10.5 Coordination with `air-translate`
+
+The dialect defined here provides the MLIR IR that the translator will consume. The separation is clean:
+
+- **This work (dialect)**: Defines `csl.*` MLIR ops, their syntax, semantics, and verification. Does NOT emit any CSL text.
+- **Translator work**: Walks `csl.*` ops and emits syntactically valid CSL source files (`layout.csl`, `pe_program.csl`, `run.py`).
+
+---
+
 ## Revision History
 
 | Date | Change |
@@ -410,3 +493,4 @@ Compute inside `csl.func` and `csl.task` bodies uses standard MLIR (`arith`, `sc
 | 2025-02-20 | v0: Initial CSL text emitter implemented (`air-to-csl` pass). |
 | 2025-02-21 | v1: Design document created. Analyzed TL paper, compared AIE/CSL/TT models, proposed TDF dialect with phased plan. |
 | 2025-02-21 | v2: Revised plan to CSL-first approach. Adopted `mlir-translate` pattern for code emission. Defined concrete CSL dialect op list. Deferred multi-backend TDF to Phase 3+. |
+| 2025-02-22 | v3: Phase 2 implementation begun. CSL dialect prototype with 6 sub-dialect categories (layout, placement, routing, kernel, data movement, runtime), 3 custom types, 2 enums, 16 operations. FileCheck tests for all categories. |

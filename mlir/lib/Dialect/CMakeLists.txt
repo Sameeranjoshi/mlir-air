@@ -1,6 +1,7 @@
-# Copyright (C) 2022, Xilinx Inc. All rights reserved.
+g# Copyright (C) 2022, Xilinx Inc. All rights reserved.
 # Copyright (C) 2022, Advanced Micro Devices, Inc. All rights reserved.
 # SPDX-License-Identifier: MIT
 
 add_subdirectory(AIR)
 add_subdirectory(AIRRt)
+add_subdirectory(CSL)
