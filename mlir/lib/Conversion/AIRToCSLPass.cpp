@@ -3,6 +3,11 @@
 // This pass lowers AIR dialect operations (air.launch, air.segment, air.herd)
 // to Cerebras CSL text files: layout.csl, pe_program.csl, and run.py.
 //
+// NOTE: This pass is currently kept for reference and later use. Our modern
+// pipeline should lower AIR to the newly refined CSL MLIR Dialect 
+// (csl.spatial_placement, csl.code_region, etc.), and from there an MLIR 
+// Translation pass can generate the CSL native code.
+//
 //===----------------------------------------------------------------------===//
 
 #include "air/Conversion/PassDetail.h"

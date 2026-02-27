@@ -1,3 +1,5 @@
+# Comprehensive AIR Documentation
+
 # MLIR-AIR API Reference
 ### Operations · Passes · Examples · Optimization Diffs · Test Suite
 
@@ -111,7 +113,7 @@ air.launch args(%a = %val) : memref<Nxf32> {
 
 #### Human explanation
 
-Think of `air.launch` as "calling the GPU kernel". Everything inside is one device invocation. The optional iteration space is host-side batching (like calling the same work N times in a loop) — **not** AIE tile parallelism. Tile parallelism lives inside `air.herd`. All live-in values must be passed explicitly through `args()` because the body is `IsolatedFromAbove`.
+Think of `air.launch` as "calling the accelerator kernel". Everything inside is one device invocation. The optional iteration space is host-side batching (like calling the same work N times in a loop) — **not** AIE tile parallelism. Tile parallelism lives inside `air.herd`. All live-in values must be passed explicitly through `args()` because the body is `IsolatedFromAbove`.
 
 #### Example 1 — Minimal scalar launch
 
@@ -1585,3 +1587,457 @@ func.func @gemm_512x512x512(
 ---
 
 *MLIR-AIR API Reference — generated February 2026. Source: https://github.com/Xilinx/mlir-air*
+
+
+---
+
+
+---
+
+## The Full Picture: MLIR-AIE Lowering Passes, How MLIR-AIR Interfaces, and What the Backend Actually Emits
+
+---
+
+### Architecture Overview
+
+The two repos are separate but tightly coupled. MLIR-AIR is the *scheduling / tile-mapping* layer. MLIR-AIE is the *physical resource / hardware configuration* layer. The handoff between them is the `aie.*` dialect — MLIR-AIR's `-air-to-aie` pass produces an AIE dialect module, which then goes through the MLIR-AIE pass pipeline independently.
+
+```
+MLIR-AIR (air.* dialect)
+    └─ -air-to-aie ──────────────────────┐
+                                          ▼
+                                   aie.* dialect (MLIR-AIE)
+                                          │
+                              ┌───────────┴───────────────┐
+                              ▼                           ▼
+                    Device code path              Host config path
+                  (one per core / herd)         (partition setup)
+                              │                           │
+                    aie-opt passes               aie-translate
+                              │                 --aie-generate-xaiev2
+                              ▼                           │
+                        LLVM IR (MLIR)                    ▼
+                              │               C++ calling libXAIE / XRT
+                    Peano (llvm-aie)                      │
+                     or xchesscc                          ▼
+                              │               compiled into host .a/.so
+                              ▼
+                      per-core .elf
+```
+
+---
+
+### Table 1: MLIR-AIE Passes (aie-opt)
+
+These are the passes in the AIE dialect that operate *after* MLIR-AIR has handed off an `aie.device` module. They handle physical resource allocation, routing, and lowering to hardware-ready representation.
+
+| Pass name (flag) | C++ class | Category | What it does |
+|---|---|---|---|
+| `--aie-assign-buffer-addresses` | `AIEAssignBufferAddressesPass` | Buffer allocation | Assigns concrete memory addresses to every `aie.buffer` that was declared without one. Two schemes: `bank-aware` (default, respects SRAM banking) or `basic-sequential`. |
+| `--aie-assign-buffer-descriptor-ids` | `AIEAssignBufferDescriptorIDsPass` | DMA allocation | Assigns hardware BD (Buffer Descriptor) slot IDs to each DMA operation. |
+| `--aie-assign-lock-ids` | `AIEAssignLockIDsPass` | Lock allocation | Assigns integer lock IDs to `aie.lock` ops that have none. Each tile has a fixed pool (typically 16 locks). |
+| `--aie-assign-tile-ctrl-ids` | `AIEAssignTileCtrlIDsPass` | Control routing | Assigns unique controller IDs per `aie.tile`. Option: `-column-wise-unique-ids` for column-scoped uniqueness vs. global. |
+| `--aie-create-pathfinder-flows` | `AIEPathfinderPass` | Routing | Automatically routes `aie.flow` operations through the stream switch network using a Pathfinder algorithm. The key routing pass — takes logical flows and produces `aie.switchbox` + `aie.connect` operations with actual channel numbers. |
+| `--aie-find-flows` | `AIEFindFlowsPass` | Routing analysis | Verifies that every configured switchbox contributes to an end-to-end circuit-switched or packet-switched flow. Used primarily for testing the Pathfinder. |
+| `--aie-create-packet-flows` | `AIERoutePacketFlowsPass` | Routing | Routes `aie.packetflow` (packet-switched) connections through the switch network, assigning packet IDs and switch configurations. |
+| `--aie-lower-cascade-flows` | `AIELowerCascadeFlowsPass` | Cascade | Replaces `aie.cascade_flow` with concrete `aie.configure_cascade` operations. |
+| `--aie-localize-locks` | `AIELocalizeLocksPass` | Address space | Converts global lock references to tile-local lock indices. Each of 4 adjacent tiles sees a lock under a different address offset — this pass resolves that. |
+| `--aie-normalize-address-spaces` | `AIENormalizeAddressSpacesPass` | Core codegen | Strips non-default address spaces from `memref` types in `aie.core` regions. After outlining, each core only sees its own local address space. |
+| `--aie-objectfifo-stateful-transform` | `AIEObjectFifoStatefulTransformPass` | ObjectFifo lowering | **Key structural pass.** Lowers `aie.objectFifo.createObjectFifo` into: `aie.buffer` + `aie.lock` on the producer tile; `aie.flow` + `aie.dma` between non-adjacent tiles; and acquire/release lock protocols. |
+| `--aie-objectfifo-unroll` | `AIEObjectFifoUnrollPass` | ObjectFifo lowering | Unrolls loops containing objectFifo access patterns based on the FIFO depth. Option: `-dynamic-objFifos` to use runtime access instead of static unrolling. |
+| `--aie-register-objectfifo-accessor-patterns` | `AIERegisterObjectFifoAccessorPatternsPass` | ObjectFifo lowering | Generates acquire/release patterns inside `aie.core` regions for `aie.objectfifo.register_process` operations. |
+| `--aie-generate-column-control-overlay` | `AIEGenerateColumnControlOverlayPass` | Control infrastructure | Spawns a control packet streaming network across tile columns for runtime configuration. Options: `-route-shim-to-tct`, `-route-shim-to-tile-ctrl`. |
+| `--aie-insert-device` | `AIEInsertDevicePass` | Structural | Wraps designs that lack a top-level `aie.device` op, inserting one automatically. |
+| `--aie-vectorize` | `AIEVectorizePass` | Vectorization | Transforms MLIR `vector.*` ops into `aievec.*` ops matching the AIE vector permute network, multiply-accumulate units, and data types. |
+
+---
+
+### Table 2: AIEX / AIEX Experimental Passes
+
+The `aiex` dialect holds NPU-specific and experimental ops — primarily the host-side NPU instruction sequence.
+
+| Pass name (flag) | Category | What it does |
+|---|---|---|
+| `--aiex-insert-trace-packet-flow` | Tracing | Injects trace packet routing for hardware performance counters. |
+| `--aiex-insert-shim-dma-bd-chain-to-host` | DMA | Builds the BD chain for host-to-device / device-to-host shim DMA transfers. |
+| `--convert-aiex-to-standard` | Conversion | Lowers experimental AIEX ops to standard MLIR dialects before further lowering. |
+| `--aie-npu-serialize-control-packets` | NPU | Serializes control packets into the flat `aiex.npu.write32` / `aiex.npu.dma_memcpy_nd` instruction stream consumed by the NPU firmware. |
+| `--aie-control-packet-to-transaction` | NPU | Converts control packet ops into transaction ops for XRT's transaction buffer. |
+
+---
+
+### Table 3: AIEVec Passes (vector dialect → AIEVec → LLVM)
+
+| Pass name (flag) | What it does |
+|---|---|
+| `--affine-super-vectorize` | Standard MLIR upstream pass: extracts generic `vector.*` ops from affine loop nests (e.g., `-virtual-vector-size=8`). |
+| `--aie-vectorize` | Lowers `vector.*` → `aievec.*` — AIE-specific MAC units, permute networks, cascade accumulation. |
+| `--convert-aievec-to-llvm` | Lowers `aievec.*` → LLVM IR intrinsics that map directly to AIE ISA instructions. This is the final codegen step before Peano. |
+
+---
+
+### Table 4: Translation passes (`aie-translate`)
+
+`aie-translate` is a separate binary from `aie-opt`. It handles *translation* — one-shot lowering to text or binary formats that are not MLIR modules.
+
+| Translation flag | Output | Used for |
+|---|---|---|
+| `--aie-generate-xaiev2` | C++ source (libXAIE calls) | Host-side hardware configuration code — sets up switchboxes, locks, DMA buffer descriptors, flow routing using the XAIEv2 API. |
+| `--aie-generate-txn` | XRT transaction binary | Direct binary encoding of configuration commands for the NPU, consumed by XRT's `xclbin` transaction buffer mechanism. |
+| `--aie-mlir-to-llvm` | LLVM IR text | Core function lowering — produces LLVM IR for `aie.core` regions, ready for Peano or xchesscc. |
+| `--aie-flows-to-json` | JSON | Routing visualization — dumps flow topology for the `visualize.py` tool. |
+| `--aievec-to-cpp` | C++ with intrinsics | Debug output of vectorized core code as readable C++. |
+
+---
+
+### How MLIR-AIR Interfaces With MLIR-AIE
+
+The interface is clean and one-directional: MLIR-AIR produces `aie.*` IR, then hands it to `aiecc.py` as a subprocess. There is no shared C++ API between the two at the MLIR level.
+
+The `air-to-aie` pass generates an AIE dialect MLIR module for each AIR dialect partition, and adds runtime metadata to the AIR dialect program. The AIR dialect program is then lowered to control code by running `air-to-std` to generate AIRRt dialect, then `airrt-to-llvm` to lower AIRRt to LLVM dialect, then invoking `aiecc.py` on the AIE dialect module.
+
+Here is the precise sequence inside `aircc.py`:
+
+```
+air.mlir
+  │
+  ├─ [MLIR-AIR passes]
+  │     -air-dependency
+  │     -air-dependency-canonicalize
+  │     -air-dependency-schedule-opt
+  │     -air-ping-pong-transform
+  │     ...optimization passes...
+  │     -air-to-aie        ←── produces aie.device module(s)
+  │     -air-to-std        ←── produces airrt + llvm dialect (host control)
+  │     -airrt-to-llvm     ←── lowers airrt to pure LLVM dialect
+  │
+  ├─── HOST PATH ──────────────────────────────────────────────────────────
+  │     mlir-translate --mlir-to-llvmir   →  host.ll
+  │     clang host.ll → host.o
+  │     Link with AIR runtime (libair) → libmydesign.a / .so
+  │
+  └─── DEVICE PATH (one per core in each herd) ───────────────────────────
+        aie-opt [AIE passes above: objectfifo, routing, buffer assign, ...]
+        │
+        aie-translate --aie-mlir-to-llvm  →  core_N.ll
+        │
+        Peano (llvm-aie clang) OR xchesscc
+        │
+        core_N.elf  (loaded onto AIE tile at runtime via XRT)
+```
+
+The handoff document is the `aie.device { ... }` MLIR module. MLIR-AIR writes it; MLIR-AIE's passes consume it.
+
+---
+
+### What MLIR-AIR Actually Emits as Backend Code
+
+There are two completely separate outputs, not one:
+
+**1. Device ELF files — one per AIE core**
+
+The device path is: `aie.core` region → `aie-translate --aie-mlir-to-llvm` → LLVM IR → **Peano** (`llvm-aie`, a fork of LLVM with a custom AIE target) → ELF. The project supports both Peano (`--no-xbridge`) and the proprietary `xchesscc` (`--xbridge`, requires Vitis license) as compiler backends for the core ELFs. Peano is the open-source default for Ryzen AI (AIE2/AIE2P). These ELFs are not linked into any library — they are loaded separately into each tile's program memory at runtime by XRT/the NPU driver.
+
+**2. Host configuration code — C++ calling libXAIE or XRT transaction buffers**
+
+The `aiecc.py` pass generates C++ code to configure the partition at runtime using the `-aie-generate-xaiev2` option, which calls the XAIEv2 API (libXAIE). The generated C++ wrappers are compiled and linked with the control code generated by the MLIR passes into a single library — either a shared `.so` or a static `.a`. The AIE ELF files are not part of the generated library and must be available separately at runtime.
+
+For NPU/Ryzen AI targets, the newer path uses `--aie-generate-txn` instead — this generates a binary XRT *transaction buffer* (a sequence of `write32` / DMA configure operations) that bypasses C++ entirely and is passed directly to XRT's `xclbin` loading mechanism as a serialized blob.
+
+---
+
+### The Key Architectural Insight
+
+The reason this split exists — LLVM for device, libXAIE/XRT transactions for host configuration — is that these are genuinely different hardware components:
+
+- The **AIE cores** are VLIW scalar+vector processors that execute ELF binaries. They need a real ISA compiler (Peano/LLVM).
+- The **stream switches, DMA engines, and lock controllers** are configuration registers, not processors. "Programming" them means writing a sequence of MMIO writes. libXAIE is a C wrapper around those writes; XRT transaction buffers are the pre-serialized binary form of those same writes, suitable for fast replay without the host CPU executing them at runtime.
+
+This is also why there is no JIT in this stack: both outputs are inherently static. The ELF is compiled for a fixed program; the configuration bitstream is computed once from the topology. Nothing is data-dependent at runtime in the way that would require JIT.
+
+---
+
+# AIR-to-CSL: Lowering AIR Dialect to Cerebras CSL
+
+This document describes the `air-to-csl` pass, which lowers AMD's AIR (Accelerator Interface for Reconfigurable computing) MLIR dialect to Cerebras CSL (Cerebras Software Language) text files. The pass bridges two spatial computing models: AIR's hierarchical launch/segment/herd abstraction originally targeting AMD Versal AI Engines, and Cerebras' layout/PE-program/runtime abstraction targeting the Wafer-Scale Engine.
+
+## Motivation
+
+AIR provides a hardware-agnostic spatial programming model with three hierarchy levels (`air.launch`, `air.segment`, `air.herd`) that express host orchestration, spatial PE allocation, and per-PE kernel code respectively. These three levels map naturally onto the three components of a Cerebras CSL program:
+
+| AIR Construct | CSL Output | Role |
+|---|---|---|
+| `air.launch` | `run.py` | Host-side orchestration: load, run, data transfers, stop |
+| `air.segment` | `layout.csl` | Spatial topology: PE grid dimensions, tile-to-code assignment |
+| `air.herd` body | `pe_program.csl` | Per-PE kernel: memory declarations, compute functions, exports |
+
+This makes AIR a viable intermediate representation for targeting Cerebras hardware, reusing the existing front-end pipeline (linalg -> scf.parallel -> air.herd) while swapping only the back-end.
+
+## How it works internally
+
+### Pass registration and infrastructure
+
+The pass is registered as a core conversion pass (always available, not gated behind `AIR_ENABLE_AIE` or `AIR_ENABLE_GPU`). It plugs into MLIR's pass infrastructure through the standard TableGen pipeline:
+
+1. **`Passes.td`** declares the pass with `def AIRToCSL : Pass<"air-to-csl", "ModuleOp">` and a single `output-dir` string option.
+2. **TableGen** generates `Passes.h.inc` containing the `AIRToCSLBase<DerivedT>` CRTP template class that provides `clOutputDir`, `runOnOperation()` dispatching, and pass metadata.
+3. **`PassDetail.h`** defines `GEN_PASS_DEF_AIRTOCSL` to instantiate the template.
+4. **`Passes.cpp`** calls `registerAIRToCSL()` during `registerConversionPasses()`.
+5. **`CMakeLists.txt`** adds `AIRToCSLPass.cpp` to the unconditional `CONVERSION_SOURCES`.
+
+The pass class inherits from the generated base:
+
+```cpp
+class AIRToCSLPass : public air::impl::AIRToCSLBase<AIRToCSLPass> {
+  void runOnOperation() override {
+    auto module = getOperation();
+    llvm::sys::fs::create_directories(clOutputDir);
+    CSLEmitter emitter(clOutputDir);
+    emitter.emit(module);
+  }
+};
+```
+
+### The CSLEmitter: IR walk and file generation
+
+Unlike `air-to-aie` which lowers AIR ops into another MLIR dialect (the AIE dialect), `air-to-csl` is a **text emitter**. It walks the MLIR module, collects structural metadata, and writes three text files using `llvm::raw_fd_ostream`. No new MLIR dialect is introduced.
+
+#### Phase 1: Structure collection
+
+The emitter walks the module top-down through the AIR hierarchy:
+
+```
+module.walk(LaunchOp)
+  -> launch.walk(SegmentOp)
+      -> segment.walk(HerdOp)
+```
+
+For each `air.herd`, it records:
+- **Grid dimensions** via `herd.getNumCols()` and `herd.getNumRows()`. These are extracted from the herd's size operands (e.g., `%c2 = arith.constant 2` bound to `in (%sx=%c2, %sy=%c2)`).
+- **Kernel arguments** via `herd.getKernelArguments()`. Each `memref<NxTy>` argument becomes an exported array in both `pe_program.csl` and `layout.csl`.
+
+If no `air.launch`/`air.segment` wrapper exists (bare herd), the emitter synthesizes an implicit single segment.
+
+#### Phase 2: Exported array metadata
+
+For every memref-typed kernel argument on the herd, the emitter creates an `ExportedArray` record:
+
+```cpp
+struct ExportedArray {
+  std::string name;       // "arg_0", "arg_1", ...
+  std::string cslType;    // "[*]f32"
+  bool mutable_;          // host read/write access
+  int64_t numElements;    // flat product of static shape dims
+  Type elemType;          // MLIR element type for numpy dtype selection
+};
+```
+
+These drive export declarations in all three output files.
+
+#### Phase 3: layout.csl emission
+
+The `emitLayoutCSL()` method produces the spatial configuration:
+
+```csl
+const memcpy = @import_module("<memcpy/get_params>", .{ .width = W, .height = H });
+
+layout {
+  @set_rectangle(W, H);
+  @set_tile_code(col, row, "pe_program.csl", .{ .memcpy_params = memcpy.get_params(col) });
+  // ... for each (col, row) in the grid
+  @export_name("arg_0", [*]f32, true);
+  @export_name("init_and_compute", fn()void);
+}
+```
+
+The segment's width/height (from `getNumCols()`/`getNumRows()` on segment or its first herd) map directly to `@set_rectangle`. Each tile in the 2D grid gets a `@set_tile_code` call pointing to the same `pe_program.csl`, parameterized with memcpy parameters keyed by column index.
+
+#### Phase 4: pe_program.csl emission
+
+The `emitPEProgramCSL()` method generates per-PE kernel code in three sub-phases:
+
+**a) Global declarations.** Each memref kernel argument becomes a global CSL array:
+
+```
+memref<1024xf32> herd arg  ->  var arg_0: [1024]f32;
+```
+
+Multi-dimensional shapes are flattened: `memref<4x6xf32>` becomes `[24]f32`. Each exported array gets a pointer constant and a `comptime` export:
+
+```csl
+const arg_0_ptr: [*]f32 = &arg_0;
+comptime { @export_symbol(arg_0_ptr, "arg_0"); }
+```
+
+Local `memref.alloc` ops within the herd body become additional global arrays (CSL has no stack allocation; all PE memory is global).
+
+**b) Compute function.** The herd body is emitted into a `fn compute() void` by walking each operation:
+
+| MLIR Operation | CSL Emission |
+|---|---|
+| `arith.constant 0 : index` | `const c_0: i32 = 0;` |
+| `memref.load %buf[%idx]` | `const ld_1: f32 = buf[c_0];` |
+| `arith.addf %a, %b` | `var v_2: f32 = ld_1 + ld_2;` |
+| `arith.mulf %a, %b` | `var v_3: f32 = a * b;` |
+| `memref.store %v, %buf[%idx]` | `buf[c_0] = v_2;` |
+| `scf.for %iv = %lb to %ub` | `var i_4: i32 = lb; while (i_4 < ub) : (i_4 += 1) { ... }` |
+| `air.execute { ... }` | Inlines the body directly |
+| `air.dma_memcpy_nd` | `// TODO: data movement` |
+
+The `emitOp()` dispatcher uses LLVM's `dyn_cast` chain. Each MLIR SSA value is mapped to a fresh CSL variable name via a `DenseMap<Value, std::string>` dictionary. The `freshName()` counter ensures unique names (`c_0`, `ld_1`, `v_2`, ...).
+
+Multi-dimensional `memref.load/store` indices are linearized to row-major flat indices at emit time using the static shape:
+```
+%v = memref.load %A[%i, %j] : memref<4x6xf32>
+  -> const ld_5: f32 = A[i_3*6 + j_4];
+```
+
+Tile IDs (`%tx`, `%ty` from `air.herd tile(%tx, %ty)`) are bound to constant `"0"` since the emitter currently generates a single program for all PEs.
+
+**c) Wrapper and exports.** The compute function is wrapped in `init_and_compute()` which calls `sys_mod.unblock_cmd_stream()` after computation -- a Cerebras requirement to allow subsequent memcpy commands from the host.
+
+#### Phase 5: run.py emission
+
+The `emitRunPy()` method generates a Python host script using the Cerebras `SdkRuntime` API:
+
+1. **Boilerplate**: argparse for `--name` (compiled output dir) and `--cmaddr` (system address).
+2. **Symbol resolution**: `runner.get_id('arg_0')` for each exported array.
+3. **Load/run**: `runner.load()` then `runner.run()`.
+4. **H2D transfers**: Commented-out `memcpy_h2d` templates for each mutable array, with correct element counts (`W * H * numElements`) and `MemcpyDataType` selection based on element bitwidth.
+5. **Compute launch**: `runner.launch('init_and_compute', nonblock=False)`.
+6. **D2H transfers**: Active `memcpy_d2h` calls for each exported array.
+7. **Stop**: `runner.stop()`.
+
+### Type mapping
+
+| MLIR Type | CSL Type | NumPy dtype |
+|---|---|---|
+| `f32` | `f32` | `np.float32` |
+| `f16` | `f16` | `np.float16` |
+| `i32` | `i32` | `np.int32` |
+| `i16` | `i16` | `np.int32` |
+| `index` | `i32` | `np.int32` |
+
+## Usage
+
+```bash
+air-opt input.mlir -air-to-csl="output-dir=./output"
+```
+
+This writes `layout.csl`, `pe_program.csl`, and `run.py` into `./output/`. To then compile and run on Cerebras hardware:
+
+```bash
+cslc --arch=wse3 ./output/layout.csl --fabric-dims=9,4 \
+  --fabric-offsets=4,1 -o out --memcpy --channels 1
+cs_python ./output/run.py --name out
+```
+
+## Example
+
+**Input MLIR** (a 2x2 herd performing element-wise multiply):
+
+```mlir
+func.func @gemv(%A: memref<24xf32>, %x: memref<6xf32>, %y: memref<4xf32>) {
+  %c1 = arith.constant 1 : index
+  air.launch (%tx) in (%sx=%c1) args(%a0=%A, %a1=%x, %a2=%y)
+      : memref<24xf32>, memref<6xf32>, memref<4xf32> {
+    air.segment @seg0 args(%s0=%a0, %s1=%a1, %s2=%a2)
+        : memref<24xf32>, memref<6xf32>, memref<4xf32> {
+      %c2 = arith.constant 2 : index
+      air.herd @herd0 tile(%htx, %hty) in (%hsx=%c2, %hsy=%c2)
+          args(%h0=%s0, %h1=%s1, %h2=%s2)
+          : memref<24xf32>, memref<6xf32>, memref<4xf32> {
+        %zero = arith.constant 0 : index
+        %v = memref.load %h1[%zero] : memref<6xf32>
+        %w = memref.load %h0[%zero] : memref<24xf32>
+        %prod = arith.mulf %v, %w : f32
+        memref.store %prod, %h2[%zero] : memref<4xf32>
+        air.herd_terminator
+      }
+      air.segment_terminator
+    }
+    air.launch_terminator
+  }
+  return
+}
+```
+
+**Generated layout.csl:**
+
+```csl
+const memcpy = @import_module("<memcpy/get_params>", .{ .width = 2, .height = 2 });
+
+layout {
+  @set_rectangle(2, 2);
+
+  @set_tile_code(0, 0, "pe_program.csl", .{ .memcpy_params = memcpy.get_params(0) });
+  @set_tile_code(1, 0, "pe_program.csl", .{ .memcpy_params = memcpy.get_params(1) });
+  @set_tile_code(0, 1, "pe_program.csl", .{ .memcpy_params = memcpy.get_params(0) });
+  @set_tile_code(1, 1, "pe_program.csl", .{ .memcpy_params = memcpy.get_params(1) });
+
+  @export_name("arg_0", [*]f32, false);
+  @export_name("arg_1", [*]f32, false);
+  @export_name("arg_2", [*]f32, false);
+  @export_name("init_and_compute", fn()void);
+}
+```
+
+**Generated pe_program.csl:**
+
+```csl
+param memcpy_params: comptime_struct;
+const sys_mod = @import_module("<memcpy/memcpy>", memcpy_params);
+
+var arg_0: [24]f32;
+var arg_1: [6]f32;
+var arg_2: [4]f32;
+const arg_0_ptr: [*]f32 = &arg_0;
+const arg_1_ptr: [*]f32 = &arg_1;
+const arg_2_ptr: [*]f32 = &arg_2;
+
+fn compute() void {
+  const c_0: i32 = 0;
+  const ld_1: f32 = arg_1[c_0];
+  const ld_2: f32 = arg_0[c_0];
+  var v_3: f32 = ld_1 * ld_2;
+  arg_2[c_0] = v_3;
+}
+
+fn init_and_compute() void {
+  compute();
+  sys_mod.unblock_cmd_stream();
+}
+
+comptime {
+  @export_symbol(arg_0_ptr, "arg_0");
+  @export_symbol(arg_1_ptr, "arg_1");
+  @export_symbol(arg_2_ptr, "arg_2");
+  @export_symbol(init_and_compute);
+}
+```
+
+## Files changed
+
+| File | Change |
+|---|---|
+| `mlir/include/air/Conversion/Passes.td` | Added `AIRToCSL` pass definition with `output-dir` option |
+| `mlir/include/air/Conversion/PassDetail.h` | Added `#define GEN_PASS_DEF_AIRTOCSL` in the core (non-AIE-gated) section |
+| `mlir/include/air/Conversion/Passes.h` | Added `#include "air/Conversion/AIRToCSLPass.h"` |
+| `mlir/include/air/Conversion/AIRToCSLPass.h` | **New** -- header declaring `createAIRToCSLPass()` factory |
+| `mlir/lib/Conversion/AIRToCSLPass.cpp` | **New** -- 749-line pass implementation with `CSLEmitter` |
+| `mlir/lib/Conversion/Passes.cpp` | Added registration macro and `registerAIRToCSL()` call |
+| `mlir/lib/Conversion/CMakeLists.txt` | Added `AIRToCSLPass.cpp` to core `CONVERSION_SOURCES` |
+| `mlir/test/Conversion/AIRToCSL/basic.mlir` | **New** -- 1x1 herd vector-add test |
+| `mlir/test/Conversion/AIRToCSL/gemv.mlir` | **New** -- 2x2 herd GEMV test |
+
+## Current limitations and future work
+
+- **Single PE program**: all tiles in the grid run the same `pe_program.csl`. Per-tile specialization based on `%tx`/`%ty` tile IDs is not yet implemented.
+- **No inter-PE communication**: `air.channel` and `air.dma_memcpy_nd` are emitted as TODO comments rather than CSL routing/color/task constructs.
+- **No DSD (Data Structure Descriptor) usage**: memory accesses use scalar array indexing rather than CSL's efficient DSD-based bulk operations.
+- **Static shapes only**: dynamic memref dimensions are unsupported.
+- **Host data flow**: `run.py` H2D transfers are generated as commented-out templates; the user must fill in actual data initialization.
+
+
+---
+
