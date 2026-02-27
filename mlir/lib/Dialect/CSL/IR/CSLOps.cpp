@@ -7,13 +7,10 @@
 
 #include "air/Dialect/CSL/CSLOps.h"
 #include "air/Dialect/CSL/CSLDialect.h"
-
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/OpImplementation.h"
-
-using namespace mlir;
-
 #include "air/Dialect/CSL/CSLEnums.cpp.inc"
+using namespace mlir;
 
 //===----------------------------------------------------------------------===//
 // csl.func

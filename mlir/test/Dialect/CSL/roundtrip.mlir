@@ -6,33 +6,35 @@
 //===----------------------------------------------------------------------===//
 //
 // Verifies that the CSL dialect ops survive a parse-print-parse round trip
-// using --verify-roundtrip. This ensures the custom parsers and printers
-// are fully consistent.
+// using --verify-roundtrip.
 //
 //===----------------------------------------------------------------------===//
 
 // RUN: air-opt --verify-roundtrip %s | FileCheck %s
 
-// ---- Layout + Placement ----
+// ---- Spatial placement with routing and kernels ----
 
-// CHECK: csl.layout {
-// CHECK:   csl.set_rectangle 4, 4
-// CHECK:   csl.set_tile_code 0, 0 file("sender.csl") params({color_id = 0 : i32})
-// CHECK:   csl.set_tile_code 1, 0 file("receiver.csl") params({color_id = 0 : i32})
-// CHECK:   csl.export_name "input" : memref<128xf32>
-// CHECK:   csl.export_name "output" : memref<128xf32>
-// CHECK:   csl.export_name "run" : () -> ()
-// CHECK: }
-csl.layout {
-  csl.set_rectangle 4, 4
-  csl.set_tile_code 0, 0 file("sender.csl") params({color_id = 0 : i32})
-  csl.set_tile_code 1, 0 file("receiver.csl") params({color_id = 0 : i32})
-  csl.export_name "input" : memref<128xf32>
-  csl.export_name "output" : memref<128xf32>
-  csl.export_name "run" : () -> ()
+// CHECK-LABEL: csl.spatial_placement
+// CHECK:   %[[C:.*]] = csl.color : !csl.color
+// CHECK:   %[[R:.*]] = csl.route in(RAMP) out(EAST) : i32
+// CHECK:   %[[K:.*]] = csl.kernel "sender.csl"
+// CHECK:   %[[REG:.*]] = csl.code_region routes(%[[R]]) colors(%[[C]]) shape(4, 4)
+// CHECK:   } : !csl.code_region
+// CHECK:   csl.place %[[REG]] at(0, 0) kernel(%[[K]])
+csl.spatial_placement {
+  %c = csl.color : !csl.color
+  %r = csl.route in(RAMP) out(EAST) : i32
+  %k = csl.kernel "sender.csl" params({color_id = 0 : i32}) {
+    csl.var @data : memref<128xf32>
+    csl.func @send() { csl.return }
+  } : !csl.kernel
+  %reg = csl.code_region routes(%r) colors(%c) shape(4, 4) {
+    csl.paint pe(0, 0) route(%r) color(%c)
+  } : !csl.code_region
+  csl.place %reg at(0, 0) kernel(%k)
 }
 
-// ---- Module with tasks, routing, data movement ----
+// ---- Module with tasks (standalone, not in spatial_placement) ----
 
 // CHECK: csl.module @sender {
 // CHECK:   csl.param @color_id : i32
@@ -64,39 +66,17 @@ csl.module @sender {
   }
 }
 
-// CHECK: csl.module @receiver {
-// CHECK:   csl.param @color_id : i32
-// CHECK:   csl.var @result : memref<128xf32>
-// CHECK:   csl.task @recv() color(0) {
-// CHECK:     csl.return
-// CHECK:   }
-// CHECK:   csl.comptime {
-// CHECK:     csl.export_symbol @result alias("output")
-// CHECK:   }
-// CHECK: }
-csl.module @receiver {
-  csl.param @color_id : i32
-  csl.var @result : memref<128xf32>
+// ---- Color with explicit ID ----
 
-  csl.task @recv() color(0) {
-    csl.return
-  }
+// CHECK: %[[C0:.*]] = csl.color 0 : !csl.color
+%c0 = csl.color 0 : !csl.color
 
-  csl.comptime {
-    csl.export_symbol @result alias("output")
-  }
-}
+// ---- Route directions ----
 
-// ---- Routing configuration (top-level) ----
-
-// CHECK: %[[C0:.*]] = csl.color 0
-// CHECK: %[[C1:.*]] = csl.color 1
-// CHECK: csl.route %[[C0]] dir(EAST)
-// CHECK: csl.route %[[C1]] dir(WEST)
-%send_color = csl.color 0 : !csl.color
-%ack_color = csl.color 1 : !csl.color
-csl.route %send_color dir(EAST)
-csl.route %ack_color dir(WEST)
+// CHECK: %[[R1:.*]] = csl.route in(RAMP) out(EAST) : i32
+// CHECK: %[[R2:.*]] = csl.route in(WEST) out(RAMP) : i32
+%r1 = csl.route in(RAMP) out(EAST) : i32
+%r2 = csl.route in(WEST) out(RAMP) : i32
 
 // ---- Data movement in a function ----
 

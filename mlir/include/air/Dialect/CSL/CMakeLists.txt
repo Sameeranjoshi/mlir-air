@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT
 
 add_mlir_dialect(CSLOps csl)
-add_mlir_doc(CSLOps CSLDialect ./ -gen-dialect-doc)
+add_mlir_doc(CSLOps CSLDialect ./ -gen-dialect-doc -dialect=csl)
 
 set(LLVM_TARGET_DEFINITIONS CSLBase.td)
 mlir_tablegen(CSLEnums.h.inc -gen-enum-decls)

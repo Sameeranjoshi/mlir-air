@@ -18,6 +18,9 @@ add_lit_testsuite(check-air-mlir "Running the air mlir regression tests"
 set_target_properties(check-air-mlir PROPERTIES FOLDER "Tests")
 
 add_lit_testsuites(AIRMLIR ${CMAKE_CURRENT_SOURCE_DIR} DEPENDS ${TEST_DEPENDS})
-add_dependencies(check-all check-air-mlir)
+add_lit_testsuite(check-air-csl "Running the CSL tests"
+                  ${CMAKE_CURRENT_BINARY_DIR}/Dialect/CSL
+                  DEPENDS ${TEST_DEPENDS})
+add_dependencies(check-all check-air-mlir check-air-csl)
 
 add_subdirectory(CppUnitTests)

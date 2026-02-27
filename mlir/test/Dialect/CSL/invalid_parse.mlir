@@ -4,21 +4,8 @@
 // SPDX-License-Identifier: MIT
 //
 //===----------------------------------------------------------------------===//
-//
-// Tests that the CSL dialect parser rejects syntactically malformed input.
-//
-//===----------------------------------------------------------------------===//
 
 // RUN: air-opt --verify-diagnostics --split-input-file %s
-
-// -----
-
-// Missing file keyword in set_tile_code
-csl.layout {
-  csl.set_rectangle 2, 2
-  // expected-error @+1 {{expected 'file'}}
-  csl.set_tile_code 0, 0 ("pe_program.csl")
-}
 
 // -----
 
@@ -37,6 +24,5 @@ csl.task @bad_task() {
 // -----
 
 // Invalid direction enum in route
-%c = csl.color 0 : !csl.color
-// expected-error @below {{custom op 'csl.route' expected string or keyword containing one of the following enum values for attribute 'direction' [NORTH, SOUTH, EAST, WEST, RAMP]}}
-csl.route %c dir(UP)
+// expected-error @below {{custom op 'csl.route' expected string or keyword containing one of the following enum values for attribute 'input_dir' [NORTH, SOUTH, EAST, WEST, RAMP]}}
+%r = csl.route in(UP) out(WEST) : i32

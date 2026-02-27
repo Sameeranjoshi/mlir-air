@@ -16,7 +16,6 @@
 
 include "air/Dialect/CSL/CSLBase.td"
 include "air/Dialect/CSL/CSLLayoutOps.td"
-include "air/Dialect/CSL/CSLPlacementOps.td"
 include "air/Dialect/CSL/CSLRoutingOps.td"
 include "air/Dialect/CSL/CSLKernelOps.td"
 include "air/Dialect/CSL/CSLDataMovementOps.td"

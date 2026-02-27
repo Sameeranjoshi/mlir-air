@@ -2,7 +2,7 @@
 
 // RUN: air-opt %s -air-to-csl="output-dir=%t" && cat %t/layout.csl | FileCheck %s --check-prefix=LAYOUT
 // RUN: cat %t/pe_program.csl | FileCheck %s --check-prefix=PE
-// RUN: cat %t/run.py | FileCheck %s --check-prefix=RUN
+// RUN: cat %t/run.py | FileCheck %s --check-prefix=PY
 
 // A minimal AIR program: 1x1 herd that adds two values.
 
@@ -18,11 +18,11 @@
 // PE: comptime
 // PE: @export_symbol(init_and_compute)
 
-// RUN: SdkRuntime
-// RUN: runner.load()
-// RUN: runner.run()
-// RUN: runner.launch('init_and_compute'
-// RUN: runner.stop()
+// PY: SdkRuntime
+// PY: runner.load()
+// PY: runner.run()
+// PY: runner.launch('init_and_compute', nonblock=False)
+// PY: runner.stop()
 
 module {
   func.func @vecadd(%a: memref<1024xf32>, %b: memref<1024xf32>, %c: memref<1024xf32>) {

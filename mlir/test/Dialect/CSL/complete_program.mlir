@@ -5,72 +5,41 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// Integration test: a complete CSL program structure representing a simple
-// GEMV kernel mapped to a 2x2 PE grid. Validates that all CSL sub-dialect
-// categories (layout, placement, routing, kernel, data movement, runtime)
-// compose correctly in a single module.
+// Integration test: a complete CSL program structure using the spatial
+// placement model with kernels, routes, colors, and placement.
 //
 //===----------------------------------------------------------------------===//
 
 // RUN: air-opt %s | FileCheck %s
 
-// CHECK: csl.layout {
-// CHECK:   csl.set_rectangle 2, 2
-// CHECK:   csl.set_tile_code 0, 0 file("pe_program.csl")
-// CHECK:   csl.set_tile_code 1, 0 file("pe_program.csl")
-// CHECK:   csl.set_tile_code 0, 1 file("pe_program.csl")
-// CHECK:   csl.set_tile_code 1, 1 file("pe_program.csl")
-// CHECK:   csl.export_name "arg_0" : memref<24xf32>
-// CHECK:   csl.export_name "arg_1" : memref<6xf32>
-// CHECK:   csl.export_name "arg_2" : memref<4xf32>
-// CHECK:   csl.export_name "init_and_compute" : () -> ()
-// CHECK: }
-csl.layout {
-  csl.set_rectangle 2, 2
-  csl.set_tile_code 0, 0 file("pe_program.csl")
-  csl.set_tile_code 1, 0 file("pe_program.csl")
-  csl.set_tile_code 0, 1 file("pe_program.csl")
-  csl.set_tile_code 1, 1 file("pe_program.csl")
-  csl.export_name "arg_0" : memref<24xf32>
-  csl.export_name "arg_1" : memref<6xf32>
-  csl.export_name "arg_2" : memref<4xf32>
-  csl.export_name "init_and_compute" : () -> ()
-}
-
-// CHECK: csl.module @pe_program {
-// CHECK:   csl.param @memcpy_params : i64
-// CHECK:   csl.var @arg_0 : memref<24xf32>
-// CHECK:   csl.var @arg_1 : memref<6xf32>
-// CHECK:   csl.var @arg_2 : memref<4xf32>
-// CHECK:   csl.func @compute()
-// CHECK:   csl.func @init_and_compute()
-// CHECK:   csl.comptime {
-// CHECK:     csl.export_symbol @arg_0 alias("arg_0")
-// CHECK:     csl.export_symbol @arg_1 alias("arg_1")
-// CHECK:     csl.export_symbol @arg_2 alias("arg_2")
-// CHECK:     csl.export_symbol @init_and_compute
-// CHECK:   }
-// CHECK: }
-csl.module @pe_program {
-  csl.param @memcpy_params : i64
-  csl.var @arg_0 : memref<24xf32>
-  csl.var @arg_1 : memref<6xf32>
-  csl.var @arg_2 : memref<4xf32>
-
-  csl.func @compute() {
-    csl.return
-  }
-
-  csl.func @init_and_compute() {
-    csl.return
-  }
-
-  csl.comptime {
-    csl.export_symbol @arg_0 alias("arg_0")
-    csl.export_symbol @arg_1 alias("arg_1")
-    csl.export_symbol @arg_2 alias("arg_2")
-    csl.export_symbol @init_and_compute
-  }
+// CHECK-LABEL: csl.spatial_placement
+// CHECK:   %[[RED:.*]] = csl.color : !csl.color
+// CHECK:   %[[R1:.*]] = csl.route in(RAMP) out(EAST) : i32
+// CHECK:   %[[K:.*]] = csl.kernel "pe_program.csl"
+// CHECK:   %[[REG:.*]] = csl.code_region routes(%[[R1]]) colors(%[[RED]]) shape(2, 2)
+// CHECK:     csl.paint pe(0, 0) route(%[[R1]]) color(%[[RED]])
+// CHECK:   } : !csl.code_region
+// CHECK:   csl.place %[[REG]] at(0, 0) kernel(%[[K]])
+csl.spatial_placement {
+  %red = csl.color : !csl.color
+  %r1 = csl.route in(RAMP) out(EAST) : i32
+  %k = csl.kernel "pe_program.csl" params({memcpy_params = 0 : i64}) {
+    csl.var @arg_0 : memref<24xf32>
+    csl.var @arg_1 : memref<6xf32>
+    csl.var @arg_2 : memref<4xf32>
+    csl.func @compute() { csl.return }
+    csl.func @init_and_compute() { csl.return }
+    csl.comptime {
+      csl.export_symbol @arg_0 alias("arg_0")
+      csl.export_symbol @arg_1 alias("arg_1")
+      csl.export_symbol @arg_2 alias("arg_2")
+      csl.export_symbol @init_and_compute
+    }
+  } : !csl.kernel
+  %region = csl.code_region routes(%r1) colors(%red) shape(2, 2) {
+    csl.paint pe(0, 0) route(%r1) color(%red)
+  } : !csl.code_region
+  csl.place %region at(0, 0) kernel(%k)
 }
 
 // A single PE has 3 main components:(CSL code)

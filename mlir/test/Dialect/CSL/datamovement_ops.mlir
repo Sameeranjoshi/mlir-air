@@ -11,6 +11,9 @@
 func.func @test_mem_dsd(%buf : memref<1024xf32>) {
   %len = arith.constant 1024 : index
   // CHECK: %[[DSD:.*]] = csl.get_mem_dsd %{{.*}}, %{{.*}} : memref<1024xf32>, index -> !csl.dsd
+  // future layout = [stride, offset, length, ...]
+  // %m = memref<100xf32, which memory space?>
+  // memref<?xf32> = layout.apply(futurelayout, %m)
   %dsd = csl.get_mem_dsd %buf, %len : memref<1024xf32>, index -> !csl.dsd
   return
 }

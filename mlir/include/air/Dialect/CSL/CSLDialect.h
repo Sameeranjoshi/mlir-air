@@ -36,6 +36,41 @@ public:
   static constexpr llvm::StringLiteral name = "xilinx.csl.imported_module";
 };
 
+// SdkLayout API handle types ---------------------------------------------------
+
+/// Opaque handle for a `CodeRegion` object created by `csl.code_region`.
+class CodeRegionType
+    : public mlir::Type::TypeBase<CodeRegionType, mlir::Type,
+                                  mlir::TypeStorage> {
+public:
+  using Base::Base;
+  static constexpr llvm::StringLiteral name = "xilinx.csl.code_region";
+};
+
+/// Opaque handle for a port (input or output) on a `CodeRegion`.
+class PortType
+    : public mlir::Type::TypeBase<PortType, mlir::Type, mlir::TypeStorage> {
+public:
+  using Base::Base;
+  static constexpr llvm::StringLiteral name = "xilinx.csl.port";
+};
+
+/// Opaque handle for an I/O stream (H2D or D2H).
+class StreamType
+    : public mlir::Type::TypeBase<StreamType, mlir::Type, mlir::TypeStorage> {
+public:
+  using Base::Base;
+  static constexpr llvm::StringLiteral name = "xilinx.csl.stream";
+};
+
+/// Opaque handle for a kernel (CSL source + compile-time params).
+class KernelType
+    : public mlir::Type::TypeBase<KernelType, mlir::Type, mlir::TypeStorage> {
+public:
+  using Base::Base;
+  static constexpr llvm::StringLiteral name = "xilinx.csl.kernel";
+};
+
 } // namespace csl
 } // namespace xilinx
 

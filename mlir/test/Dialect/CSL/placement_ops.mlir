@@ -1,7 +1,11 @@
-//===- placement_ops.mlir - CSL placement dialect ops tests ----*- MLIR -*-===//
+//===- placement_ops.mlir - CSL placement ops tests -----------*- MLIR -*-===//
 //
 // Part of the air-to-csl project.
 // SPDX-License-Identifier: MIT
+//
+//===----------------------------------------------------------------------===//
+//
+// Tests for csl.place ops. 
 //
 //===----------------------------------------------------------------------===//
 
@@ -9,50 +13,34 @@
 
 // CHECK-LABEL: module {
 
-// Basic tile placement without params
-// CHECK: csl.layout {
-// CHECK:   csl.set_rectangle 2, 2
-// CHECK:   csl.set_tile_code 0, 0 file("pe_program.csl")
-// CHECK:   csl.set_tile_code 1, 0 file("pe_program.csl")
-// CHECK:   csl.set_tile_code 0, 1 file("pe_program.csl")
-// CHECK:   csl.set_tile_code 1, 1 file("pe_program.csl")
+// Basic placement with kernel binding
+// CHECK: csl.spatial_placement {
+// CHECK:   %[[R:.*]] = csl.route in(RAMP) out(EAST) : i32
+// CHECK:   %[[C:.*]] = csl.color : !csl.color
+// CHECK:   %[[REG:.*]] = csl.code_region
+// CHECK:   %[[K:.*]] = csl.kernel "pe_program.csl"
+// CHECK:   csl.place %[[REG]] at(0, 0) kernel(%[[K]])
 // CHECK: }
-csl.layout {
-  csl.set_rectangle 2, 2
-  csl.set_tile_code 0, 0 file("pe_program.csl")
-  csl.set_tile_code 1, 0 file("pe_program.csl")
-  csl.set_tile_code 0, 1 file("pe_program.csl")
-  csl.set_tile_code 1, 1 file("pe_program.csl")
+csl.spatial_placement {
+  %r  = csl.route in(RAMP) out(EAST) : i32
+  %c  = csl.color : !csl.color
+  %reg = csl.code_region routes(%r) colors(%c) shape(2, 2) {
+  } : !csl.code_region
+  %k = csl.kernel "pe_program.csl" {
+  } : !csl.kernel
+  csl.place %reg at(0, 0) kernel(%k)
 }
 
-// Tile placement with compile-time params
-// CHECK: csl.layout {
-// CHECK:   csl.set_rectangle 1, 1
-// CHECK:   csl.set_tile_code 0, 0 file("pe_program.csl") params({col = 0 : i32, row = 0 : i32})
+// Placement with kernel params
+// CHECK: csl.spatial_placement {
+// CHECK:   %[[K:.*]] = csl.kernel "pe_program.csl" params({col = 0 : i32, row = 0 : i32})
 // CHECK: }
-csl.layout {
-  csl.set_rectangle 1, 1
-  csl.set_tile_code 0, 0 file("pe_program.csl") params({col = 0 : i32, row = 0 : i32})
-}
-
-// Different modules on different tiles
-// CHECK: csl.layout {
-// CHECK:   csl.set_rectangle 2, 1
-// CHECK:   csl.set_tile_code 0, 0 file("sender.csl")
-// CHECK:   csl.set_tile_code 1, 0 file("receiver.csl")
-// CHECK: }
-csl.layout {
-  csl.set_rectangle 2, 1
-  csl.set_tile_code 0, 0 file("sender.csl")
-  csl.set_tile_code 1, 0 file("receiver.csl")
-}
-
-// Tile placement with multiple params
-// CHECK: csl.layout {
-// CHECK:   csl.set_rectangle 2, 2
-// CHECK:   csl.set_tile_code 0, 0 file("pe.csl") params({col = 0 : i32, is_border = true, row = 0 : i32})
-// CHECK: }
-csl.layout {
-  csl.set_rectangle 2, 2
-  csl.set_tile_code 0, 0 file("pe.csl") params({col = 0 : i32, row = 0 : i32, is_border = true})
+csl.spatial_placement {
+  %r  = csl.route in(RAMP) out(EAST) : i32
+  %c  = csl.color : !csl.color
+  %reg = csl.code_region routes(%r) colors(%c) shape(1, 1) {
+  } : !csl.code_region
+  %k = csl.kernel "pe_program.csl" params({col = 0 : i32, row = 0 : i32}) {
+  } : !csl.kernel
+  csl.place %reg at(0, 0) kernel(%k)
 }

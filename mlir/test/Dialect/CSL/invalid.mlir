@@ -4,11 +4,6 @@
 // SPDX-License-Identifier: MIT
 //
 //===----------------------------------------------------------------------===//
-//
-// Tests that the CSL dialect verifier rejects invalid IR with the correct
-// diagnostic messages.
-//
-//===----------------------------------------------------------------------===//
 
 // RUN: air-opt --verify-diagnostics --split-input-file %s
 
@@ -31,7 +26,7 @@ module {
 // -----
 
 // csl.var with Symbol trait requires parent with SymbolTable
-csl.layout {
+csl.spatial_placement {
   // expected-error @+1 {{'csl.var' op symbol's parent must have the SymbolTable trait}}
   csl.var @buf : memref<1024xf32>
 }
@@ -39,7 +34,7 @@ csl.layout {
 // -----
 
 // csl.param with Symbol trait requires parent with SymbolTable
-csl.layout {
+csl.spatial_placement {
   // expected-error @+1 {{'csl.param' op symbol's parent must have the SymbolTable trait}}
   csl.param @tile_id : i32
 }
@@ -47,7 +42,7 @@ csl.layout {
 // -----
 
 // csl.func with Symbol trait requires parent with SymbolTable
-csl.layout {
+csl.spatial_placement {
   // expected-error @+1 {{'csl.func' op symbol's parent must have the SymbolTable trait}}
   csl.func @compute() {
     csl.return
