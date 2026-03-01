@@ -135,6 +135,7 @@ def CSL_CodeRegionOp : CSL_Op<"code_region", [
   }];
 
   let arguments = (ins
+    OptionalAttr<StrAttr>:$region_name,
     Variadic<I32>:$routes,
     Variadic<CSL_ColorType>:$colors,
     I64Attr:$width,
@@ -144,7 +145,7 @@ def CSL_CodeRegionOp : CSL_Op<"code_region", [
   let regions = (region SizedRegion<1>:$body);
 
   let assemblyFormat = [{
-    `routes` `(` $routes `)` `colors` `(` $colors `)`
+    ($region_name^)? `routes` `(` $routes `)` `colors` `(` $colors `)`
     `shape` `(` $width `,` $height `)` $body attr-dict `:` type($result)
   }];
 }
@@ -362,21 +363,388 @@ def CSL_DataflowOp : CSL_Op<"dataflow", []> {
 //   }];
 // }
 
-// def CSL_SetParamAllOp : CSL_Op<"set_param_all", []> {
-//   let summary = "Set a compile-time parameter on every PE in a region";
-//   let arguments = (ins CSL_CodeRegionType:$region, OptionalAttr<StrAttr>:$param_name, OptionalAttr<I64Attr>:$value, Optional<CSL_ColorType>:$color);
-//   let assemblyFormat = [{
-//     $region (`param` `(` $param_name^ `)` `value` `(` $value `)`)? (`color` `(` $color^ `)`)? attr-dict
-//   }];
-// }
+def CSL_SetParamAllOp : CSL_Op<"set_param_all", []> {
+  let summary = "Set a compile-time parameter on every PE in a region";
+  let description = [{
+    Sets a compile-time parameter value on all PEs in a code region.
+    Corresponds to `code_region.set_param_all('name', value)` in the
+    Python SdkLayout API.
 
-// def CSL_SetParamOp : CSL_Op<"set_param", []> {
-//   let summary = "Set a compile-time parameter on a single PE";
-//   let arguments = (ins CSL_CodeRegionType:$region, I64Attr:$pe_x, I64Attr:$pe_y, StrAttr:$param_name, I64Attr:$value);
-//   let assemblyFormat = [{
-//     $region `at` `(` $pe_x `,` $pe_y `)` `param` `(` $param_name `)` `value` `(` $value `)` attr-dict
-//   }];
-// }
+    Example:
+    ```mlir
+    csl.set_param_all %region param("value") value(550 : i16)
+    ```
+  }];
+  let arguments = (ins
+    CSL_CodeRegionType:$region,
+    StrAttr:$param_name,
+    AnyAttr:$value
+  );
+  let assemblyFormat = [{
+    $region `param` `(` $param_name `)` `value` `(` $value `)` attr-dict
+  }];
+}
+
+def CSL_SetParamOp : CSL_Op<"set_param", []> {
+  let summary = "Set a compile-time parameter on a single PE";
+  let description = [{
+    Sets a compile-time parameter value on a single PE identified by
+    (pe_x, pe_y) within a code region.
+    Corresponds to `code_region.set_param(IntVector(x, y), 'name', value)`
+    in the Python SdkLayout API.
+
+    Example:
+    ```mlir
+    csl.set_param %region at(0, 0) param("select") value(0 : i16)
+    ```
+  }];
+  let arguments = (ins
+    CSL_CodeRegionType:$region,
+    I64Attr:$pe_x,
+    I64Attr:$pe_y,
+    StrAttr:$param_name,
+    AnyAttr:$value
+  );
+  let assemblyFormat = [{
+    $region `at` `(` $pe_x `,` $pe_y `)` `param` `(` $param_name `)` `value` `(` $value `)` attr-dict
+  }];
+}
+
+def CSL_SymColorOp : CSL_Op<"sym_color", []> {
+  let summary = "Declare a free-standing symbolic color (Python: Color('name'))";
+  let description = [{
+    Declares a free-standing symbolic color identified by name.
+    Corresponds to `Color('name')` in the Python SdkLayout API.
+
+    Example:
+    ```mlir
+    %c = csl.sym_color "tx" : !csl.color
+    ```
+  }];
+  let arguments = (ins StrAttr:$sym_name);
+  let results = (outs CSL_ColorType:$result);
+  let assemblyFormat = "$sym_name attr-dict `:` type($result)";
+}
+
+def CSL_ScopedColorOp : CSL_Op<"scoped_color", []> {
+  let summary = "Declare a region-scoped symbolic color (Python: region.color('name'))";
+  let description = [{
+    Declares a color scoped to a specific code region.
+    Corresponds to `region.color('name')` in the Python SdkLayout API.
+
+    Example:
+    ```mlir
+    %c = csl.scoped_color %region "tx" : !csl.color
+    ```
+  }];
+  let arguments = (ins CSL_CodeRegionType:$region, StrAttr:$sym_name);
+  let results = (outs CSL_ColorType:$result);
+  let assemblyFormat = "$region $sym_name attr-dict `:` type($result)";
+}
+
+def CSL_SetParamColorOp : CSL_Op<"set_param_color", []> {
+  let summary = "Set a color object as param on all PEs (Python: region.set_param_all(color))";
+  let description = [{
+    Sets a color object as a compile-time parameter on all PEs in a region.
+    Corresponds to `code_region.set_param_all(color)` in the Python SdkLayout API.
+
+    Example:
+    ```mlir
+    csl.set_param_color %region color(%c)
+    ```
+  }];
+  let arguments = (ins
+    CSL_CodeRegionType:$region,
+    CSL_ColorType:$color
+  );
+  let assemblyFormat = "$region `color` `(` $color `)` attr-dict";
+}
+
+def CSL_InputPortOp : CSL_Op<"input_port", []> {
+  let summary = "Create an input port on a region edge";
+  let description = [{
+    Creates an input port on a code region edge.
+    Corresponds to `region.create_input_port(color, Edge.X, [routes], size)`
+    in the Python SdkLayout API. Accepts one or more routing positions.
+
+    Example:
+    ```mlir
+    %p = csl.input_port %region color(%c) edge(RIGHT) routes(%r) size(10) : !csl.port
+    %p = csl.input_port %region color(%c) edge(RIGHT) routes(%r1, %r2) size(10) : !csl.port
+    ```
+  }];
+  let arguments = (ins
+    CSL_CodeRegionType:$region,
+    CSL_ColorType:$color,
+    CSL_EdgeEnum:$edge,
+    Variadic<I32>:$routes,
+    I64Attr:$size
+  );
+  let results = (outs CSL_PortType:$result);
+  let assemblyFormat = [{
+    $region `color` `(` $color `)` `edge` `(` $edge `)` `routes` `(` $routes `)`
+    `size` `(` $size `)` attr-dict `:` type($result)
+  }];
+}
+
+def CSL_OutputPortOp : CSL_Op<"output_port", []> {
+  let summary = "Create an output port on a region edge";
+  let description = [{
+    Creates an output port on a code region edge.
+    Corresponds to `region.create_output_port(color, Edge.X, [routes], size)`
+    in the Python SdkLayout API. Accepts one or more routing positions.
+
+    Example:
+    ```mlir
+    %p = csl.output_port %region color(%c) edge(LEFT) routes(%r) size(10) : !csl.port
+    %p = csl.output_port %region color(%c) edge(LEFT) routes(%r1, %r2) size(10) : !csl.port
+    ```
+  }];
+  let arguments = (ins
+    CSL_CodeRegionType:$region,
+    CSL_ColorType:$color,
+    CSL_EdgeEnum:$edge,
+    Variadic<I32>:$routes,
+    I64Attr:$size
+  );
+  let results = (outs CSL_PortType:$result);
+  let assemblyFormat = [{
+    $region `color` `(` $color `)` `edge` `(` $edge `)` `routes` `(` $routes `)`
+    `size` `(` $size `)` attr-dict `:` type($result)
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// csl.routing_position — multi-direction RoutingPosition (Tutorial 05+)
+//===----------------------------------------------------------------------===//
+//
+// Builds a RoutingPosition with potentially multiple input and/or output
+// directions. Direction names are comma-separated strings like "NORTH,RAMP".
+//
+// Example:
+//   %r = csl.routing_position in("NORTH") out("RAMP,SOUTH") : i32
+//   %r = csl.routing_position out("RAMP") : i32
+//
+def CSL_RoutingPositionOp : CSL_Op<"routing_position", []> {
+  let summary = "Build a RoutingPosition with multiple input/output directions";
+  let description = [{
+    Builds a RoutingPosition with potentially multiple input/output directions.
+    Direction names are comma-separated strings like "NORTH,RAMP".
+    Corresponds to RoutingPosition().set_input([...]).set_output([...]).
+
+    Example:
+    ```mlir
+    %r = csl.routing_position in("NORTH") out("RAMP,SOUTH") : i32
+    %r2 = csl.routing_position out("RAMP") : i32
+    ```
+  }];
+  let arguments = (ins
+    OptionalAttr<StrAttr>:$in_dirs,
+    OptionalAttr<StrAttr>:$out_dirs
+  );
+  let results = (outs I32:$result);
+  let assemblyFormat = [{
+    (`in` `(` $in_dirs^ `)`)? (`out` `(` $out_dirs^ `)`)? attr-dict `:` type($result)
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// csl.get_edge_routing — edge-specific routing override (Tutorial 05+)
+//===----------------------------------------------------------------------===//
+//
+// Creates an edge-specific routing override for use with paint_all.
+//
+// Example:
+//   %er = csl.get_edge_routing edge(BOTTOM) routes(%r1) : i32
+//
+def CSL_GetEdgeRoutingOp : CSL_Op<"get_edge_routing", []> {
+  let summary = "Create an edge-specific routing position override";
+  let description = [{
+    Creates an edge-specific routing override for use with paint_all.
+    Corresponds to get_edge_routing(Edge.X, [route_positions]).
+
+    Example:
+    ```mlir
+    %er = csl.get_edge_routing edge(BOTTOM) routes(%r1) : i32
+    ```
+  }];
+  let arguments = (ins CSL_EdgeEnum:$edge, Variadic<I32>:$routes);
+  let results = (outs I32:$result);
+  let assemblyFormat = [{
+    `edge` `(` $edge `)` `routes` `(` $routes `)` attr-dict `:` type($result)
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// csl.paint_all — paint all PEs in a region (Tutorial 05+)
+//===----------------------------------------------------------------------===//
+//
+// Paints all PEs in a code region with a color and routing positions.
+// Optional edge_routes override routing for specific edges.
+//
+// Example:
+//   csl.paint_all %region color(%c) routes(%r1, %r2) edge_routes(%er)
+//   csl.paint_all %region color(%c) routes(%r1) edge_routes()
+//
+def CSL_PaintAllOp : CSL_Op<"paint_all", [AttrSizedOperandSegments]> {
+  let summary = "Paint all PEs in a region with core and edge-specific routes";
+  let description = [{
+    Paints all PEs in a code region with a color and routing positions.
+    Optional edge_routes override routing for specific edges.
+    Use edge_routes() for no edge routes.
+
+    Example:
+    ```mlir
+    csl.paint_all %region color(%c) routes(%r1, %r2) edge_routes(%er)
+    csl.paint_all %region color(%c) routes(%r1) edge_routes()
+    ```
+  }];
+  let arguments = (ins
+    CSL_CodeRegionType:$region,
+    CSL_ColorType:$color,
+    Variadic<I32>:$core_routes,
+    Variadic<I32>:$edge_routes
+  );
+  let assemblyFormat = [{
+    $region `color` `(` $color `)` `routes` `(` $core_routes `)`
+    `edge_routes` `(` $edge_routes `)` attr-dict
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// csl.paint_range — paint a rectangular range of PEs (Tutorial 05+)
+//===----------------------------------------------------------------------===//
+//
+// Paints a rectangular range of PEs (upper-left to lower-right inclusive)
+// with a color and routing positions.
+//
+// Example:
+//   csl.paint_range %region rect(0, 0, 1, 4) color(%c) routes(%r)
+//
+def CSL_PaintRangeOp : CSL_Op<"paint_range", []> {
+  let summary = "Paint a rectangular range of PEs with a color and routes";
+  let description = [{
+    Paints a rectangular range of PEs (upper-left to lower-right) with a color.
+    Corresponds to region.paint_range(IntRectangle(IntVector(x1,y1),
+    IntVector(x2,y2)), color, [routes]).
+
+    Example:
+    ```mlir
+    csl.paint_range %region rect(0, 0, 1, 4) color(%c) routes(%r)
+    ```
+  }];
+  let arguments = (ins
+    CSL_CodeRegionType:$region,
+    I64Attr:$ul_x, I64Attr:$ul_y,
+    I64Attr:$lr_x, I64Attr:$lr_y,
+    CSL_ColorType:$color,
+    Variadic<I32>:$routes
+  );
+  let assemblyFormat = [{
+    $region `rect` `(` $ul_x `,` $ul_y `,` $lr_x `,` $lr_y `)`
+    `color` `(` $color `)` `routes` `(` $routes `)` attr-dict
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// csl.set_param_range_color — set color param for a PE range (Tutorial 05+)
+//===----------------------------------------------------------------------===//
+//
+// Sets a color parameter on all PEs in a rectangular range.
+// Corresponds to region.set_param_range(IntRectangle(...), color).
+//
+// Example:
+//   csl.set_param_range_color %region rect(0, 0, 1, 4) color(%c)
+//
+def CSL_SetParamRangeColorOp : CSL_Op<"set_param_range_color", []> {
+  let summary = "Set a color parameter on all PEs in a rectangular range";
+  let description = [{
+    Sets a color parameter on all PEs in a rectangular range.
+    Corresponds to region.set_param_range(IntRectangle(IntVector(x1,y1),
+    IntVector(x2,y2)), color).
+
+    Example:
+    ```mlir
+    csl.set_param_range_color %region rect(0, 0, 1, 4) color(%c)
+    ```
+  }];
+  let arguments = (ins
+    CSL_CodeRegionType:$region,
+    I64Attr:$ul_x, I64Attr:$ul_y,
+    I64Attr:$lr_x, I64Attr:$lr_y,
+    CSL_ColorType:$color
+  );
+  let assemblyFormat = [{
+    $region `rect` `(` $ul_x `,` $ul_y `,` $lr_x `,` $lr_y `)` `color` `(` $color `)` attr-dict
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// csl.set_param_range_named — set named param to color for a PE range (Tutorial 05+)
+//===----------------------------------------------------------------------===//
+//
+// Sets a named parameter to a color value on all PEs in a rectangular range.
+// Corresponds to region.set_param_range(IntRectangle(...), 'name', color).
+//
+// Example:
+//   csl.set_param_range_named %region rect(1, 0, 2, 4) param("b_in") color(%c)
+//
+def CSL_SetParamRangeNamedOp : CSL_Op<"set_param_range_named", []> {
+  let summary = "Set a named parameter to a color value on all PEs in a rectangular range";
+  let description = [{
+    Sets a named parameter to a color value on all PEs in a rectangular range.
+    Corresponds to region.set_param_range(IntRectangle(IntVector(x1,y1),
+    IntVector(x2,y2)), 'name', color).
+
+    Example:
+    ```mlir
+    csl.set_param_range_named %region rect(1, 0, 2, 4) param("b_in") color(%c)
+    ```
+  }];
+  let arguments = (ins
+    CSL_CodeRegionType:$region,
+    I64Attr:$ul_x, I64Attr:$ul_y,
+    I64Attr:$lr_x, I64Attr:$lr_y,
+    StrAttr:$param_name,
+    CSL_ColorType:$color
+  );
+  let assemblyFormat = [{
+    $region `rect` `(` $ul_x `,` $ul_y `,` $lr_x `,` $lr_y `)`
+    `param` `(` $param_name `)` `color` `(` $color `)` attr-dict
+  }];
+}
+
+def CSL_InputStreamOp : CSL_Op<"input_stream", []> {
+  let summary = "Create a host-to-device (H2D) I/O stream";
+  let description = [{
+    Creates a host-to-device I/O stream from an input port.
+    Corresponds to `layout.create_input_stream(port)` in the Python SdkLayout API.
+
+    Example:
+    ```mlir
+    %s = csl.input_stream %port : !csl.stream
+    ```
+  }];
+  let arguments = (ins CSL_PortType:$port);
+  let results = (outs CSL_StreamType:$result);
+  let assemblyFormat = "$port attr-dict `:` type($result)";
+}
+
+def CSL_OutputStreamOp : CSL_Op<"output_stream", []> {
+  let summary = "Create a device-to-host (D2H) I/O stream";
+  let description = [{
+    Creates a device-to-host I/O stream from an output port.
+    Corresponds to `layout.create_output_stream(port)` in the Python SdkLayout API.
+
+    Example:
+    ```mlir
+    %s = csl.output_stream %port : !csl.stream
+    ```
+  }];
+  let arguments = (ins CSL_PortType:$port);
+  let results = (outs CSL_StreamType:$result);
+  let assemblyFormat = "$port attr-dict `:` type($result)";
+}
 
 // def CSL_CreateOutputPortOp : CSL_Op<"create_output_port", []> {
 //   let summary = "Create an output port on a region edge";

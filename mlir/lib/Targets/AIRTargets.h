@@ -15,6 +15,5 @@ namespace air {
 
 mlir::LogicalResult AIRHerdsToJSON(mlir::ModuleOp module,
                                    llvm::raw_ostream &output);
-
+} // namespace air
 }
-} // namespace xilinx

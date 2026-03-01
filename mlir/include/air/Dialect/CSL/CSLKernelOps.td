@@ -23,9 +23,7 @@ def CSL_FuncOp : CSL_Op<"func", [
 
     Example:
     ```mlir
-    csl.func @compute() {
-      csl.return
-    }
+    %0 = csl.func @compute() : () -> () { ... }
     ```
   }];
 
@@ -34,9 +32,10 @@ def CSL_FuncOp : CSL_Op<"func", [
     OptionalAttr<DictionaryAttr>:$arg_attrs,
     OptionalAttr<DictionaryAttr>:$res_attrs
   );
+  let results = (outs);
   let regions = (region AnyRegion:$body);
 
-  let hasCustomAssemblyFormat = 1;
+  let assemblyFormat = "$sym_name `(` `)` `:` `(` `)` `->` `(` `)` $body attr-dict";
 }
 
 def CSL_TaskOp : CSL_Op<"task", [
@@ -51,9 +50,7 @@ def CSL_TaskOp : CSL_Op<"task", [
 
     Example:
     ```mlir
-    csl.task @recv_task() color(3) {
-      csl.return
-    }
+    %0 = csl.task @recv_task() color(3) : () -> () { ... }
     ```
   }];
 
@@ -61,9 +58,10 @@ def CSL_TaskOp : CSL_Op<"task", [
     SymbolNameAttr:$sym_name,
     I32Attr:$color_id
   );
+  let results = (outs);
   let regions = (region AnyRegion:$body);
 
-  let hasCustomAssemblyFormat = 1;
+  let assemblyFormat = "$sym_name `(` `)` `color` `(` $color_id `)` `:` `(` `)` `->` `(` `)` $body attr-dict";
 }
 
 def CSL_ReturnOp : CSL_Op<"return", [

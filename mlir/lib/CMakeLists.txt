@@ -21,6 +21,7 @@ add_mlir_library(
   AIRDialect
   AIRRtDialect
   CSLDialect
+  CSLRuntimeDialect
   AIRTransformOpsIncGen
   AIRConversionPasses
   AIRTransformPasses
@@ -33,6 +34,7 @@ add_mlir_library(
   AIRDialect
   AIRRtDialect
   CSLDialect
+  CSLRuntimeDialect
   AIRUtil
   AIRInterface
   MLIRSupport

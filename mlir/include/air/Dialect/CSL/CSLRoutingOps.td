@@ -87,13 +87,13 @@ def CSL_RouteOp : CSL_Op<"route", []> {
   }];
 
   let arguments = (ins
-    CSL_DirectionEnum:$input_dir,
-    CSL_DirectionEnum:$output_dir
+    OptionalAttr<CSL_DirectionEnum>:$input_dir,
+    OptionalAttr<CSL_DirectionEnum>:$output_dir
   );
   let results = (outs I32:$result);
 
   let assemblyFormat = [{
-    `in` `(` $input_dir `)` `out` `(` $output_dir `)` attr-dict `:` type($result)
+    (`in` `(` $input_dir^ `)`)? (`out` `(` $output_dir^ `)`)? attr-dict `:` type($result)
   }];
 }
 

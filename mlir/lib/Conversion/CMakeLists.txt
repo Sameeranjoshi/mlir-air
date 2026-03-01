@@ -6,12 +6,15 @@ set(CONVERSION_SOURCES
   ConvertToAIRPass.cpp
   AIRToAsyncPass.cpp
   AIRToCSLPass.cpp
+  CSLToCSLRuntime/CSLToCSLRuntime.cpp
   Passes.cpp
 )
 
 set(CONVERSION_LINK_LIBS
   AIRDialect
   AIRRtDialect
+  CSLDialect
+  CSLRuntimeDialect
   AIRUtil
   MLIRIR
   MLIRLinalgUtils

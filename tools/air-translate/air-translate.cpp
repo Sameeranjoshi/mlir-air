@@ -8,6 +8,7 @@
 
 #include "air/Dialect/AIR/AIRDialect.h"
 #include "air/Dialect/AIRRt/AIRRtDialect.h"
+#include "air/Dialect/CSL/CSLDialect.h"
 
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/MLIRContext.h"
@@ -30,6 +31,7 @@ int main(int argc, char **argv) {
 
   registerAllTranslations();
   xilinx::air::registerAIRRtTranslations();
+  xilinx::csl::registerCSLToTextTranslation();
 
   return failed(mlirTranslateMain(argc, argv, "AIR MLIR Translation Tool"));
 }

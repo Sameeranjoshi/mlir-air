@@ -66,4 +66,10 @@ void xilinx::air::registerConversionPasses() {
   registerAIRRtToNpu();
   registerAIRSplitDevices();
 #endif
+
+  // CSL Runtime passes
+  mlir::registerPass(
+      []() -> std::unique_ptr<mlir::Pass> {
+        return createCSLToCSLRuntimePass();
+      });
 }
