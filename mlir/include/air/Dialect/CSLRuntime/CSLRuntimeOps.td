@@ -94,7 +94,7 @@ def CSLRuntime_SetParamAllOp : CSLRuntime_Op<"set_param_all"> {
 
   let arguments = (ins CSLRuntime_CodeRegionType:$code_region,
                        StrAttr:$param_name,
-                       AnyAttr:$param_value);
+                       I64Attr:$param_value);
   let results = (outs CSLRuntime_CodeRegionType:$result);
   let assemblyFormat = "$code_region $param_name `=` $param_value "
                        "attr-dict `:` type($code_region) `->` type($result)";

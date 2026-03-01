@@ -1,0 +1,856 @@
+Note: Using /uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/llvm/install (auto-detected install subdirectory)
+=== Building MLIR-AIR for GPU (without AIE) ===
+LLVM_INSTALL_DIR: /uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/llvm/install
+BUILD_DIR: build
+INSTALL_DIR: install
+WARNING: LLVM Python bindings not found. Python bindings will be disabled.
+
+=== Running CMake ===
+cmake -GNinja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=../install -DLLVM_DIR=/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/llvm/install/lib/cmake/llvm -DMLIR_DIR=/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/llvm/install/lib/cmake/mlir -DAIR_ENABLE_AIE=OFF -DAIR_ENABLE_GPU=ON -DPython3_FIND_VIRTUALENV=ONLY -DPython_FIND_VIRTUALENV=ONLY -Dpybind11_DIR=/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/sandbox/lib/python3.10/site-packages/pybind11/share/cmake/pybind11 -DAIE_ENABLE_BINDINGS_PYTHON=OFF -DLLVM_EXTERNAL_LIT=/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/sandbox/bin/lit -DBUILD_SHARED_LIBS=OFF -DLLVM_ENABLE_ASSERTIONS=ON -DLLVM_USE_LINKER=lld -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ ..
+
+CMake Deprecation Warning at CMakeLists.txt:29 (cmake_policy):
+  The OLD behavior for policy CMP0116 will be removed from a future version
+  of CMake.
+
+  The cmake-policies(7) manual explains that the OLD behaviors of all
+  policies are deprecated and that a policy should be set to OLD only under
+  specific short-term circumstances.  Projects should be ported to the NEW
+  behavior and not rely on setting a policy to OLD.
+
+
+CMake Warning at CMakeLists.txt:53 (find_package):
+  By not providing "FindXRT.cmake" in CMAKE_MODULE_PATH this project has
+  asked CMake to find a package configuration file provided by "XRT", but
+  CMake did not find one.
+
+  Could not find a package configuration file provided by "XRT" with any of
+  the following names:
+
+    XRTConfig.cmake
+    xrt-config.cmake
+
+  Add the installation prefix of "XRT" to CMAKE_PREFIX_PATH or set "XRT_DIR"
+  to a directory containing one of the above files.  If "XRT" provides a
+  separate development package or SDK, be sure it has been installed.
+
+
+CMake Warning at CMakeLists.txt:54 (find_package):
+  By not providing "Findhsa-runtime64.cmake" in CMAKE_MODULE_PATH this
+  project has asked CMake to find a package configuration file provided by
+  "hsa-runtime64", but CMake did not find one.
+
+  Could not find a package configuration file provided by "hsa-runtime64"
+  with any of the following names:
+
+    hsa-runtime64Config.cmake
+    hsa-runtime64-config.cmake
+
+  Add the installation prefix of "hsa-runtime64" to CMAKE_PREFIX_PATH or set
+  "hsa-runtime64_DIR" to a directory containing one of the above files.  If
+  "hsa-runtime64" provides a separate development package or SDK, be sure it
+  has been installed.
+
+
+-- Using MLIRConfig.cmake in: /uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/llvm/install/lib/cmake/mlir
+-- Using LLVMConfig.cmake in: /uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/llvm/install/lib/cmake/llvm
+-- AIE support disabled (GPU-only build)
+-- Building with -fPIC
+-- Found Python3: /uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/sandbox/bin/python3.10 (found version "3.10.3") found components: Interpreter Development.Module
+-- Found python include dirs: /uufs/chpc.utah.edu/sys/installdir/r8/python/3.10.3/include/python3.10
+-- Found python libraries: 
+-- Found numpy v: 
+-- Using explicit pybind11 cmake directory: /uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/sandbox/lib/python3.10/site-packages/pybind11/share/cmake/pybind11 (-Dpybind11_DIR to change)
+-- Found pybind11: /uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/sandbox/lib/python3.10/site-packages/pybind11/include (found version "3.0.1")
+-- Found pybind11 v3.0.1: /uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/sandbox/lib/python3.10/site-packages/pybind11/include
+-- Python prefix = '', suffix = '', extension = '.cpython-310-x86_64-linux-gnu.so
+-- Checking for nanobind in python path...
+-- found (/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/sandbox/lib/python3.10/site-packages/nanobind/cmake)
+-- Found nanobind v2.11.0: /uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/sandbox/lib/python3.10/site-packages/nanobind/include
+-- Python prefix = '', suffix = '', extension = '.cpython-310-x86_64-linux-gnu.so
+Skipping e2e tests: No Runtime architecture found. Please configure AIR_RUNTIME_TARGETS.
+CMake Warning (dev) at llvm/install/lib/cmake/llvm/LLVMConfig.cmake:193 (find_package):
+  Policy CMP0074 is not set: find_package uses <PackageName>_ROOT variables.
+  Run "cmake --help-policy CMP0074" for policy details.  Use the cmake_policy
+  command to set the policy and suppress this warning.
+
+  Environment variable ZLIB_ROOT is set to:
+
+    /uufs/chpc.utah.edu/sys/spack/v019/linux-rocky8-nehalem/gcc-8.5.0/zlib-1.3.1-d3dgb4h4lykk2qijtso7gy6nfqta5lac
+
+  For compatibility, CMake is ignoring the variable.
+Call Stack (most recent call first):
+  llvm/install/lib/cmake/mlir/MLIRConfig.cmake:11 (find_package)
+  programming_examples/CMakeLists.txt:25 (find_package)
+This warning is for project developers.  Use -Wno-dev to suppress it.
+
+-- Found Python3: /uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/sandbox/bin/python3.10 (found version "3.10.3") found components: Interpreter
+CMake Warning at programming_examples/CMakeLists.txt:40 (find_package):
+  By not providing "FindXRT.cmake" in CMAKE_MODULE_PATH this project has
+  asked CMake to find a package configuration file provided by "XRT", but
+  CMake did not find one.
+
+  Could not find a package configuration file provided by "XRT" with any of
+  the following names:
+
+    XRTConfig.cmake
+    xrt-config.cmake
+
+  Add the installation prefix of "XRT" to CMAKE_PREFIX_PATH or set "XRT_DIR"
+  to a directory containing one of the above files.  If "XRT" provides a
+  separate development package or SDK, be sure it has been installed.
+
+
+-- Using MLIRConfig.cmake in: /uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/llvm/install/lib/cmake/mlir
+-- Using LLVMConfig.cmake in: /uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/llvm/install/lib/cmake/llvm
+-- Using AIRConfig.cmake in: 
+-- Building with -fPIC
+-- Configuring done (2.9s)
+-- Generating done (1.0s)
+-- Build files have been written to: /uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build
+
+=== Building with Ninja ===
+[1/12] Building CXX object mlir/lib/Dialect/CSLRuntime/IR/CMakeFiles/obj.CSLRuntimeDialect.dir/CSLRuntimeDialect.cpp.o
+FAILED: [code=1] mlir/lib/Dialect/CSLRuntime/IR/CMakeFiles/obj.CSLRuntimeDialect.dir/CSLRuntimeDialect.cpp.o 
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/llvm/install/bin/clang++ -DAIR_ENABLE_AIE=0 -DAIR_ENABLE_GPU=1 -DGTEST_HAS_RTTI=0 -D_DEBUG -D_GLIBCXX_ASSERTIONS -D_GLIBCXX_USE_CXX11_ABI=1 -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS -I/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/llvm/install/include -I/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/include -I/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include -fPIC -fno-semantic-interposition -fvisibility-inlines-hidden -Werror=date-time -Werror=unguarded-availability-new -Wall -Wextra -Wno-unused-parameter -Wwrite-strings -Wcast-qual -Wmissing-field-initializers -Wimplicit-fallthrough -Wcovered-switch-default -Wno-noexcept-type -Wnon-virtual-dtor -Wdelete-non-virtual-dtor -Wsuggest-override -Wstring-conversion -Wno-pass-failed -Wmisleading-indentation -Wctad-maybe-unsupported -fdiagnostics-color -ffunction-sections -fdata-sections -Werror=sign-compare -Werror=unused -Werror=return-type -Werror=implicit-function-declaration -Werror=mismatched-tags -O3 -DNDEBUG -std=gnu++17   -D_DEBUG -D_GLIBCXX_ASSERTIONS -D_GLIBCXX_USE_CXX11_ABI=1 -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS  -fno-exceptions -funwind-tables -fno-rtti -UNDEBUG -MD -MT mlir/lib/Dialect/CSLRuntime/IR/CMakeFiles/obj.CSLRuntimeDialect.dir/CSLRuntimeDialect.cpp.o -MF mlir/lib/Dialect/CSLRuntime/IR/CMakeFiles/obj.CSLRuntimeDialect.dir/CSLRuntimeDialect.cpp.o.d -o mlir/lib/Dialect/CSLRuntime/IR/CMakeFiles/obj.CSLRuntimeDialect.dir/CSLRuntimeDialect.cpp.o -c /uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/lib/Dialect/CSLRuntime/IR/CSLRuntimeDialect.cpp
+In file included from /uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/lib/Dialect/CSLRuntime/IR/CSLRuntimeDialect.cpp:9:
+In file included from /uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h:18:
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:232:260: error: no member named 'BytecodeOpInterface' in namespace 'mlir'
+  232 | class CompileOp : public ::mlir::Op<CompileOp, ::mlir::OpTrait::ZeroRegions, ::mlir::OpTrait::OneResult, ::mlir::OpTrait::OneTypedResult<::mlir::Type>::Impl, ::mlir::OpTrait::ZeroSuccessors, ::mlir::OpTrait::OneOperand, ::mlir::OpTrait::OpInvariants, ::mlir::BytecodeOpInterface::Trait> {
+      |                                                                                                                                                                                                                                                            ~~~~~~~~^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:234:9: error: use of undeclared identifier 'Op'
+  234 |   using Op::Op;
+      |         ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:235:9: error: use of undeclared identifier 'Op'
+  235 |   using Op::print;
+      |         ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:299:55: error: no type named 'DialectBytecodeReader' in namespace 'mlir'
+  299 |   static ::llvm::LogicalResult readProperties(::mlir::DialectBytecodeReader &reader, ::mlir::OperationState &state);
+      |                                               ~~~~~~~~^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:300:32: error: no type named 'DialectBytecodeWriter' in namespace 'mlir'
+  300 |   void writeProperties(::mlir::DialectBytecodeWriter &writer);
+      |                        ~~~~~~~~^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:265:23: error: use of undeclared identifier 'getOperation'; did you mean 'getOperationName'?
+  265 |     return {std::next(getOperation()->operand_begin(), valueRange.first),
+      |                       ^~~~~~~~~~~~
+      |                       getOperationName
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:255:42: note: 'getOperationName' declared here
+  255 |   static constexpr ::llvm::StringLiteral getOperationName() {
+      |                                          ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:265:37: error: member reference type '::llvm::StringLiteral' is not a pointer; did you mean to use '.'?
+  265 |     return {std::next(getOperation()->operand_begin(), valueRange.first),
+      |                       ~~~~~~~~~~~~~~^~
+      |                                     .
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:265:39: error: no member named 'operand_begin' in 'llvm::StringLiteral'
+  265 |     return {std::next(getOperation()->operand_begin(), valueRange.first),
+      |                       ~~~~~~~~~~~~~~  ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:266:24: error: use of undeclared identifier 'getOperation'; did you mean 'getOperationName'?
+  266 |              std::next(getOperation()->operand_begin(), valueRange.first + valueRange.second)};
+      |                        ^~~~~~~~~~~~
+      |                        getOperationName
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:255:42: note: 'getOperationName' declared here
+  255 |   static constexpr ::llvm::StringLiteral getOperationName() {
+      |                                          ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:266:38: error: member reference type '::llvm::StringLiteral' is not a pointer; did you mean to use '.'?
+  266 |              std::next(getOperation()->operand_begin(), valueRange.first + valueRange.second)};
+      |                        ~~~~~~~~~~~~~~^~
+      |                                      .
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:266:40: error: no member named 'operand_begin' in 'llvm::StringLiteral'
+  266 |              std::next(getOperation()->operand_begin(), valueRange.first + valueRange.second)};
+      |                        ~~~~~~~~~~~~~~  ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:275:12: error: use of undeclared identifier 'getOperation'; did you mean 'getOperationName'?
+  275 |     return getOperation()->getOpOperand(range.first);
+      |            ^~~~~~~~~~~~
+      |            getOperationName
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:255:42: note: 'getOperationName' declared here
+  255 |   static constexpr ::llvm::StringLiteral getOperationName() {
+      |                                          ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:275:26: error: member reference type '::llvm::StringLiteral' is not a pointer; did you mean to use '.'?
+  275 |     return getOperation()->getOpOperand(range.first);
+      |            ~~~~~~~~~~~~~~^~
+      |                          .
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:275:28: error: no member named 'getOpOperand' in 'llvm::StringLiteral'
+  275 |     return getOperation()->getOpOperand(range.first);
+      |            ~~~~~~~~~~~~~~  ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:284:23: error: use of undeclared identifier 'getOperation'; did you mean 'getOperationName'?
+  284 |     return {std::next(getOperation()->result_begin(), valueRange.first),
+      |                       ^~~~~~~~~~~~
+      |                       getOperationName
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:255:42: note: 'getOperationName' declared here
+  255 |   static constexpr ::llvm::StringLiteral getOperationName() {
+      |                                          ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:284:37: error: member reference type '::llvm::StringLiteral' is not a pointer; did you mean to use '.'?
+  284 |     return {std::next(getOperation()->result_begin(), valueRange.first),
+      |                       ~~~~~~~~~~~~~~^~
+      |                                     .
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:284:39: error: no member named 'result_begin' in 'llvm::StringLiteral'
+  284 |     return {std::next(getOperation()->result_begin(), valueRange.first),
+      |                       ~~~~~~~~~~~~~~  ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:285:24: error: use of undeclared identifier 'getOperation'; did you mean 'getOperationName'?
+  285 |              std::next(getOperation()->result_begin(), valueRange.first + valueRange.second)};
+      |                        ^~~~~~~~~~~~
+      |                        getOperationName
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:255:42: note: 'getOperationName' declared here
+  255 |   static constexpr ::llvm::StringLiteral getOperationName() {
+      |                                          ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:285:38: error: member reference type '::llvm::StringLiteral' is not a pointer; did you mean to use '.'?
+  285 |              std::next(getOperation()->result_begin(), valueRange.first + valueRange.second)};
+      |                        ~~~~~~~~~~~~~~^~
+      |                                      .
+fatal error: too many errors emitted, stopping now [-ferror-limit=]
+20 errors generated.
+[2/12] Building CXX object mlir/lib/Dialect/CSLRuntime/IR/CMakeFiles/obj.CSLRuntimeDialect.dir/CSLRuntimeOps.cpp.o
+FAILED: [code=1] mlir/lib/Dialect/CSLRuntime/IR/CMakeFiles/obj.CSLRuntimeDialect.dir/CSLRuntimeOps.cpp.o 
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/llvm/install/bin/clang++ -DAIR_ENABLE_AIE=0 -DAIR_ENABLE_GPU=1 -DGTEST_HAS_RTTI=0 -D_DEBUG -D_GLIBCXX_ASSERTIONS -D_GLIBCXX_USE_CXX11_ABI=1 -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS -I/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/llvm/install/include -I/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/include -I/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include -fPIC -fno-semantic-interposition -fvisibility-inlines-hidden -Werror=date-time -Werror=unguarded-availability-new -Wall -Wextra -Wno-unused-parameter -Wwrite-strings -Wcast-qual -Wmissing-field-initializers -Wimplicit-fallthrough -Wcovered-switch-default -Wno-noexcept-type -Wnon-virtual-dtor -Wdelete-non-virtual-dtor -Wsuggest-override -Wstring-conversion -Wno-pass-failed -Wmisleading-indentation -Wctad-maybe-unsupported -fdiagnostics-color -ffunction-sections -fdata-sections -Werror=sign-compare -Werror=unused -Werror=return-type -Werror=implicit-function-declaration -Werror=mismatched-tags -O3 -DNDEBUG -std=gnu++17   -D_DEBUG -D_GLIBCXX_ASSERTIONS -D_GLIBCXX_USE_CXX11_ABI=1 -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS  -fno-exceptions -funwind-tables -fno-rtti -UNDEBUG -MD -MT mlir/lib/Dialect/CSLRuntime/IR/CMakeFiles/obj.CSLRuntimeDialect.dir/CSLRuntimeOps.cpp.o -MF mlir/lib/Dialect/CSLRuntime/IR/CMakeFiles/obj.CSLRuntimeDialect.dir/CSLRuntimeOps.cpp.o.d -o mlir/lib/Dialect/CSLRuntime/IR/CMakeFiles/obj.CSLRuntimeDialect.dir/CSLRuntimeOps.cpp.o -c /uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/lib/Dialect/CSLRuntime/IR/CSLRuntimeOps.cpp
+In file included from /uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/lib/Dialect/CSLRuntime/IR/CSLRuntimeOps.cpp:8:
+In file included from /uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h:18:
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:232:260: error: no member named 'BytecodeOpInterface' in namespace 'mlir'
+  232 | class CompileOp : public ::mlir::Op<CompileOp, ::mlir::OpTrait::ZeroRegions, ::mlir::OpTrait::OneResult, ::mlir::OpTrait::OneTypedResult<::mlir::Type>::Impl, ::mlir::OpTrait::ZeroSuccessors, ::mlir::OpTrait::OneOperand, ::mlir::OpTrait::OpInvariants, ::mlir::BytecodeOpInterface::Trait> {
+      |                                                                                                                                                                                                                                                            ~~~~~~~~^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:234:9: error: use of undeclared identifier 'Op'
+  234 |   using Op::Op;
+      |         ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:235:9: error: use of undeclared identifier 'Op'
+  235 |   using Op::print;
+      |         ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:299:55: error: no type named 'DialectBytecodeReader' in namespace 'mlir'
+  299 |   static ::llvm::LogicalResult readProperties(::mlir::DialectBytecodeReader &reader, ::mlir::OperationState &state);
+      |                                               ~~~~~~~~^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:300:32: error: no type named 'DialectBytecodeWriter' in namespace 'mlir'
+  300 |   void writeProperties(::mlir::DialectBytecodeWriter &writer);
+      |                        ~~~~~~~~^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:265:23: error: use of undeclared identifier 'getOperation'; did you mean 'getOperationName'?
+  265 |     return {std::next(getOperation()->operand_begin(), valueRange.first),
+      |                       ^~~~~~~~~~~~
+      |                       getOperationName
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:255:42: note: 'getOperationName' declared here
+  255 |   static constexpr ::llvm::StringLiteral getOperationName() {
+      |                                          ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:265:37: error: member reference type '::llvm::StringLiteral' is not a pointer; did you mean to use '.'?
+  265 |     return {std::next(getOperation()->operand_begin(), valueRange.first),
+      |                       ~~~~~~~~~~~~~~^~
+      |                                     .
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:265:39: error: no member named 'operand_begin' in 'llvm::StringLiteral'
+  265 |     return {std::next(getOperation()->operand_begin(), valueRange.first),
+      |                       ~~~~~~~~~~~~~~  ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:266:24: error: use of undeclared identifier 'getOperation'; did you mean 'getOperationName'?
+  266 |              std::next(getOperation()->operand_begin(), valueRange.first + valueRange.second)};
+      |                        ^~~~~~~~~~~~
+      |                        getOperationName
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:255:42: note: 'getOperationName' declared here
+  255 |   static constexpr ::llvm::StringLiteral getOperationName() {
+      |                                          ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:266:38: error: member reference type '::llvm::StringLiteral' is not a pointer; did you mean to use '.'?
+  266 |              std::next(getOperation()->operand_begin(), valueRange.first + valueRange.second)};
+      |                        ~~~~~~~~~~~~~~^~
+      |                                      .
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:266:40: error: no member named 'operand_begin' in 'llvm::StringLiteral'
+  266 |              std::next(getOperation()->operand_begin(), valueRange.first + valueRange.second)};
+      |                        ~~~~~~~~~~~~~~  ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:275:12: error: use of undeclared identifier 'getOperation'; did you mean 'getOperationName'?
+  275 |     return getOperation()->getOpOperand(range.first);
+      |            ^~~~~~~~~~~~
+      |            getOperationName
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:255:42: note: 'getOperationName' declared here
+  255 |   static constexpr ::llvm::StringLiteral getOperationName() {
+      |                                          ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:275:26: error: member reference type '::llvm::StringLiteral' is not a pointer; did you mean to use '.'?
+  275 |     return getOperation()->getOpOperand(range.first);
+      |            ~~~~~~~~~~~~~~^~
+      |                          .
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:275:28: error: no member named 'getOpOperand' in 'llvm::StringLiteral'
+  275 |     return getOperation()->getOpOperand(range.first);
+      |            ~~~~~~~~~~~~~~  ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:284:23: error: use of undeclared identifier 'getOperation'; did you mean 'getOperationName'?
+  284 |     return {std::next(getOperation()->result_begin(), valueRange.first),
+      |                       ^~~~~~~~~~~~
+      |                       getOperationName
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:255:42: note: 'getOperationName' declared here
+  255 |   static constexpr ::llvm::StringLiteral getOperationName() {
+      |                                          ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:284:37: error: member reference type '::llvm::StringLiteral' is not a pointer; did you mean to use '.'?
+  284 |     return {std::next(getOperation()->result_begin(), valueRange.first),
+      |                       ~~~~~~~~~~~~~~^~
+      |                                     .
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:284:39: error: no member named 'result_begin' in 'llvm::StringLiteral'
+  284 |     return {std::next(getOperation()->result_begin(), valueRange.first),
+      |                       ~~~~~~~~~~~~~~  ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:285:24: error: use of undeclared identifier 'getOperation'; did you mean 'getOperationName'?
+  285 |              std::next(getOperation()->result_begin(), valueRange.first + valueRange.second)};
+      |                        ^~~~~~~~~~~~
+      |                        getOperationName
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:255:42: note: 'getOperationName' declared here
+  255 |   static constexpr ::llvm::StringLiteral getOperationName() {
+      |                                          ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:285:38: error: member reference type '::llvm::StringLiteral' is not a pointer; did you mean to use '.'?
+  285 |              std::next(getOperation()->result_begin(), valueRange.first + valueRange.second)};
+      |                        ~~~~~~~~~~~~~~^~
+      |                                      .
+fatal error: too many errors emitted, stopping now [-ferror-limit=]
+20 errors generated.
+[3/12] Building CXX object mlir/lib/Targets/CMakeFiles/obj.AIRTargets.dir/CSLRuntimeToPy.cpp.o
+FAILED: [code=1] mlir/lib/Targets/CMakeFiles/obj.AIRTargets.dir/CSLRuntimeToPy.cpp.o 
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/llvm/install/bin/clang++ -DAIR_ENABLE_AIE=0 -DAIR_ENABLE_GPU=1 -DGTEST_HAS_RTTI=0 -D_DEBUG -D_GLIBCXX_ASSERTIONS -D_GLIBCXX_USE_CXX11_ABI=1 -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS -I/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/llvm/install/include -I/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/include -I/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include -fPIC -fno-semantic-interposition -fvisibility-inlines-hidden -Werror=date-time -Werror=unguarded-availability-new -Wall -Wextra -Wno-unused-parameter -Wwrite-strings -Wcast-qual -Wmissing-field-initializers -Wimplicit-fallthrough -Wcovered-switch-default -Wno-noexcept-type -Wnon-virtual-dtor -Wdelete-non-virtual-dtor -Wsuggest-override -Wstring-conversion -Wno-pass-failed -Wmisleading-indentation -Wctad-maybe-unsupported -fdiagnostics-color -ffunction-sections -fdata-sections -Werror=sign-compare -Werror=unused -Werror=return-type -Werror=implicit-function-declaration -Werror=mismatched-tags -O3 -DNDEBUG -std=gnu++17   -D_DEBUG -D_GLIBCXX_ASSERTIONS -D_GLIBCXX_USE_CXX11_ABI=1 -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS  -fno-exceptions -funwind-tables -fno-rtti -UNDEBUG -MD -MT mlir/lib/Targets/CMakeFiles/obj.AIRTargets.dir/CSLRuntimeToPy.cpp.o -MF mlir/lib/Targets/CMakeFiles/obj.AIRTargets.dir/CSLRuntimeToPy.cpp.o.d -o mlir/lib/Targets/CMakeFiles/obj.AIRTargets.dir/CSLRuntimeToPy.cpp.o -c /uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/lib/Targets/CSLRuntimeToPy.cpp
+In file included from /uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/lib/Targets/CSLRuntimeToPy.cpp:14:
+In file included from /uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h:18:
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:232:260: error: no member named 'BytecodeOpInterface' in namespace 'mlir'
+  232 | class CompileOp : public ::mlir::Op<CompileOp, ::mlir::OpTrait::ZeroRegions, ::mlir::OpTrait::OneResult, ::mlir::OpTrait::OneTypedResult<::mlir::Type>::Impl, ::mlir::OpTrait::ZeroSuccessors, ::mlir::OpTrait::OneOperand, ::mlir::OpTrait::OpInvariants, ::mlir::BytecodeOpInterface::Trait> {
+      |                                                                                                                                                                                                                                                            ~~~~~~~~^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:234:9: error: use of undeclared identifier 'Op'
+  234 |   using Op::Op;
+      |         ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:235:9: error: use of undeclared identifier 'Op'
+  235 |   using Op::print;
+      |         ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:299:55: error: no type named 'DialectBytecodeReader' in namespace 'mlir'
+  299 |   static ::llvm::LogicalResult readProperties(::mlir::DialectBytecodeReader &reader, ::mlir::OperationState &state);
+      |                                               ~~~~~~~~^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:300:32: error: no type named 'DialectBytecodeWriter' in namespace 'mlir'
+  300 |   void writeProperties(::mlir::DialectBytecodeWriter &writer);
+      |                        ~~~~~~~~^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:265:23: error: use of undeclared identifier 'getOperation'; did you mean 'getOperationName'?
+  265 |     return {std::next(getOperation()->operand_begin(), valueRange.first),
+      |                       ^~~~~~~~~~~~
+      |                       getOperationName
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:255:42: note: 'getOperationName' declared here
+  255 |   static constexpr ::llvm::StringLiteral getOperationName() {
+      |                                          ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:265:37: error: member reference type '::llvm::StringLiteral' is not a pointer; did you mean to use '.'?
+  265 |     return {std::next(getOperation()->operand_begin(), valueRange.first),
+      |                       ~~~~~~~~~~~~~~^~
+      |                                     .
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:265:39: error: no member named 'operand_begin' in 'llvm::StringLiteral'
+  265 |     return {std::next(getOperation()->operand_begin(), valueRange.first),
+      |                       ~~~~~~~~~~~~~~  ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:266:24: error: use of undeclared identifier 'getOperation'; did you mean 'getOperationName'?
+  266 |              std::next(getOperation()->operand_begin(), valueRange.first + valueRange.second)};
+      |                        ^~~~~~~~~~~~
+      |                        getOperationName
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:255:42: note: 'getOperationName' declared here
+  255 |   static constexpr ::llvm::StringLiteral getOperationName() {
+      |                                          ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:266:38: error: member reference type '::llvm::StringLiteral' is not a pointer; did you mean to use '.'?
+  266 |              std::next(getOperation()->operand_begin(), valueRange.first + valueRange.second)};
+      |                        ~~~~~~~~~~~~~~^~
+      |                                      .
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:266:40: error: no member named 'operand_begin' in 'llvm::StringLiteral'
+  266 |              std::next(getOperation()->operand_begin(), valueRange.first + valueRange.second)};
+      |                        ~~~~~~~~~~~~~~  ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:275:12: error: use of undeclared identifier 'getOperation'; did you mean 'getOperationName'?
+  275 |     return getOperation()->getOpOperand(range.first);
+      |            ^~~~~~~~~~~~
+      |            getOperationName
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:255:42: note: 'getOperationName' declared here
+  255 |   static constexpr ::llvm::StringLiteral getOperationName() {
+      |                                          ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:275:26: error: member reference type '::llvm::StringLiteral' is not a pointer; did you mean to use '.'?
+  275 |     return getOperation()->getOpOperand(range.first);
+      |            ~~~~~~~~~~~~~~^~
+      |                          .
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:275:28: error: no member named 'getOpOperand' in 'llvm::StringLiteral'
+  275 |     return getOperation()->getOpOperand(range.first);
+      |            ~~~~~~~~~~~~~~  ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:284:23: error: use of undeclared identifier 'getOperation'; did you mean 'getOperationName'?
+  284 |     return {std::next(getOperation()->result_begin(), valueRange.first),
+      |                       ^~~~~~~~~~~~
+      |                       getOperationName
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:255:42: note: 'getOperationName' declared here
+  255 |   static constexpr ::llvm::StringLiteral getOperationName() {
+      |                                          ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:284:37: error: member reference type '::llvm::StringLiteral' is not a pointer; did you mean to use '.'?
+  284 |     return {std::next(getOperation()->result_begin(), valueRange.first),
+      |                       ~~~~~~~~~~~~~~^~
+      |                                     .
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:284:39: error: no member named 'result_begin' in 'llvm::StringLiteral'
+  284 |     return {std::next(getOperation()->result_begin(), valueRange.first),
+      |                       ~~~~~~~~~~~~~~  ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:285:24: error: use of undeclared identifier 'getOperation'; did you mean 'getOperationName'?
+  285 |              std::next(getOperation()->result_begin(), valueRange.first + valueRange.second)};
+      |                        ^~~~~~~~~~~~
+      |                        getOperationName
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:255:42: note: 'getOperationName' declared here
+  255 |   static constexpr ::llvm::StringLiteral getOperationName() {
+      |                                          ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:285:38: error: member reference type '::llvm::StringLiteral' is not a pointer; did you mean to use '.'?
+  285 |              std::next(getOperation()->result_begin(), valueRange.first + valueRange.second)};
+      |                        ~~~~~~~~~~~~~~^~
+      |                                      .
+fatal error: too many errors emitted, stopping now [-ferror-limit=]
+20 errors generated.
+[4/12] Building CXX object mlir/lib/Conversion/CMakeFiles/obj.AIRConversionPasses.dir/CSLToCSLRuntime/CSLToCSLRuntime.cpp.o
+FAILED: [code=1] mlir/lib/Conversion/CMakeFiles/obj.AIRConversionPasses.dir/CSLToCSLRuntime/CSLToCSLRuntime.cpp.o 
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/llvm/install/bin/clang++ -DAIR_ENABLE_AIE=0 -DAIR_ENABLE_GPU=1 -DGTEST_HAS_RTTI=0 -D_DEBUG -D_GLIBCXX_ASSERTIONS -D_GLIBCXX_USE_CXX11_ABI=1 -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS -I/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/llvm/install/include -I/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/include -I/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include -fPIC -fno-semantic-interposition -fvisibility-inlines-hidden -Werror=date-time -Werror=unguarded-availability-new -Wall -Wextra -Wno-unused-parameter -Wwrite-strings -Wcast-qual -Wmissing-field-initializers -Wimplicit-fallthrough -Wcovered-switch-default -Wno-noexcept-type -Wnon-virtual-dtor -Wdelete-non-virtual-dtor -Wsuggest-override -Wstring-conversion -Wno-pass-failed -Wmisleading-indentation -Wctad-maybe-unsupported -fdiagnostics-color -ffunction-sections -fdata-sections -Werror=sign-compare -Werror=unused -Werror=return-type -Werror=implicit-function-declaration -Werror=mismatched-tags -O3 -DNDEBUG -std=gnu++17   -D_DEBUG -D_GLIBCXX_ASSERTIONS -D_GLIBCXX_USE_CXX11_ABI=1 -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS  -fno-exceptions -funwind-tables -fno-rtti -UNDEBUG -MD -MT mlir/lib/Conversion/CMakeFiles/obj.AIRConversionPasses.dir/CSLToCSLRuntime/CSLToCSLRuntime.cpp.o -MF mlir/lib/Conversion/CMakeFiles/obj.AIRConversionPasses.dir/CSLToCSLRuntime/CSLToCSLRuntime.cpp.o.d -o mlir/lib/Conversion/CMakeFiles/obj.AIRConversionPasses.dir/CSLToCSLRuntime/CSLToCSLRuntime.cpp.o -c /uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/lib/Conversion/CSLToCSLRuntime/CSLToCSLRuntime.cpp
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/lib/Conversion/CSLToCSLRuntime/CSLToCSLRuntime.cpp:32:34: error: unknown type name 'CSL_SpatialPlacementOp'; did you mean 'SpatialPlacementOp'?
+   32 |     : public OpConversionPattern<CSL_SpatialPlacementOp> {
+      |                                  ^~~~~~~~~~~~~~~~~~~~~~
+      |                                  SpatialPlacementOp
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSL/CSLOps.h.inc:8808:7: note: 'SpatialPlacementOp' declared here
+ 8808 | class SpatialPlacementOp : public ::mlir::Op<SpatialPlacementOp, ::mlir::OpTrait::OneRegion, ::mlir::OpTrait::ZeroResults, ::mlir::OpTrait::ZeroSuccessors, ::mlir::OpTrait::ZeroOperands, ::mlir::OpTrait::SingleBlock, ::mlir::OpTrait::NoTerminator, ::mlir::OpTrait::OpInvariants> {
+      |       ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/lib/Conversion/CSLToCSLRuntime/CSLToCSLRuntime.cpp:35:33: error: unknown type name 'CSL_SpatialPlacementOp'; did you mean 'SpatialPlacementOp'?
+   35 |   LogicalResult matchAndRewrite(CSL_SpatialPlacementOp op,
+      |                                 ^~~~~~~~~~~~~~~~~~~~~~
+      |                                 SpatialPlacementOp
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSL/CSLOps.h.inc:8808:7: note: 'SpatialPlacementOp' declared here
+ 8808 | class SpatialPlacementOp : public ::mlir::Op<SpatialPlacementOp, ::mlir::OpTrait::OneRegion, ::mlir::OpTrait::ZeroResults, ::mlir::OpTrait::ZeroSuccessors, ::mlir::OpTrait::ZeroOperands, ::mlir::OpTrait::SingleBlock, ::mlir::OpTrait::NoTerminator, ::mlir::OpTrait::OpInvariants> {
+      |       ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/lib/Conversion/CSLToCSLRuntime/CSLToCSLRuntime.cpp:52:5: error: unknown type name 'CSL_CodeRegionOp'; did you mean 'CodeRegionOp'?
+   52 |     CSL_CodeRegionOp codeRegionOp = nullptr;
+      |     ^~~~~~~~~~~~~~~~
+      |     CodeRegionOp
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSL/CSLOps.h.inc:723:7: note: 'CodeRegionOp' declared here
+  723 | class CodeRegionOp : public ::mlir::Op<CodeRegionOp, ::mlir::OpTrait::OneRegion, ::mlir::OpTrait::OneResult, ::mlir::OpTrait::OneTypedResult<::mlir::Type>::Impl, ::mlir::OpTrait::ZeroSuccessors, ::mlir::OpTrait::VariadicOperands, ::mlir::OpTrait::SingleBlock, ::mlir::OpTrait::NoTerminator, ::mlir::OpTrait::AttrSizedOperandSegments, ::mlir::OpTrait::OpInvariants, ::mlir::BytecodeOpInterface::Trait> {
+      |       ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/lib/Conversion/CSLToCSLRuntime/CSLToCSLRuntime.cpp:53:5: error: unknown type name 'CSL_PlaceOp'
+   53 |     CSL_PlaceOp placeOp = nullptr;
+      |     ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/lib/Conversion/CSLToCSLRuntime/CSLToCSLRuntime.cpp:54:17: error: use of undeclared identifier 'CSL_SetParamAllOp'
+   54 |     SmallVector<CSL_SetParamAllOp, 4> setParamOps;
+      |                 ^~~~~~~~~~~~~~~~~
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/lib/Conversion/CSLToCSLRuntime/CSLToCSLRuntime.cpp:55:17: error: use of undeclared identifier 'CSL_ExportNameOp'
+   55 |     SmallVector<CSL_ExportNameOp, 4> exportNameOps;
+      |                 ^~~~~~~~~~~~~~~~
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/lib/Conversion/CSLToCSLRuntime/CSLToCSLRuntime.cpp:59:32: error: unknown type name 'CSL_CodeRegionOp'; did you mean 'CodeRegionOp'?
+   59 |       if (auto crOp = dyn_cast<CSL_CodeRegionOp>(op)) {
+      |                                ^~~~~~~~~~~~~~~~
+      |                                CodeRegionOp
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSL/CSLOps.h.inc:723:7: note: 'CodeRegionOp' declared here
+  723 | class CodeRegionOp : public ::mlir::Op<CodeRegionOp, ::mlir::OpTrait::OneRegion, ::mlir::OpTrait::OneResult, ::mlir::OpTrait::OneTypedResult<::mlir::Type>::Impl, ::mlir::OpTrait::ZeroSuccessors, ::mlir::OpTrait::VariadicOperands, ::mlir::OpTrait::SingleBlock, ::mlir::OpTrait::NoTerminator, ::mlir::OpTrait::AttrSizedOperandSegments, ::mlir::OpTrait::OpInvariants, ::mlir::BytecodeOpInterface::Trait> {
+      |       ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/lib/Conversion/CSLToCSLRuntime/CSLToCSLRuntime.cpp:63:38: error: use of undeclared identifier 'CSL_PlaceOp'
+   63 |       } else if (auto pOp = dyn_cast<CSL_PlaceOp>(op)) {
+      |                                      ^~~~~~~~~~~
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/lib/Conversion/CSLToCSLRuntime/CSLToCSLRuntime.cpp:67:39: error: use of undeclared identifier 'CSL_SetParamAllOp'
+   67 |       } else if (auto spOp = dyn_cast<CSL_SetParamAllOp>(op)) {
+      |                                       ^~~~~~~~~~~~~~~~~
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/lib/Conversion/CSLToCSLRuntime/CSLToCSLRuntime.cpp:69:39: error: use of undeclared identifier 'CSL_ExportNameOp'
+   69 |       } else if (auto enOp = dyn_cast<CSL_ExportNameOp>(op)) {
+      |                                       ^~~~~~~~~~~~~~~~
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/lib/Conversion/CSLToCSLRuntime/CSLToCSLRuntime.cpp:71:23: error: unknown type name 'CSL_ColorOp'; did you mean 'SymColorOp'?
+   71 |       } else if (!isa<CSL_ColorOp, CSL_RouteOp, CSL_KernelOp>(op)) {
+      |                       ^~~~~~~~~~~
+      |                       SymColorOp
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSL/CSLOps.h.inc:8982:7: note: 'SymColorOp' declared here
+ 8982 | class SymColorOp : public ::mlir::Op<SymColorOp, ::mlir::OpTrait::ZeroRegions, ::mlir::OpTrait::OneResult, ::mlir::OpTrait::OneTypedResult<::mlir::Type>::Impl, ::mlir::OpTrait::ZeroSuccessors, ::mlir::OpTrait::ZeroOperands, ::mlir::OpTrait::OpInvariants, ::mlir::BytecodeOpInterface::Trait> {
+      |       ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/lib/Conversion/CSLToCSLRuntime/CSLToCSLRuntime.cpp:71:36: error: use of undeclared identifier 'CSL_RouteOp'
+   71 |       } else if (!isa<CSL_ColorOp, CSL_RouteOp, CSL_KernelOp>(op)) {
+      |                                    ^~~~~~~~~~~
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/lib/Conversion/CSLToCSLRuntime/CSLToCSLRuntime.cpp:84:59: error: unknown type name 'CSL_KernelOp'; did you mean 'KernelOp'?
+   84 |     if (auto kernelOp = placeOp.getKernel().getDefiningOp<CSL_KernelOp>()) {
+      |                                                           ^~~~~~~~~~~~
+      |                                                           KernelOp
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSL/CSLOps.h.inc:3713:7: note: 'KernelOp' declared here
+ 3713 | class KernelOp : public ::mlir::Op<KernelOp, ::mlir::OpTrait::OneRegion, ::mlir::OpTrait::OneResult, ::mlir::OpTrait::OneTypedResult<::mlir::Type>::Impl, ::mlir::OpTrait::ZeroSuccessors, ::mlir::OpTrait::ZeroOperands, ::mlir::OpTrait::SingleBlock, ::mlir::OpTrait::NoTerminator, ::mlir::OpTrait::OpInvariants, ::mlir::BytecodeOpInterface::Trait, ::mlir::OpTrait::SymbolTable> {
+      |       ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/lib/Conversion/CSLToCSLRuntime/CSLToCSLRuntime.cpp:90:37: error: use of undeclared identifier 'CSLRuntime_CreateLayoutOp'
+   90 |     auto layoutOp = rewriter.create<CSLRuntime_CreateLayoutOp>(
+      |                                     ^~~~~~~~~~~~~~~~~~~~~~~~~
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/lib/Conversion/CSLToCSLRuntime/CSLToCSLRuntime.cpp:94:37: error: use of undeclared identifier 'CSLRuntime_CreateCodeRegionOp'
+   94 |     auto regionOp = rewriter.create<CSLRuntime_CreateCodeRegionOp>(
+      |                                     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/lib/Conversion/CSLToCSLRuntime/CSLToCSLRuntime.cpp:95:14: error: reference to 'CodeRegionType' is ambiguous
+   95 |         loc, CodeRegionType::get(op.getContext()), layoutOp.getLayout(),
+      |              ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/include/air/Dialect/CSL/CSLDialect.h:42:7: note: candidate found by name lookup is 'xilinx::csl::CodeRegionType'
+   42 | class CodeRegionType
+      |       ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeDialect.h:28:7: note: candidate found by name lookup is 'xilinx::csl_rt::CodeRegionType'
+   28 | class CodeRegionType
+      |       ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/lib/Conversion/CSLToCSLRuntime/CSLToCSLRuntime.cpp:103:37: error: unknown type name 'CSLRuntime_PlaceOp'; did you mean 'CSLRuntimeDialect'?
+  103 |     auto placedOp = rewriter.create<CSLRuntime_PlaceOp>(
+      |                                     ^~~~~~~~~~~~~~~~~~
+      |                                     CSLRuntimeDialect
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOpsDialect.h.inc:23:7: note: 'CSLRuntimeDialect' declared here
+   23 | class CSLRuntimeDialect : public ::mlir::Dialect {
+      |       ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/lib/Conversion/CSLToCSLRuntime/CSLToCSLRuntime.cpp:104:14: error: reference to 'CodeRegionType' is ambiguous
+  104 |         loc, CodeRegionType::get(op.getContext()), regionOp.getCodeRegion(),
+      |              ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/include/air/Dialect/CSL/CSLDialect.h:42:7: note: candidate found by name lookup is 'xilinx::csl::CodeRegionType'
+   42 | class CodeRegionType
+      |       ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeDialect.h:28:7: note: candidate found by name lookup is 'xilinx::csl_rt::CodeRegionType'
+   28 | class CodeRegionType
+      |       ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/lib/Conversion/CSLToCSLRuntime/CSLToCSLRuntime.cpp:113:41: error: use of undeclared identifier 'CSLRuntime_SetParamAllOp'
+  113 |       auto paramSetOp = rewriter.create<CSLRuntime_SetParamAllOp>(
+      |                                         ^~~~~~~~~~~~~~~~~~~~~~~~
+fatal error: too many errors emitted, stopping now [-ferror-limit=]
+20 errors generated.
+ninja: build stopped: subcommand failed.
+
+=== Installing ===
+[1/13] Building CXX object mlir/lib/Dialect/CSLRuntime/IR/CMakeFiles/obj.CSLRuntimeDialect.dir/CSLRuntimeDialect.cpp.o
+FAILED: [code=1] mlir/lib/Dialect/CSLRuntime/IR/CMakeFiles/obj.CSLRuntimeDialect.dir/CSLRuntimeDialect.cpp.o 
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/llvm/install/bin/clang++ -DAIR_ENABLE_AIE=0 -DAIR_ENABLE_GPU=1 -DGTEST_HAS_RTTI=0 -D_DEBUG -D_GLIBCXX_ASSERTIONS -D_GLIBCXX_USE_CXX11_ABI=1 -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS -I/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/llvm/install/include -I/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/include -I/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include -fPIC -fno-semantic-interposition -fvisibility-inlines-hidden -Werror=date-time -Werror=unguarded-availability-new -Wall -Wextra -Wno-unused-parameter -Wwrite-strings -Wcast-qual -Wmissing-field-initializers -Wimplicit-fallthrough -Wcovered-switch-default -Wno-noexcept-type -Wnon-virtual-dtor -Wdelete-non-virtual-dtor -Wsuggest-override -Wstring-conversion -Wno-pass-failed -Wmisleading-indentation -Wctad-maybe-unsupported -fdiagnostics-color -ffunction-sections -fdata-sections -Werror=sign-compare -Werror=unused -Werror=return-type -Werror=implicit-function-declaration -Werror=mismatched-tags -O3 -DNDEBUG -std=gnu++17   -D_DEBUG -D_GLIBCXX_ASSERTIONS -D_GLIBCXX_USE_CXX11_ABI=1 -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS  -fno-exceptions -funwind-tables -fno-rtti -UNDEBUG -MD -MT mlir/lib/Dialect/CSLRuntime/IR/CMakeFiles/obj.CSLRuntimeDialect.dir/CSLRuntimeDialect.cpp.o -MF mlir/lib/Dialect/CSLRuntime/IR/CMakeFiles/obj.CSLRuntimeDialect.dir/CSLRuntimeDialect.cpp.o.d -o mlir/lib/Dialect/CSLRuntime/IR/CMakeFiles/obj.CSLRuntimeDialect.dir/CSLRuntimeDialect.cpp.o -c /uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/lib/Dialect/CSLRuntime/IR/CSLRuntimeDialect.cpp
+In file included from /uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/lib/Dialect/CSLRuntime/IR/CSLRuntimeDialect.cpp:9:
+In file included from /uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h:18:
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:232:260: error: no member named 'BytecodeOpInterface' in namespace 'mlir'
+  232 | class CompileOp : public ::mlir::Op<CompileOp, ::mlir::OpTrait::ZeroRegions, ::mlir::OpTrait::OneResult, ::mlir::OpTrait::OneTypedResult<::mlir::Type>::Impl, ::mlir::OpTrait::ZeroSuccessors, ::mlir::OpTrait::OneOperand, ::mlir::OpTrait::OpInvariants, ::mlir::BytecodeOpInterface::Trait> {
+      |                                                                                                                                                                                                                                                            ~~~~~~~~^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:234:9: error: use of undeclared identifier 'Op'
+  234 |   using Op::Op;
+      |         ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:235:9: error: use of undeclared identifier 'Op'
+  235 |   using Op::print;
+      |         ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:299:55: error: no type named 'DialectBytecodeReader' in namespace 'mlir'
+  299 |   static ::llvm::LogicalResult readProperties(::mlir::DialectBytecodeReader &reader, ::mlir::OperationState &state);
+      |                                               ~~~~~~~~^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:300:32: error: no type named 'DialectBytecodeWriter' in namespace 'mlir'
+  300 |   void writeProperties(::mlir::DialectBytecodeWriter &writer);
+      |                        ~~~~~~~~^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:265:23: error: use of undeclared identifier 'getOperation'; did you mean 'getOperationName'?
+  265 |     return {std::next(getOperation()->operand_begin(), valueRange.first),
+      |                       ^~~~~~~~~~~~
+      |                       getOperationName
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:255:42: note: 'getOperationName' declared here
+  255 |   static constexpr ::llvm::StringLiteral getOperationName() {
+      |                                          ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:265:37: error: member reference type '::llvm::StringLiteral' is not a pointer; did you mean to use '.'?
+  265 |     return {std::next(getOperation()->operand_begin(), valueRange.first),
+      |                       ~~~~~~~~~~~~~~^~
+      |                                     .
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:265:39: error: no member named 'operand_begin' in 'llvm::StringLiteral'
+  265 |     return {std::next(getOperation()->operand_begin(), valueRange.first),
+      |                       ~~~~~~~~~~~~~~  ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:266:24: error: use of undeclared identifier 'getOperation'; did you mean 'getOperationName'?
+  266 |              std::next(getOperation()->operand_begin(), valueRange.first + valueRange.second)};
+      |                        ^~~~~~~~~~~~
+      |                        getOperationName
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:255:42: note: 'getOperationName' declared here
+  255 |   static constexpr ::llvm::StringLiteral getOperationName() {
+      |                                          ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:266:38: error: member reference type '::llvm::StringLiteral' is not a pointer; did you mean to use '.'?
+  266 |              std::next(getOperation()->operand_begin(), valueRange.first + valueRange.second)};
+      |                        ~~~~~~~~~~~~~~^~
+      |                                      .
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:266:40: error: no member named 'operand_begin' in 'llvm::StringLiteral'
+  266 |              std::next(getOperation()->operand_begin(), valueRange.first + valueRange.second)};
+      |                        ~~~~~~~~~~~~~~  ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:275:12: error: use of undeclared identifier 'getOperation'; did you mean 'getOperationName'?
+  275 |     return getOperation()->getOpOperand(range.first);
+      |            ^~~~~~~~~~~~
+      |            getOperationName
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:255:42: note: 'getOperationName' declared here
+  255 |   static constexpr ::llvm::StringLiteral getOperationName() {
+      |                                          ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:275:26: error: member reference type '::llvm::StringLiteral' is not a pointer; did you mean to use '.'?
+  275 |     return getOperation()->getOpOperand(range.first);
+      |            ~~~~~~~~~~~~~~^~
+      |                          .
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:275:28: error: no member named 'getOpOperand' in 'llvm::StringLiteral'
+  275 |     return getOperation()->getOpOperand(range.first);
+      |            ~~~~~~~~~~~~~~  ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:284:23: error: use of undeclared identifier 'getOperation'; did you mean 'getOperationName'?
+  284 |     return {std::next(getOperation()->result_begin(), valueRange.first),
+      |                       ^~~~~~~~~~~~
+      |                       getOperationName
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:255:42: note: 'getOperationName' declared here
+  255 |   static constexpr ::llvm::StringLiteral getOperationName() {
+      |                                          ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:284:37: error: member reference type '::llvm::StringLiteral' is not a pointer; did you mean to use '.'?
+  284 |     return {std::next(getOperation()->result_begin(), valueRange.first),
+      |                       ~~~~~~~~~~~~~~^~
+      |                                     .
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:284:39: error: no member named 'result_begin' in 'llvm::StringLiteral'
+  284 |     return {std::next(getOperation()->result_begin(), valueRange.first),
+      |                       ~~~~~~~~~~~~~~  ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:285:24: error: use of undeclared identifier 'getOperation'; did you mean 'getOperationName'?
+  285 |              std::next(getOperation()->result_begin(), valueRange.first + valueRange.second)};
+      |                        ^~~~~~~~~~~~
+      |                        getOperationName
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:255:42: note: 'getOperationName' declared here
+  255 |   static constexpr ::llvm::StringLiteral getOperationName() {
+      |                                          ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:285:38: error: member reference type '::llvm::StringLiteral' is not a pointer; did you mean to use '.'?
+  285 |              std::next(getOperation()->result_begin(), valueRange.first + valueRange.second)};
+      |                        ~~~~~~~~~~~~~~^~
+      |                                      .
+fatal error: too many errors emitted, stopping now [-ferror-limit=]
+20 errors generated.
+[2/13] Building CXX object mlir/lib/Dialect/CSLRuntime/IR/CMakeFiles/obj.CSLRuntimeDialect.dir/CSLRuntimeOps.cpp.o
+FAILED: [code=1] mlir/lib/Dialect/CSLRuntime/IR/CMakeFiles/obj.CSLRuntimeDialect.dir/CSLRuntimeOps.cpp.o 
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/llvm/install/bin/clang++ -DAIR_ENABLE_AIE=0 -DAIR_ENABLE_GPU=1 -DGTEST_HAS_RTTI=0 -D_DEBUG -D_GLIBCXX_ASSERTIONS -D_GLIBCXX_USE_CXX11_ABI=1 -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS -I/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/llvm/install/include -I/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/include -I/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include -fPIC -fno-semantic-interposition -fvisibility-inlines-hidden -Werror=date-time -Werror=unguarded-availability-new -Wall -Wextra -Wno-unused-parameter -Wwrite-strings -Wcast-qual -Wmissing-field-initializers -Wimplicit-fallthrough -Wcovered-switch-default -Wno-noexcept-type -Wnon-virtual-dtor -Wdelete-non-virtual-dtor -Wsuggest-override -Wstring-conversion -Wno-pass-failed -Wmisleading-indentation -Wctad-maybe-unsupported -fdiagnostics-color -ffunction-sections -fdata-sections -Werror=sign-compare -Werror=unused -Werror=return-type -Werror=implicit-function-declaration -Werror=mismatched-tags -O3 -DNDEBUG -std=gnu++17   -D_DEBUG -D_GLIBCXX_ASSERTIONS -D_GLIBCXX_USE_CXX11_ABI=1 -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS  -fno-exceptions -funwind-tables -fno-rtti -UNDEBUG -MD -MT mlir/lib/Dialect/CSLRuntime/IR/CMakeFiles/obj.CSLRuntimeDialect.dir/CSLRuntimeOps.cpp.o -MF mlir/lib/Dialect/CSLRuntime/IR/CMakeFiles/obj.CSLRuntimeDialect.dir/CSLRuntimeOps.cpp.o.d -o mlir/lib/Dialect/CSLRuntime/IR/CMakeFiles/obj.CSLRuntimeDialect.dir/CSLRuntimeOps.cpp.o -c /uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/lib/Dialect/CSLRuntime/IR/CSLRuntimeOps.cpp
+In file included from /uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/lib/Dialect/CSLRuntime/IR/CSLRuntimeOps.cpp:8:
+In file included from /uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h:18:
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:232:260: error: no member named 'BytecodeOpInterface' in namespace 'mlir'
+  232 | class CompileOp : public ::mlir::Op<CompileOp, ::mlir::OpTrait::ZeroRegions, ::mlir::OpTrait::OneResult, ::mlir::OpTrait::OneTypedResult<::mlir::Type>::Impl, ::mlir::OpTrait::ZeroSuccessors, ::mlir::OpTrait::OneOperand, ::mlir::OpTrait::OpInvariants, ::mlir::BytecodeOpInterface::Trait> {
+      |                                                                                                                                                                                                                                                            ~~~~~~~~^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:234:9: error: use of undeclared identifier 'Op'
+  234 |   using Op::Op;
+      |         ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:235:9: error: use of undeclared identifier 'Op'
+  235 |   using Op::print;
+      |         ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:299:55: error: no type named 'DialectBytecodeReader' in namespace 'mlir'
+  299 |   static ::llvm::LogicalResult readProperties(::mlir::DialectBytecodeReader &reader, ::mlir::OperationState &state);
+      |                                               ~~~~~~~~^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:300:32: error: no type named 'DialectBytecodeWriter' in namespace 'mlir'
+  300 |   void writeProperties(::mlir::DialectBytecodeWriter &writer);
+      |                        ~~~~~~~~^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:265:23: error: use of undeclared identifier 'getOperation'; did you mean 'getOperationName'?
+  265 |     return {std::next(getOperation()->operand_begin(), valueRange.first),
+      |                       ^~~~~~~~~~~~
+      |                       getOperationName
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:255:42: note: 'getOperationName' declared here
+  255 |   static constexpr ::llvm::StringLiteral getOperationName() {
+      |                                          ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:265:37: error: member reference type '::llvm::StringLiteral' is not a pointer; did you mean to use '.'?
+  265 |     return {std::next(getOperation()->operand_begin(), valueRange.first),
+      |                       ~~~~~~~~~~~~~~^~
+      |                                     .
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:265:39: error: no member named 'operand_begin' in 'llvm::StringLiteral'
+  265 |     return {std::next(getOperation()->operand_begin(), valueRange.first),
+      |                       ~~~~~~~~~~~~~~  ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:266:24: error: use of undeclared identifier 'getOperation'; did you mean 'getOperationName'?
+  266 |              std::next(getOperation()->operand_begin(), valueRange.first + valueRange.second)};
+      |                        ^~~~~~~~~~~~
+      |                        getOperationName
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:255:42: note: 'getOperationName' declared here
+  255 |   static constexpr ::llvm::StringLiteral getOperationName() {
+      |                                          ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:266:38: error: member reference type '::llvm::StringLiteral' is not a pointer; did you mean to use '.'?
+  266 |              std::next(getOperation()->operand_begin(), valueRange.first + valueRange.second)};
+      |                        ~~~~~~~~~~~~~~^~
+      |                                      .
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:266:40: error: no member named 'operand_begin' in 'llvm::StringLiteral'
+  266 |              std::next(getOperation()->operand_begin(), valueRange.first + valueRange.second)};
+      |                        ~~~~~~~~~~~~~~  ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:275:12: error: use of undeclared identifier 'getOperation'; did you mean 'getOperationName'?
+  275 |     return getOperation()->getOpOperand(range.first);
+      |            ^~~~~~~~~~~~
+      |            getOperationName
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:255:42: note: 'getOperationName' declared here
+  255 |   static constexpr ::llvm::StringLiteral getOperationName() {
+      |                                          ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:275:26: error: member reference type '::llvm::StringLiteral' is not a pointer; did you mean to use '.'?
+  275 |     return getOperation()->getOpOperand(range.first);
+      |            ~~~~~~~~~~~~~~^~
+      |                          .
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:275:28: error: no member named 'getOpOperand' in 'llvm::StringLiteral'
+  275 |     return getOperation()->getOpOperand(range.first);
+      |            ~~~~~~~~~~~~~~  ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:284:23: error: use of undeclared identifier 'getOperation'; did you mean 'getOperationName'?
+  284 |     return {std::next(getOperation()->result_begin(), valueRange.first),
+      |                       ^~~~~~~~~~~~
+      |                       getOperationName
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:255:42: note: 'getOperationName' declared here
+  255 |   static constexpr ::llvm::StringLiteral getOperationName() {
+      |                                          ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:284:37: error: member reference type '::llvm::StringLiteral' is not a pointer; did you mean to use '.'?
+  284 |     return {std::next(getOperation()->result_begin(), valueRange.first),
+      |                       ~~~~~~~~~~~~~~^~
+      |                                     .
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:284:39: error: no member named 'result_begin' in 'llvm::StringLiteral'
+  284 |     return {std::next(getOperation()->result_begin(), valueRange.first),
+      |                       ~~~~~~~~~~~~~~  ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:285:24: error: use of undeclared identifier 'getOperation'; did you mean 'getOperationName'?
+  285 |              std::next(getOperation()->result_begin(), valueRange.first + valueRange.second)};
+      |                        ^~~~~~~~~~~~
+      |                        getOperationName
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:255:42: note: 'getOperationName' declared here
+  255 |   static constexpr ::llvm::StringLiteral getOperationName() {
+      |                                          ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:285:38: error: member reference type '::llvm::StringLiteral' is not a pointer; did you mean to use '.'?
+  285 |              std::next(getOperation()->result_begin(), valueRange.first + valueRange.second)};
+      |                        ~~~~~~~~~~~~~~^~
+      |                                      .
+fatal error: too many errors emitted, stopping now [-ferror-limit=]
+20 errors generated.
+[3/13] Building CXX object mlir/lib/Targets/CMakeFiles/obj.AIRTargets.dir/CSLRuntimeToPy.cpp.o
+FAILED: [code=1] mlir/lib/Targets/CMakeFiles/obj.AIRTargets.dir/CSLRuntimeToPy.cpp.o 
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/llvm/install/bin/clang++ -DAIR_ENABLE_AIE=0 -DAIR_ENABLE_GPU=1 -DGTEST_HAS_RTTI=0 -D_DEBUG -D_GLIBCXX_ASSERTIONS -D_GLIBCXX_USE_CXX11_ABI=1 -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS -I/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/llvm/install/include -I/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/include -I/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include -fPIC -fno-semantic-interposition -fvisibility-inlines-hidden -Werror=date-time -Werror=unguarded-availability-new -Wall -Wextra -Wno-unused-parameter -Wwrite-strings -Wcast-qual -Wmissing-field-initializers -Wimplicit-fallthrough -Wcovered-switch-default -Wno-noexcept-type -Wnon-virtual-dtor -Wdelete-non-virtual-dtor -Wsuggest-override -Wstring-conversion -Wno-pass-failed -Wmisleading-indentation -Wctad-maybe-unsupported -fdiagnostics-color -ffunction-sections -fdata-sections -Werror=sign-compare -Werror=unused -Werror=return-type -Werror=implicit-function-declaration -Werror=mismatched-tags -O3 -DNDEBUG -std=gnu++17   -D_DEBUG -D_GLIBCXX_ASSERTIONS -D_GLIBCXX_USE_CXX11_ABI=1 -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS  -fno-exceptions -funwind-tables -fno-rtti -UNDEBUG -MD -MT mlir/lib/Targets/CMakeFiles/obj.AIRTargets.dir/CSLRuntimeToPy.cpp.o -MF mlir/lib/Targets/CMakeFiles/obj.AIRTargets.dir/CSLRuntimeToPy.cpp.o.d -o mlir/lib/Targets/CMakeFiles/obj.AIRTargets.dir/CSLRuntimeToPy.cpp.o -c /uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/lib/Targets/CSLRuntimeToPy.cpp
+In file included from /uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/lib/Targets/CSLRuntimeToPy.cpp:14:
+In file included from /uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h:18:
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:232:260: error: no member named 'BytecodeOpInterface' in namespace 'mlir'
+  232 | class CompileOp : public ::mlir::Op<CompileOp, ::mlir::OpTrait::ZeroRegions, ::mlir::OpTrait::OneResult, ::mlir::OpTrait::OneTypedResult<::mlir::Type>::Impl, ::mlir::OpTrait::ZeroSuccessors, ::mlir::OpTrait::OneOperand, ::mlir::OpTrait::OpInvariants, ::mlir::BytecodeOpInterface::Trait> {
+      |                                                                                                                                                                                                                                                            ~~~~~~~~^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:234:9: error: use of undeclared identifier 'Op'
+  234 |   using Op::Op;
+      |         ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:235:9: error: use of undeclared identifier 'Op'
+  235 |   using Op::print;
+      |         ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:299:55: error: no type named 'DialectBytecodeReader' in namespace 'mlir'
+  299 |   static ::llvm::LogicalResult readProperties(::mlir::DialectBytecodeReader &reader, ::mlir::OperationState &state);
+      |                                               ~~~~~~~~^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:300:32: error: no type named 'DialectBytecodeWriter' in namespace 'mlir'
+  300 |   void writeProperties(::mlir::DialectBytecodeWriter &writer);
+      |                        ~~~~~~~~^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:265:23: error: use of undeclared identifier 'getOperation'; did you mean 'getOperationName'?
+  265 |     return {std::next(getOperation()->operand_begin(), valueRange.first),
+      |                       ^~~~~~~~~~~~
+      |                       getOperationName
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:255:42: note: 'getOperationName' declared here
+  255 |   static constexpr ::llvm::StringLiteral getOperationName() {
+      |                                          ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:265:37: error: member reference type '::llvm::StringLiteral' is not a pointer; did you mean to use '.'?
+  265 |     return {std::next(getOperation()->operand_begin(), valueRange.first),
+      |                       ~~~~~~~~~~~~~~^~
+      |                                     .
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:265:39: error: no member named 'operand_begin' in 'llvm::StringLiteral'
+  265 |     return {std::next(getOperation()->operand_begin(), valueRange.first),
+      |                       ~~~~~~~~~~~~~~  ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:266:24: error: use of undeclared identifier 'getOperation'; did you mean 'getOperationName'?
+  266 |              std::next(getOperation()->operand_begin(), valueRange.first + valueRange.second)};
+      |                        ^~~~~~~~~~~~
+      |                        getOperationName
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:255:42: note: 'getOperationName' declared here
+  255 |   static constexpr ::llvm::StringLiteral getOperationName() {
+      |                                          ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:266:38: error: member reference type '::llvm::StringLiteral' is not a pointer; did you mean to use '.'?
+  266 |              std::next(getOperation()->operand_begin(), valueRange.first + valueRange.second)};
+      |                        ~~~~~~~~~~~~~~^~
+      |                                      .
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:266:40: error: no member named 'operand_begin' in 'llvm::StringLiteral'
+  266 |              std::next(getOperation()->operand_begin(), valueRange.first + valueRange.second)};
+      |                        ~~~~~~~~~~~~~~  ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:275:12: error: use of undeclared identifier 'getOperation'; did you mean 'getOperationName'?
+  275 |     return getOperation()->getOpOperand(range.first);
+      |            ^~~~~~~~~~~~
+      |            getOperationName
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:255:42: note: 'getOperationName' declared here
+  255 |   static constexpr ::llvm::StringLiteral getOperationName() {
+      |                                          ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:275:26: error: member reference type '::llvm::StringLiteral' is not a pointer; did you mean to use '.'?
+  275 |     return getOperation()->getOpOperand(range.first);
+      |            ~~~~~~~~~~~~~~^~
+      |                          .
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:275:28: error: no member named 'getOpOperand' in 'llvm::StringLiteral'
+  275 |     return getOperation()->getOpOperand(range.first);
+      |            ~~~~~~~~~~~~~~  ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:284:23: error: use of undeclared identifier 'getOperation'; did you mean 'getOperationName'?
+  284 |     return {std::next(getOperation()->result_begin(), valueRange.first),
+      |                       ^~~~~~~~~~~~
+      |                       getOperationName
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:255:42: note: 'getOperationName' declared here
+  255 |   static constexpr ::llvm::StringLiteral getOperationName() {
+      |                                          ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:284:37: error: member reference type '::llvm::StringLiteral' is not a pointer; did you mean to use '.'?
+  284 |     return {std::next(getOperation()->result_begin(), valueRange.first),
+      |                       ~~~~~~~~~~~~~~^~
+      |                                     .
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:284:39: error: no member named 'result_begin' in 'llvm::StringLiteral'
+  284 |     return {std::next(getOperation()->result_begin(), valueRange.first),
+      |                       ~~~~~~~~~~~~~~  ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:285:24: error: use of undeclared identifier 'getOperation'; did you mean 'getOperationName'?
+  285 |              std::next(getOperation()->result_begin(), valueRange.first + valueRange.second)};
+      |                        ^~~~~~~~~~~~
+      |                        getOperationName
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:255:42: note: 'getOperationName' declared here
+  255 |   static constexpr ::llvm::StringLiteral getOperationName() {
+      |                                          ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOps.h.inc:285:38: error: member reference type '::llvm::StringLiteral' is not a pointer; did you mean to use '.'?
+  285 |              std::next(getOperation()->result_begin(), valueRange.first + valueRange.second)};
+      |                        ~~~~~~~~~~~~~~^~
+      |                                      .
+fatal error: too many errors emitted, stopping now [-ferror-limit=]
+20 errors generated.
+[4/13] Building CXX object mlir/lib/Conversion/CMakeFiles/obj.AIRConversionPasses.dir/CSLToCSLRuntime/CSLToCSLRuntime.cpp.o
+FAILED: [code=1] mlir/lib/Conversion/CMakeFiles/obj.AIRConversionPasses.dir/CSLToCSLRuntime/CSLToCSLRuntime.cpp.o 
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/llvm/install/bin/clang++ -DAIR_ENABLE_AIE=0 -DAIR_ENABLE_GPU=1 -DGTEST_HAS_RTTI=0 -D_DEBUG -D_GLIBCXX_ASSERTIONS -D_GLIBCXX_USE_CXX11_ABI=1 -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS -I/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/llvm/install/include -I/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/include -I/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include -fPIC -fno-semantic-interposition -fvisibility-inlines-hidden -Werror=date-time -Werror=unguarded-availability-new -Wall -Wextra -Wno-unused-parameter -Wwrite-strings -Wcast-qual -Wmissing-field-initializers -Wimplicit-fallthrough -Wcovered-switch-default -Wno-noexcept-type -Wnon-virtual-dtor -Wdelete-non-virtual-dtor -Wsuggest-override -Wstring-conversion -Wno-pass-failed -Wmisleading-indentation -Wctad-maybe-unsupported -fdiagnostics-color -ffunction-sections -fdata-sections -Werror=sign-compare -Werror=unused -Werror=return-type -Werror=implicit-function-declaration -Werror=mismatched-tags -O3 -DNDEBUG -std=gnu++17   -D_DEBUG -D_GLIBCXX_ASSERTIONS -D_GLIBCXX_USE_CXX11_ABI=1 -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS  -fno-exceptions -funwind-tables -fno-rtti -UNDEBUG -MD -MT mlir/lib/Conversion/CMakeFiles/obj.AIRConversionPasses.dir/CSLToCSLRuntime/CSLToCSLRuntime.cpp.o -MF mlir/lib/Conversion/CMakeFiles/obj.AIRConversionPasses.dir/CSLToCSLRuntime/CSLToCSLRuntime.cpp.o.d -o mlir/lib/Conversion/CMakeFiles/obj.AIRConversionPasses.dir/CSLToCSLRuntime/CSLToCSLRuntime.cpp.o -c /uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/lib/Conversion/CSLToCSLRuntime/CSLToCSLRuntime.cpp
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/lib/Conversion/CSLToCSLRuntime/CSLToCSLRuntime.cpp:32:34: error: unknown type name 'CSL_SpatialPlacementOp'; did you mean 'SpatialPlacementOp'?
+   32 |     : public OpConversionPattern<CSL_SpatialPlacementOp> {
+      |                                  ^~~~~~~~~~~~~~~~~~~~~~
+      |                                  SpatialPlacementOp
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSL/CSLOps.h.inc:8808:7: note: 'SpatialPlacementOp' declared here
+ 8808 | class SpatialPlacementOp : public ::mlir::Op<SpatialPlacementOp, ::mlir::OpTrait::OneRegion, ::mlir::OpTrait::ZeroResults, ::mlir::OpTrait::ZeroSuccessors, ::mlir::OpTrait::ZeroOperands, ::mlir::OpTrait::SingleBlock, ::mlir::OpTrait::NoTerminator, ::mlir::OpTrait::OpInvariants> {
+      |       ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/lib/Conversion/CSLToCSLRuntime/CSLToCSLRuntime.cpp:35:33: error: unknown type name 'CSL_SpatialPlacementOp'; did you mean 'SpatialPlacementOp'?
+   35 |   LogicalResult matchAndRewrite(CSL_SpatialPlacementOp op,
+      |                                 ^~~~~~~~~~~~~~~~~~~~~~
+      |                                 SpatialPlacementOp
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSL/CSLOps.h.inc:8808:7: note: 'SpatialPlacementOp' declared here
+ 8808 | class SpatialPlacementOp : public ::mlir::Op<SpatialPlacementOp, ::mlir::OpTrait::OneRegion, ::mlir::OpTrait::ZeroResults, ::mlir::OpTrait::ZeroSuccessors, ::mlir::OpTrait::ZeroOperands, ::mlir::OpTrait::SingleBlock, ::mlir::OpTrait::NoTerminator, ::mlir::OpTrait::OpInvariants> {
+      |       ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/lib/Conversion/CSLToCSLRuntime/CSLToCSLRuntime.cpp:52:5: error: unknown type name 'CSL_CodeRegionOp'; did you mean 'CodeRegionOp'?
+   52 |     CSL_CodeRegionOp codeRegionOp = nullptr;
+      |     ^~~~~~~~~~~~~~~~
+      |     CodeRegionOp
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSL/CSLOps.h.inc:723:7: note: 'CodeRegionOp' declared here
+  723 | class CodeRegionOp : public ::mlir::Op<CodeRegionOp, ::mlir::OpTrait::OneRegion, ::mlir::OpTrait::OneResult, ::mlir::OpTrait::OneTypedResult<::mlir::Type>::Impl, ::mlir::OpTrait::ZeroSuccessors, ::mlir::OpTrait::VariadicOperands, ::mlir::OpTrait::SingleBlock, ::mlir::OpTrait::NoTerminator, ::mlir::OpTrait::AttrSizedOperandSegments, ::mlir::OpTrait::OpInvariants, ::mlir::BytecodeOpInterface::Trait> {
+      |       ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/lib/Conversion/CSLToCSLRuntime/CSLToCSLRuntime.cpp:53:5: error: unknown type name 'CSL_PlaceOp'
+   53 |     CSL_PlaceOp placeOp = nullptr;
+      |     ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/lib/Conversion/CSLToCSLRuntime/CSLToCSLRuntime.cpp:54:17: error: use of undeclared identifier 'CSL_SetParamAllOp'
+   54 |     SmallVector<CSL_SetParamAllOp, 4> setParamOps;
+      |                 ^~~~~~~~~~~~~~~~~
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/lib/Conversion/CSLToCSLRuntime/CSLToCSLRuntime.cpp:55:17: error: use of undeclared identifier 'CSL_ExportNameOp'
+   55 |     SmallVector<CSL_ExportNameOp, 4> exportNameOps;
+      |                 ^~~~~~~~~~~~~~~~
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/lib/Conversion/CSLToCSLRuntime/CSLToCSLRuntime.cpp:59:32: error: unknown type name 'CSL_CodeRegionOp'; did you mean 'CodeRegionOp'?
+   59 |       if (auto crOp = dyn_cast<CSL_CodeRegionOp>(op)) {
+      |                                ^~~~~~~~~~~~~~~~
+      |                                CodeRegionOp
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSL/CSLOps.h.inc:723:7: note: 'CodeRegionOp' declared here
+  723 | class CodeRegionOp : public ::mlir::Op<CodeRegionOp, ::mlir::OpTrait::OneRegion, ::mlir::OpTrait::OneResult, ::mlir::OpTrait::OneTypedResult<::mlir::Type>::Impl, ::mlir::OpTrait::ZeroSuccessors, ::mlir::OpTrait::VariadicOperands, ::mlir::OpTrait::SingleBlock, ::mlir::OpTrait::NoTerminator, ::mlir::OpTrait::AttrSizedOperandSegments, ::mlir::OpTrait::OpInvariants, ::mlir::BytecodeOpInterface::Trait> {
+      |       ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/lib/Conversion/CSLToCSLRuntime/CSLToCSLRuntime.cpp:63:38: error: use of undeclared identifier 'CSL_PlaceOp'
+   63 |       } else if (auto pOp = dyn_cast<CSL_PlaceOp>(op)) {
+      |                                      ^~~~~~~~~~~
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/lib/Conversion/CSLToCSLRuntime/CSLToCSLRuntime.cpp:67:39: error: use of undeclared identifier 'CSL_SetParamAllOp'
+   67 |       } else if (auto spOp = dyn_cast<CSL_SetParamAllOp>(op)) {
+      |                                       ^~~~~~~~~~~~~~~~~
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/lib/Conversion/CSLToCSLRuntime/CSLToCSLRuntime.cpp:69:39: error: use of undeclared identifier 'CSL_ExportNameOp'
+   69 |       } else if (auto enOp = dyn_cast<CSL_ExportNameOp>(op)) {
+      |                                       ^~~~~~~~~~~~~~~~
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/lib/Conversion/CSLToCSLRuntime/CSLToCSLRuntime.cpp:71:23: error: unknown type name 'CSL_ColorOp'; did you mean 'SymColorOp'?
+   71 |       } else if (!isa<CSL_ColorOp, CSL_RouteOp, CSL_KernelOp>(op)) {
+      |                       ^~~~~~~~~~~
+      |                       SymColorOp
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSL/CSLOps.h.inc:8982:7: note: 'SymColorOp' declared here
+ 8982 | class SymColorOp : public ::mlir::Op<SymColorOp, ::mlir::OpTrait::ZeroRegions, ::mlir::OpTrait::OneResult, ::mlir::OpTrait::OneTypedResult<::mlir::Type>::Impl, ::mlir::OpTrait::ZeroSuccessors, ::mlir::OpTrait::ZeroOperands, ::mlir::OpTrait::OpInvariants, ::mlir::BytecodeOpInterface::Trait> {
+      |       ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/lib/Conversion/CSLToCSLRuntime/CSLToCSLRuntime.cpp:71:36: error: use of undeclared identifier 'CSL_RouteOp'
+   71 |       } else if (!isa<CSL_ColorOp, CSL_RouteOp, CSL_KernelOp>(op)) {
+      |                                    ^~~~~~~~~~~
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/lib/Conversion/CSLToCSLRuntime/CSLToCSLRuntime.cpp:84:59: error: unknown type name 'CSL_KernelOp'; did you mean 'KernelOp'?
+   84 |     if (auto kernelOp = placeOp.getKernel().getDefiningOp<CSL_KernelOp>()) {
+      |                                                           ^~~~~~~~~~~~
+      |                                                           KernelOp
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSL/CSLOps.h.inc:3713:7: note: 'KernelOp' declared here
+ 3713 | class KernelOp : public ::mlir::Op<KernelOp, ::mlir::OpTrait::OneRegion, ::mlir::OpTrait::OneResult, ::mlir::OpTrait::OneTypedResult<::mlir::Type>::Impl, ::mlir::OpTrait::ZeroSuccessors, ::mlir::OpTrait::ZeroOperands, ::mlir::OpTrait::SingleBlock, ::mlir::OpTrait::NoTerminator, ::mlir::OpTrait::OpInvariants, ::mlir::BytecodeOpInterface::Trait, ::mlir::OpTrait::SymbolTable> {
+      |       ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/lib/Conversion/CSLToCSLRuntime/CSLToCSLRuntime.cpp:90:37: error: use of undeclared identifier 'CSLRuntime_CreateLayoutOp'
+   90 |     auto layoutOp = rewriter.create<CSLRuntime_CreateLayoutOp>(
+      |                                     ^~~~~~~~~~~~~~~~~~~~~~~~~
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/lib/Conversion/CSLToCSLRuntime/CSLToCSLRuntime.cpp:94:37: error: use of undeclared identifier 'CSLRuntime_CreateCodeRegionOp'
+   94 |     auto regionOp = rewriter.create<CSLRuntime_CreateCodeRegionOp>(
+      |                                     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/lib/Conversion/CSLToCSLRuntime/CSLToCSLRuntime.cpp:95:14: error: reference to 'CodeRegionType' is ambiguous
+   95 |         loc, CodeRegionType::get(op.getContext()), layoutOp.getLayout(),
+      |              ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/include/air/Dialect/CSL/CSLDialect.h:42:7: note: candidate found by name lookup is 'xilinx::csl::CodeRegionType'
+   42 | class CodeRegionType
+      |       ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeDialect.h:28:7: note: candidate found by name lookup is 'xilinx::csl_rt::CodeRegionType'
+   28 | class CodeRegionType
+      |       ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/lib/Conversion/CSLToCSLRuntime/CSLToCSLRuntime.cpp:103:37: error: unknown type name 'CSLRuntime_PlaceOp'; did you mean 'CSLRuntimeDialect'?
+  103 |     auto placedOp = rewriter.create<CSLRuntime_PlaceOp>(
+      |                                     ^~~~~~~~~~~~~~~~~~
+      |                                     CSLRuntimeDialect
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/build/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeOpsDialect.h.inc:23:7: note: 'CSLRuntimeDialect' declared here
+   23 | class CSLRuntimeDialect : public ::mlir::Dialect {
+      |       ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/lib/Conversion/CSLToCSLRuntime/CSLToCSLRuntime.cpp:104:14: error: reference to 'CodeRegionType' is ambiguous
+  104 |         loc, CodeRegionType::get(op.getContext()), regionOp.getCodeRegion(),
+      |              ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/include/air/Dialect/CSL/CSLDialect.h:42:7: note: candidate found by name lookup is 'xilinx::csl::CodeRegionType'
+   42 | class CodeRegionType
+      |       ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/include/air/Dialect/CSLRuntime/CSLRuntimeDialect.h:28:7: note: candidate found by name lookup is 'xilinx::csl_rt::CodeRegionType'
+   28 | class CodeRegionType
+      |       ^
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/lib/Conversion/CSLToCSLRuntime/CSLToCSLRuntime.cpp:113:41: error: use of undeclared identifier 'CSLRuntime_SetParamAllOp'
+  113 |       auto paramSetOp = rewriter.create<CSLRuntime_SetParamAllOp>(
+      |                                         ^~~~~~~~~~~~~~~~~~~~~~~~
+fatal error: too many errors emitted, stopping now [-ferror-limit=]
+20 errors generated.
+ninja: build stopped: subcommand failed.
+
+=== Build Complete ===
+Install location: /uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/install

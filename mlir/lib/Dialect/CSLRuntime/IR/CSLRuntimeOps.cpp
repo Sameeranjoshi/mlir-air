@@ -7,6 +7,7 @@
 
 #include "air/Dialect/CSLRuntime/CSLRuntimeOps.h"
 #include "air/Dialect/CSLRuntime/CSLRuntimeDialect.h"
+#include "mlir/IR/Builders.h"
 
 using namespace xilinx::csl_rt;
 

@@ -9,6 +9,7 @@
 #define CSLRUNTIME_DIALECT_H
 
 #include "mlir/IR/Dialect.h"
+#include "mlir/Bytecode/BytecodeOpInterface.h"
 #include "llvm/ADT/StringRef.h"
 
 namespace xilinx {

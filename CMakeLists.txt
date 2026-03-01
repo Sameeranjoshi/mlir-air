@@ -39,7 +39,7 @@ set(PEANO_INSTALL_DIR
     CACHE STRING "Location of Peano compiler")
 
 # Option to enable/disable AIE support (for GPU-only builds)
-option(AIR_ENABLE_AIE "Enable AIE support (requires mlir-aie)" ON)
+option(AIR_ENABLE_AIE "Enable AIE support (requires mlir-aie)" OFF)
 # Option to enable/disable GPU/ROCDL support
 option(AIR_ENABLE_GPU "Enable GPU/ROCDL backend support" ON)
 

@@ -69,7 +69,7 @@ void xilinx::csl_rt::CSLRuntimeDialect::printType(mlir::Type type,
       .Case<RoutingPositionType>([&](auto) { os << "routing_position"; })
       .Case<PortType>([&](auto) { os << "port"; })
       .Case<StreamType>([&](auto) { os << "stream"; })
-      .Default([this](mlir::Type) {
+      .Default([&](mlir::Type) {
         llvm_unreachable("unknown csl_rt type");
       });
 }
