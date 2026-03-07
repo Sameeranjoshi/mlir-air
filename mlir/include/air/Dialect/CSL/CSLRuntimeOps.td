@@ -35,28 +35,6 @@ def CSL_ImportModuleOp : CSL_Op<"import_module", []> {
   }];
 }
 
-def CSL_ExportNameOp : CSL_Op<"export_name", []> {
-  let summary = "Declare a host-visible symbol in the layout";
-  let description = [{
-    Exports a named symbol to the host runtime, making it accessible
-    via `SdkRuntime` API calls. Used inside `csl.layout` blocks.
-    Corresponds to `@export_name("name", type, is_ptr)` in CSL.
-
-    Example:
-    ```mlir
-    csl.export_name "data" : f32
-    csl.export_name "compute" : () -> ()
-    ```
-  }];
-
-  let arguments = (ins
-    StrAttr:$sym_name,
-    TypeAttr:$type
-  );
-
-  let assemblyFormat = "$sym_name `:` $type attr-dict";
-}
-
 def CSL_ExportSymbolOp : CSL_Op<"export_symbol", []> {
   let summary = "Export a symbol from a PE module";
   let description = [{

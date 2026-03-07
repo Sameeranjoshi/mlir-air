@@ -26,7 +26,7 @@ csl.spatial_placement {
   %r = csl.route in(RAMP) out(EAST) : i32
   %k = csl.kernel "sender.csl" params({color_id = 0 : i32}) {
     csl.var @data : memref<128xf32>
-    csl.func @send() { csl.return }
+    csl.func @send() : () -> () { csl.return }
   } : !csl.kernel
   %reg = csl.code_region routes(%r) colors(%c) shape(4, 4) {
     csl.paint pe(0, 0) route(%r) color(%c)
@@ -39,8 +39,10 @@ csl.spatial_placement {
 // CHECK: csl.module @sender {
 // CHECK:   csl.param @color_id : i32
 // CHECK:   csl.var @data : memref<128xf32>
-// CHECK:   csl.func @send()
-// CHECK:   csl.task @send_complete() color(1) {
+// CHECK:   csl.func @send() : () -> () {
+// CHECK:     csl.return
+// CHECK:   }
+// CHECK:   csl.task @send_complete() color(1) : () -> () {
 // CHECK:     csl.return
 // CHECK:   }
 // CHECK:   csl.comptime {
@@ -52,11 +54,11 @@ csl.module @sender {
   csl.param @color_id : i32
   csl.var @data : memref<128xf32>
 
-  csl.func @send() {
+  csl.func @send() : () -> () {
     csl.return
   }
 
-  csl.task @send_complete() color(1) {
+  csl.task @send_complete() color(1) : () -> () {
     csl.return
   }
 

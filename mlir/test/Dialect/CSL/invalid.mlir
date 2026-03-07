@@ -44,7 +44,7 @@ csl.spatial_placement {
 // csl.func with Symbol trait requires parent with SymbolTable
 csl.spatial_placement {
   // expected-error @+1 {{'csl.func' op symbol's parent must have the SymbolTable trait}}
-  csl.func @compute() {
+  csl.func @compute() : () -> () {
     csl.return
   }
 }

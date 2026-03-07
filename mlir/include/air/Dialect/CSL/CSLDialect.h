@@ -71,8 +71,6 @@ public:
   static constexpr llvm::StringLiteral name = "xilinx.csl.kernel";
 };
 
-/// Register the --emit-csl translation in air-translate.
-void registerCSLToTextTranslation();
 
 } // namespace csl
 } // namespace xilinx

@@ -6,7 +6,6 @@ add_mlir_library(
   AIRTargets
   AIRTargets.cpp
   AIRHerdToJSON.cpp
-  CSLToTextTranslation.cpp
   CSLRuntimeToPy.cpp
 
   LINK_LIBS PUBLIC

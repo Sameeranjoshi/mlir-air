@@ -11,7 +11,7 @@
 
 // Missing color keyword in task
 // expected-error @+1 {{expected 'color'}}
-csl.task @bad_task() {
+csl.task @bad_task() : () -> () {
   csl.return
 }
 

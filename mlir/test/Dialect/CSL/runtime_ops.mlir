@@ -21,14 +21,6 @@
 // CHECK: csl.import_module "<math>" : !csl.imported_module
 %mod3 = csl.import_module "<math>" : !csl.imported_module
 
-// Export name for data (layout-level host-visible symbols)
-// CHECK: csl.export_name "data" : f32
-// CHECK: csl.export_name "compute" : () -> ()
-// CHECK: csl.export_name "buffer" : memref<1024xf32>
-csl.export_name "data" : f32
-csl.export_name "compute" : () -> ()
-csl.export_name "buffer" : memref<1024xf32>
-
 // Module parameters
 // CHECK: csl.param @memcpy_params : i64
 // CHECK: csl.param @tile_id : i32

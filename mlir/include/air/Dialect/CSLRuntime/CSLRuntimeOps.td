@@ -56,7 +56,7 @@ def CSLRuntime_CreateCodeRegionOp : CSLRuntime_Op<"create_code_region"> {
                        IndexAttr:$width,
                        IndexAttr:$height);
   let results = (outs CSLRuntime_CodeRegionType:$code_region);
-  let assemblyFormat = "$layout $source `,` $name `,` $width `,` $height "
+  let assemblyFormat = "$layout $source`,`$name`,`$width `:` `index` `,` $height `:` `index` "
                        "attr-dict `:` type($layout) `->` type($code_region)";
 }
 
@@ -76,7 +76,7 @@ def CSLRuntime_PlaceOp : CSLRuntime_Op<"place"> {
                        IndexAttr:$x,
                        IndexAttr:$y);
   let results = (outs CSLRuntime_CodeRegionType:$result);
-  let assemblyFormat = "$code_region `at` `(` $x `,` $y `)` "
+  let assemblyFormat = "$code_region `at` `(` $x `:` `index` `,` $y `:` `index` `)` "
                        "attr-dict `:` type($code_region) `->` type($result)";
 }
 
@@ -116,7 +116,7 @@ def CSLRuntime_ExportNameOp : CSLRuntime_Op<"export_name"> {
                        StrAttr:$symbol_name,
                        StrAttr:$symbol_type);
   let results = (outs CSLRuntime_LayoutType:$result);
-  let assemblyFormat = "$layout $symbol_name `,` $symbol_type "
+  let assemblyFormat = "$layout $symbol_name`,`$symbol_type "
                        "attr-dict `:` type($layout) `->` type($result)";
 }
 
@@ -245,8 +245,8 @@ def CSLRuntime_MemcpyH2dOp : CSLRuntime_Op<"memcpy_h2d"> {
                        IndexAttr:$h,
                        IndexAttr:$elem_per_pe);
   let results = (outs CSLRuntime_RuntimeType:$result);
-  let assemblyFormat = "$runtime $dest_id $src_name `at` `(` $px `,` $py `)`"
-                       " `with_size` `(` $w `,` $h `)` `elem_per_pe` $elem_per_pe "
+  let assemblyFormat = "$runtime $dest_id $src_name `at` `(` $px`,`$py `)`"
+                       " `with_size` `(` $w`,`$h `)` `elem_per_pe` $elem_per_pe "
                        "attr-dict `:` type($runtime) `->` type($result)";
 }
 
@@ -271,8 +271,8 @@ def CSLRuntime_MemcpyD2hOp : CSLRuntime_Op<"memcpy_d2h"> {
                        IndexAttr:$h,
                        IndexAttr:$elem_per_pe);
   let results = (outs CSLRuntime_RuntimeType:$result);
-  let assemblyFormat = "$runtime $dest_name `from` `(` $px `,` $py `)`"
-                       " `with_size` `(` $w `,` $h `)` `elem_per_pe` $elem_per_pe "
+  let assemblyFormat = "$runtime $dest_name `from` `(` $px`,`$py `)`"
+                       " `with_size` `(` $w`,`$h `)` `elem_per_pe` $elem_per_pe "
                        "attr-dict `:` type($runtime) `->` type($result)";
 }
 
@@ -292,7 +292,7 @@ def CSLRuntime_LaunchOp : CSLRuntime_Op<"launch"> {
                        StrAttr:$symbol_name,
                        OptionalAttr<BoolAttr>:$nonblock);
   let results = (outs CSLRuntime_RuntimeType:$result);
-  let assemblyFormat = "$runtime $symbol_name attr-dict `:` type($runtime) `->` type($result)";
+  let assemblyFormat = "$runtime $symbol_name attr-dict `:` `(` type($runtime) `)` `->` type($result)";
 }
 
 #endif // CSLRUNTIME_OPS

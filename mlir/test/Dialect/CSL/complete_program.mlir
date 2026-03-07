@@ -27,8 +27,8 @@ csl.spatial_placement {
     csl.var @arg_0 : memref<24xf32>
     csl.var @arg_1 : memref<6xf32>
     csl.var @arg_2 : memref<4xf32>
-    csl.func @compute() { csl.return }
-    csl.func @init_and_compute() { csl.return }
+    csl.func @compute() : () -> () { csl.return }
+    csl.func @init_and_compute() : () -> () { csl.return }
     csl.comptime {
       csl.export_symbol @arg_0 alias("arg_0")
       csl.export_symbol @arg_1 alias("arg_1")
@@ -57,7 +57,7 @@ csl.spatial_placement {
   // in a loop:
     // Do task1
 
-  
+
 // Layout block:
   // Layout and placement (python SDKLayout)
 

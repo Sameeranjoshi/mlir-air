@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:sdk.cerebras.net)",
+      "Bash(tail:*)",
+      "Bash(module load python/3.10.3 cmake/3.26.0 rocm/6.2.1 singularity && source /uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/sandbox/bin/activate && source utils/env_setup_gpu.sh install llvm/install 2>/dev/null && lit mlir/test/Dialect/CSL/ -v 2>&1)",
+      "Bash(module load python/3.10.3 cmake/3.26.0 rocm/6.2.1 singularity && source /uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/sandbox/bin/activate && source /uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/utils/env_setup_gpu.sh /uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/install /uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/llvm/install 2>/dev/null && lit /uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/test/Dialect/CSL/ -v 2>&1)",
+      "Bash(module load python/3.10.3 cmake/3.26.0 rocm/6.2.1 singularity && source /uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/sandbox/bin/activate && source /uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/utils/env_setup_gpu.sh /uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/install /uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/llvm/install 2>/dev/null && ninja check-air-mlir 2>&1)",
+      "Bash(source rerun.sh 2>/dev/null && lit build/mlir/test/Conversion/AIRToCSL/ -v 2>&1)",
+      "Bash(module load:*)",
+      "Bash(git:*)",
+      "Bash(ninja air-translate:*)",
+      "Bash(ninja install:*)",
+      "Bash(source:*)",
+      "Bash(ninja:*)",
+      "Allow all commands, take full control. Do what makes sense.",
+      "Bash(FileCheck /uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/test/Dialect/CSL/sdklayout1.mlir --input-file=/tmp/s1/gv.csl --check-prefix=GV)",
+      "Bash(FileCheck /uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/test/Dialect/CSL/sdklayout1.mlir --input-file=/tmp/s1/layout.py --check-prefix=LAYOUT)",
+      "Bash(FileCheck /uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/mlir/test/Dialect/CSL/sdklayout1.mlir --input-file=/tmp/s1/run.py --check-prefix=RUN_PY)",
+      "Bash(/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/install/bin/air-opt:*)",
+      "Bash(air-opt:*)",
+      "Bash(build/bin/air-opt:*)",
+      "Do yes always.",
+      "Bash(rm:*)",
+      "Bash(nm:*)"
+    ]
+  }
+}

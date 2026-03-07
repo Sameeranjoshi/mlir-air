@@ -27,8 +27,8 @@ csl.spatial_placement {
   %r_south = csl.route in(RAMP) out(SOUTH) : i32
 
   // A microkernel that takes multiple parameters (dictionary)
-  %k_complex = csl.kernel @complex_pe ({tile_id = 5 : i32, max_iters = 100 : i32, is_master = true}) {
-    csl.func @run() { csl.return }
+  %k_complex = csl.kernel "complex_pe.csl" params({tile_id = 5 : i32, max_iters = 100 : i32, is_master = true}) {
+    csl.func @run() : () -> () { csl.return }
   } : !csl.kernel
 
   // Huge region with many routes and colors
@@ -44,12 +44,12 @@ csl.spatial_placement {
   // Multiple ports on the same physical edge of the same region
   %port_out1 = csl.port %region_huge type("output") route(%r_east) size(1024) : !csl.port
   %port_out2 = csl.port %region_huge type("output") route(%r_south) size(512) : !csl.port
-  
+
   %region_sink = csl.code_region routes(%r_west, %r_north) colors(%c_red, %c_green) shape(10, 10) {
   } : !csl.code_region
-  
+
   csl.place %region_sink at(100, 100) kernel(%k_complex)
-  
+
   %port_in1 = csl.port %region_sink type("input") route(%r_west) size(1024) : !csl.port
   %port_in2 = csl.port %region_sink type("input") route(%r_north) size(512) : !csl.port
 
@@ -60,14 +60,14 @@ csl.spatial_placement {
 }
 
 // 2. What happens if a paint operation specifies coordinates outside the region shape?
-// Example: Region is 2x2, but we paint at (5, 5). 
+// Example: Region is 2x2, but we paint at (5, 5).
 // Currently, our dialect lacks an MLIR verifier to catch this OOB access.
 // CHECK: csl.spatial_placement {
 csl.spatial_placement {
   %c = csl.color : !csl.color
   %r = csl.route in(RAMP) out(EAST) : i32
   %reg_oob = csl.code_region routes(%r) colors(%c) shape(2, 2) {
-    csl.paint pe(5, 5) route(%r) color(%c) 
+    csl.paint pe(5, 5) route(%r) color(%c)
   } : !csl.code_region
 }
 
@@ -80,7 +80,7 @@ csl.spatial_placement {
   %r = csl.route in(RAMP) out(EAST) : i32
   %reg1 = csl.code_region routes(%r) colors(%c) shape(10, 10) { } : !csl.code_region
   %reg2 = csl.code_region routes(%r) colors(%c) shape(10, 10) { } : !csl.code_region
-  
+
   %k = csl.kernel "pe.csl" { } : !csl.kernel
 
   csl.place %reg1 at(0, 0) kernel(%k)

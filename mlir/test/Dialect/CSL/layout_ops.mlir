@@ -102,7 +102,7 @@ csl.spatial_placement {
   %regionA = csl.code_region routes(%r1) colors(%red) shape(10, 10) {
   } : !csl.code_region
   %k1 = csl.kernel "pe.csl" {
-    csl.func @compute() { csl.return }
+    csl.func @compute() : () -> () { csl.return }
   } : !csl.kernel
   csl.place %regionA at(0, 0) kernel(%k1)
 }
@@ -135,7 +135,7 @@ csl.spatial_placement {
 csl.spatial_placement {
   %k = csl.kernel "pe.csl" params({param1 = 100 : i32}) {
     csl.var @buf : memref<1024xf32>
-    csl.func @compute() { csl.return }
+    csl.func @compute() : () -> () { csl.return }
   } : !csl.kernel
 }
 
@@ -171,10 +171,10 @@ csl.spatial_placement {
 
   // Kernels
   %k1 = csl.kernel "k1.csl" params({param1 = 100 : i32}) {
-    csl.func @compute() { csl.return }
+    csl.func @compute() : () -> () { csl.return }
   } : !csl.kernel
   %k2 = csl.kernel "k2.csl" params({param2 = 200 : i32}) {
-    csl.func @compute() { csl.return }
+    csl.func @compute() : () -> () { csl.return }
   } : !csl.kernel
 
   // Code regions with paint

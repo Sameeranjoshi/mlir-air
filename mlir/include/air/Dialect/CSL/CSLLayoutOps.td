@@ -363,28 +363,6 @@ def CSL_DataflowOp : CSL_Op<"dataflow", []> {
 //   }];
 // }
 
-def CSL_SetParamAllOp : CSL_Op<"set_param_all", []> {
-  let summary = "Set a compile-time parameter on every PE in a region";
-  let description = [{
-    Sets a compile-time parameter value on all PEs in a code region.
-    Corresponds to `code_region.set_param_all('name', value)` in the
-    Python SdkLayout API.
-
-    Example:
-    ```mlir
-    csl.set_param_all %region param("value") value(550 : i16)
-    ```
-  }];
-  let arguments = (ins
-    CSL_CodeRegionType:$region,
-    StrAttr:$param_name,
-    AnyAttr:$value
-  );
-  let assemblyFormat = [{
-    $region `param` `(` $param_name `)` `value` `(` $value `)` attr-dict
-  }];
-}
-
 def CSL_SetParamOp : CSL_Op<"set_param", []> {
   let summary = "Set a compile-time parameter on a single PE";
   let description = [{

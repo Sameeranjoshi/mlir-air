@@ -23,6 +23,7 @@
 
 #include "air/Dialect/CSL/CSLDialect.h"
 #include "air/Dialect/CSL/CSLOps.h"
+#include "air/Dialect/CSLRuntime/CSLRuntimeDialect.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -665,11 +666,6 @@ CSLTextEmitter::emitModuleBody(CSLWriter &w, Region &body,
           if (auto aliasAttr = exportSym.getAlias())
             alias = aliasAttr->str();
           w.emitExportSymbol(exportSym.getSym().str(), alias);
-        } else if (isa<csl::ExportNameOp>(comptimeOp)) {
-          // ExportNameOp more commonly lives at module level (for layout);
-          // if inside comptime, emit a comment.
-          w.comment(
-              "export_name (see layout file for @export_name directives)");
         } else if (!comptimeOp.hasTrait<OpTrait::IsTerminator>()) {
           w.comment("TODO: comptime op: " +
                     comptimeOp.getName().getStringRef().str());
@@ -1220,15 +1216,6 @@ LogicalResult CSLTextEmitter::emitLayoutBody(
       continue;
     }
 
-    // csl.set_param_all — regionPyName.set_param_all('name', value)
-    if (auto setParam = dyn_cast<csl::SetParamAllOp>(op)) {
-      py << getPyName(setParam.getRegion()) << ".set_param_all('"
-         << setParam.getParamName() << "', ";
-      emitAttr(setParam.getValue());
-      py << ")\n";
-      continue;
-    }
-
     // csl.set_param — regionPyName.set_param(IntVector(x, y), 'name', value)
     if (auto setParam = dyn_cast<csl::SetParamOp>(op)) {
       py << getPyName(setParam.getRegion()) << ".set_param(IntVector("
@@ -1417,36 +1404,7 @@ LogicalResult CSLTextEmitter::emitLayoutBody(
       continue;
     }
 
-    // csl.export_name — layout.export_name(...)
-    if (auto exportName = dyn_cast<csl::ExportNameOp>(op)) {
-      Type ty = exportName.getType();
-      std::string symName = exportName.getSymName().str();
-      if (auto fnTy = dyn_cast<FunctionType>(ty)) {
-        (void)fnTy;
-        py << "layout.export_name(\"" << symName << "\", \"fn()void\")\n";
-      } else if (auto memTy = dyn_cast<MemRefType>(ty)) {
-        std::string elemTy = CSLWriter::mapType(memTy.getElementType());
-        if (!elemTy.empty()) {
-          std::string ptrTy = CSLWriter::pointerType(elemTy);
-          py << "layout.export_name(\"" << symName << "\", \""
-             << ptrTy << "\", mutable=True)\n";
-        } else {
-          py << "# layout.export_name(\"" << symName
-             << "\", \"/* unsupported type */\")\n";
-        }
-      } else {
-        std::string cslTy = CSLWriter::mapType(ty);
-        if (!cslTy.empty())
-          py << "layout.export_name(\"" << symName << "\", \"" << cslTy << "\")\n";
-        else
-          py << "# layout.export_name(\"" << symName
-             << "\", \"/* unsupported type */\")\n";
-      }
-      continue;
-    }
-
-    // csl.kernel, csl.port (old), csl.set_param_all already handled above,
-    // terminators, and other ops: skip silently.
+    // csl.kernel, csl.port (old), terminators, and other ops: skip silently.
   }
   return success();
 }
@@ -1524,26 +1482,6 @@ LogicalResult CSLTextEmitter::emitRunPy(
     });
   }
 
-  // --- Collect compile-time parameters (set_param_all) for header section ---
-  struct SetParamInfo {
-    std::string paramName;
-    std::string value;
-  };
-  SmallVector<SetParamInfo> setParamAllInfos;
-  for (auto &op : body) {
-    if (auto setParam = dyn_cast<csl::SetParamAllOp>(op)) {
-      std::string valStr;
-      auto valAttr = setParam.getValue();
-      if (auto intAttr = dyn_cast<IntegerAttr>(valAttr))
-        valStr = std::to_string(intAttr.getValue().getSExtValue());
-      else if (auto fltAttr = dyn_cast<FloatAttr>(valAttr))
-        valStr = std::to_string(fltAttr.getValueAsDouble());
-      else
-        valStr = "# unsupported value";
-      setParamAllInfos.push_back({setParam.getParamName().str(), valStr});
-    }
-  }
-
   return writePyToFile(
       "run.py",
       [&](raw_ostream &py) -> LogicalResult {
@@ -1564,16 +1502,6 @@ LogicalResult CSLTextEmitter::emitRunPy(
         py << "    help='Target WSE architecture (default: wse3)')\n";
         py << "args = parser.parse_args()\n";
         py << "\n";
-
-        // Emit compile-time parameter constant declarations
-        if (!setParamAllInfos.empty()) {
-          py << "###########\n";
-          py << "### Parameters\n";
-          py << "###########\n";
-          for (auto &sp : setParamAllInfos)
-            py << sp.paramName << " = " << sp.value << "\n";
-          py << "\n";
-        }
 
         py << "###########\n";
         py << "### Layout\n";
@@ -1634,17 +1562,6 @@ LogicalResult CSLTextEmitter::emitRunPy(
                << ", '" << sym.name << "', dtype='" << dtype << "')\n";
           }
           py << "\n";
-
-          // Generate assertions for exported syms matched with set_param_all
-          for (auto &sym : exportedSyms) {
-            for (auto &sp : setParamAllInfos) {
-              if (sp.paramName == sym.name) {
-                py << "assert result_" << sym.name
-                   << " == [" << sp.paramName << "], \""
-                   << sym.name << " mismatch\"\n";
-              }
-            }
-          }
         }
 
         py << "print(\"SUCCESS!\")\n";
@@ -1757,7 +1674,7 @@ void registerCSLToTextTranslation() {
         return emitter.translate(module, output);
       },
       [](DialectRegistry &registry) {
-        registry.insert<xilinx::csl::CSLDialect, func::FuncDialect,
+        registry.insert<xilinx::csl::CSLDialect, xilinx::csl_rt::CSLRuntimeDialect, func::FuncDialect,
                         arith::ArithDialect, memref::MemRefDialect,
                         scf::SCFDialect>();
       });

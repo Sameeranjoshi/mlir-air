@@ -20,55 +20,55 @@ csl.var @scalar : f32
 csl.var @vector_i16 : memref<256xi16>
 
 // Empty function
-// CHECK: csl.func @noop() {
+// CHECK: csl.func @noop() : () -> () {
 // CHECK:   csl.return
 // CHECK: }
-csl.func @noop() {
+csl.func @noop() : () -> () {
   csl.return
 }
 
 // Function with compute body
-// CHECK: csl.func @compute() {
+// CHECK: csl.func @compute() : () -> () {
 // CHECK:   csl.return
 // CHECK: }
-csl.func @compute() {
+csl.func @compute() : () -> () {
   csl.return
 }
 
 // Multiple functions
-// CHECK: csl.func @init() {
+// CHECK: csl.func @init() : () -> () {
 // CHECK:   csl.return
 // CHECK: }
-// CHECK: csl.func @finalize() {
+// CHECK: csl.func @finalize() : () -> () {
 // CHECK:   csl.return
 // CHECK: }
-csl.func @init() {
+csl.func @init() : () -> () {
   csl.return
 }
-csl.func @finalize() {
+csl.func @finalize() : () -> () {
   csl.return
 }
 
 // Task bound to a color
-// CHECK: csl.task @recv_task() color(3) {
+// CHECK: csl.task @recv_task() color(3) : () -> () {
 // CHECK:   csl.return
 // CHECK: }
-csl.task @recv_task() color(3) {
+csl.task @recv_task() color(3) : () -> () {
   csl.return
 }
 
 // Task bound to color 0
-// CHECK: csl.task @send_task() color(0) {
+// CHECK: csl.task @send_task() color(0) : () -> () {
 // CHECK:   csl.return
 // CHECK: }
-csl.task @send_task() color(0) {
+csl.task @send_task() color(0) : () -> () {
   csl.return
 }
 
 // Task with higher color id
-// CHECK: csl.task @data_task() color(15) {
+// CHECK: csl.task @data_task() color(15) : () -> () {
 // CHECK:   csl.return
 // CHECK: }
-csl.task @data_task() color(15) {
+csl.task @data_task() color(15) : () -> () {
   csl.return
 }
