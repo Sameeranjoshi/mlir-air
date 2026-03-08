@@ -5,14 +5,13 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// Translation backend: csl_rt dialect → Python (layout.py and run.py).
+// Translation backend: csl_rt dialect → Python (single run.py file).
 // Also extracts PE programs from csl.kernel ops.
 //
 // Pipeline:
 //   csl.kernel (PE-level) + csl_rt ops (SDK-level)
 //   → pe_program.csl (extracted from csl.kernel)
-//   → layout.py (generated from csl_rt ops - defines build_layout() function)
-//   → run.py (imports layout.py and uses compile_artifacts)
+//   → run.py (complete script with inline build_layout function)
 //
 //===----------------------------------------------------------------------===//
 
@@ -35,7 +34,7 @@ using namespace xilinx::csl_rt;
 
 namespace {
 
-/// Extracts and emits CSL kernel bodies and generates Python layout API.
+/// Extracts and emits CSL kernel bodies and generates Python runtime.
 class CSLRuntimeToPyTranslator {
 public:
   CSLRuntimeToPyTranslator(raw_ostream &out) : out(out) {}
@@ -55,12 +54,8 @@ public:
       out << "\n";
     }
 
-    // Step 3: Generate layout.py (separate file with build_layout() function)
-    emitLayoutPy(module);
-    out << "\n";
-
-    // Step 4: Generate run.py that imports from layout.py
-    emitRunPy();
+    // Step 3: Generate single run.py file with inline build_layout()
+    emitRunPy(module);
 
     return success();
   }
@@ -100,23 +95,23 @@ private:
     }
   }
 
-  void emitLayoutPy(ModuleOp module) {
+  void emitRunPy(ModuleOp module) {
     out << "# ============================================================================\n";
-    out << "# layout.py - Layout Configuration Function\n";
+    out << "# run.py - Complete Host Runtime Program\n";
     out << "# ============================================================================\n";
-    out << "# Generated from csl_rt dialect ops\n";
-    out << "# This file defines build_layout(platform) that creates and compiles the layout\n";
     out << "\n";
 
-    out << "#!/usr/bin/env python3\n";
-    out << "\"\"\"Auto-generated layout.py using SdkLayout API.\"\"\"\n";
+    out << "#!/usr/bin/env cs_python\n";
+    out << "\"\"\"Auto-generated run.py using SdkLayout and SdkRuntime API.\"\"\"\n";
     out << "\n";
 
-    // Emit imports
+    out << "import argparse\n";
+    out << "import numpy as np\n";
     out << "from cerebras.geometry.geometry import IntVector, IntRectangle\n";
     out << "from cerebras.sdk.runtime.sdkruntimepybind import (\n";
     out << "    Color, Edge, Route, RoutingPosition, get_edge_routing,\n";
-    out << "    SdkLayout,\n";
+    out << "    SdkRuntime, SdkTarget, SdkLayout, SimfabConfig, get_platform,\n";
+    out << "    MemcpyDataType, MemcpyOrder,\n";
     out << ")\n";
     out << "\n";
 
@@ -164,28 +159,10 @@ private:
     out << "    # Compile layout\n";
     out << "    compile_artifacts = layout.compile(out_prefix='out')\n";
     out << "    return compile_artifacts\n";
-  }
-
-  void emitRunPy() {
-    out << "# ============================================================================\n";
-    out << "# run.py - Host Runtime Program\n";
-    out << "# ============================================================================\n";
-    out << "# This file imports the layout from layout.py and runs it on the WSE.\n";
+    out << "\n";
     out << "\n";
 
-    out << "#!/usr/bin/env cs_python\n";
-    out << "\"\"\"Auto-generated run.py using SdkRuntime API.\"\"\"\n";
-    out << "\n";
-
-    out << "import argparse\n";
-    out << "import numpy as np\n";
-    out << "from cerebras.sdk.runtime.sdkruntimepybind import (\n";
-    out << "    SdkRuntime, SdkTarget, SimfabConfig, get_platform,\n";
-    out << "    MemcpyDataType, MemcpyOrder\n";
-    out << ")\n";
-    out << "from layout import build_layout\n";
-    out << "\n";
-
+    // Emit main function
     out << "def main():\n";
     out << "    # Parse command-line arguments\n";
     out << "    parser = argparse.ArgumentParser(description='Run WSE kernel')\n";
@@ -222,6 +199,7 @@ private:
     out << "        runtime.stop()\n";
     out << "\n";
     out << "    print('SUCCESS!')\n";
+    out << "\n";
     out << "\n";
     out << "if __name__ == '__main__':\n";
     out << "    main()\n";
