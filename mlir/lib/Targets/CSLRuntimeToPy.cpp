@@ -11,8 +11,8 @@
 // Pipeline:
 //   csl.kernel (PE-level) + csl_rt ops (SDK-level)
 //   → pe_program.csl (extracted from csl.kernel)
-//   → layout.py (generated from csl_rt ops)
-//   → run.py (template)
+//   → layout.py (generated from csl_rt ops - defines build_layout() function)
+//   → run.py (imports layout.py and uses compile_artifacts)
 //
 //===----------------------------------------------------------------------===//
 
@@ -55,11 +55,11 @@ public:
       out << "\n";
     }
 
-    // Step 3: Generate layout.py from csl_rt ops
+    // Step 3: Generate layout.py (separate file with build_layout() function)
     emitLayoutPy(module);
     out << "\n";
 
-    // Step 4: Generate run.py template
+    // Step 4: Generate run.py that imports from layout.py
     emitRunPy();
 
     return success();
@@ -102,10 +102,10 @@ private:
 
   void emitLayoutPy(ModuleOp module) {
     out << "# ============================================================================\n";
-    out << "# Layout Configuration (layout.py)\n";
+    out << "# layout.py - Layout Configuration Function\n";
     out << "# ============================================================================\n";
     out << "# Generated from csl_rt dialect ops\n";
-    out << "# This should be written to: layout.py\n";
+    out << "# This file defines build_layout(platform) that creates and compiles the layout\n";
     out << "\n";
 
     out << "#!/usr/bin/env python3\n";
@@ -120,9 +120,19 @@ private:
     out << ")\n";
     out << "\n";
 
-    // Emit layout creation
-    out << "# Create layout\n";
-    out << "layout = SdkLayout()\n";
+    // Emit build_layout function
+    out << "def build_layout(platform):\n";
+    out << "    \"\"\"\n";
+    out << "    Build and compile the layout for the WSE.\n";
+    out << "    \n";
+    out << "    Args:\n";
+    out << "        platform: SdkRuntime platform object\n";
+    out << "    \n";
+    out << "    Returns:\n";
+    out << "        compile_artifacts: Result of layout.compile(out_prefix='out')\n";
+    out << "    \"\"\"\n";
+    out << "    # Create layout\n";
+    out << "    layout = SdkLayout(platform)\n";
     out << "\n";
 
     // Walk module to find csl_rt ops
@@ -136,31 +146,31 @@ private:
     });
 
     if (!cslRtOps.empty()) {
-      out << "# Generated from csl_rt dialect ops:\n";
+      out << "    # Generated from csl_rt dialect ops:\n";
       for (Operation *op : cslRtOps) {
-        out << "# - " << op->getName().getStringRef() << "\n";
+        out << "    # - " << op->getName().getStringRef() << "\n";
       }
       out << "\n";
 
-      out << "# TODO: Emit layout.create_code_region() calls\n";
-      out << "# TODO: Emit color, route, paint operations\n";
-      out << "# TODO: Emit input/output port creation\n";
-      out << "# TODO: Emit parameter setting calls\n";
+      out << "    # TODO: Emit layout.create_code_region() calls\n";
+      out << "    # TODO: Emit color, route, paint operations\n";
+      out << "    # TODO: Emit input/output port creation\n";
+      out << "    # TODO: Emit parameter setting calls\n";
     } else {
-      out << "# No csl_rt ops found - layout is empty\n";
+      out << "    # No csl_rt ops found - layout is empty\n";
     }
 
     out << "\n";
-    out << "# Compile layout\n";
-    out << "compile_artifacts = layout.compile(out_prefix='out')\n";
-    out << "print(f'Compilation artifacts: {compile_artifacts}')\n";
+    out << "    # Compile layout\n";
+    out << "    compile_artifacts = layout.compile(out_prefix='out')\n";
+    out << "    return compile_artifacts\n";
   }
 
   void emitRunPy() {
     out << "# ============================================================================\n";
-    out << "# Host Runtime Program (run.py)\n";
+    out << "# run.py - Host Runtime Program\n";
     out << "# ============================================================================\n";
-    out << "# This should be written to: run.py\n";
+    out << "# This file imports the layout from layout.py and runs it on the WSE.\n";
     out << "\n";
 
     out << "#!/usr/bin/env cs_python\n";
@@ -170,33 +180,51 @@ private:
     out << "import argparse\n";
     out << "import numpy as np\n";
     out << "from cerebras.sdk.runtime.sdkruntimepybind import (\n";
-    out << "    SdkRuntime, MemcpyDataType, MemcpyOrder\n";
+    out << "    SdkRuntime, SdkTarget, SimfabConfig, get_platform,\n";
+    out << "    MemcpyDataType, MemcpyOrder\n";
     out << ")\n";
+    out << "from layout import build_layout\n";
     out << "\n";
 
-    out << "# Parse command-line arguments\n";
-    out << "parser = argparse.ArgumentParser()\n";
-    out << "parser.add_argument('--name', help='Compiled kernel directory')\n";
-    out << "parser.add_argument('--cmaddr', help='IP:port for CS system')\n";
-    out << "args = parser.parse_args()\n";
+    out << "def main():\n";
+    out << "    # Parse command-line arguments\n";
+    out << "    parser = argparse.ArgumentParser(description='Run WSE kernel')\n";
+    out << "    parser.add_argument('--cmaddr', type=str, default=None,\n";
+    out << "                        help='IP:port for CS system')\n";
+    out << "    parser.add_argument('--arch', type=str, choices=['wse2', 'wse3'],\n";
+    out << "                        default='wse3', help='Target WSE architecture')\n";
+    out << "    args = parser.parse_args()\n";
     out << "\n";
 
-    out << "# Create runtime\n";
-    out << "runner = SdkRuntime(args.name, cmaddr=args.cmaddr)\n";
+    out << "    # Setup platform\n";
+    out << "    config = SimfabConfig(dump_core=True)\n";
+    out << "    target = SdkTarget.WSE3 if args.arch == 'wse3' else SdkTarget.WSE2\n";
+    out << "    platform = get_platform(args.cmaddr, config, target)\n";
     out << "\n";
 
-    out << "try:\n";
-    out << "    # Load and run the program\n";
-    out << "    runner.load()\n";
-    out << "    runner.run()\n";
+    out << "    # Build and compile layout\n";
+    out << "    compile_artifacts = build_layout(platform)\n";
     out << "\n";
-    out << "    # TODO: Add memcpy_h2d, launch, memcpy_d2h calls\n";
+
+    out << "    # Create and run runtime\n";
+    out << "    runtime = SdkRuntime(compile_artifacts, platform, memcpy_required=False)\n";
     out << "\n";
-    out << "finally:\n";
-    out << "    # Stop the program\n";
-    out << "    runner.stop()\n";
+
+    out << "    try:\n";
+    out << "        # Load and run the program\n";
+    out << "        runtime.load()\n";
+    out << "        runtime.run()\n";
     out << "\n";
-    out << "print('SUCCESS!')\n";
+    out << "        # TODO: Add memcpy_h2d, launch, memcpy_d2h calls\n";
+    out << "\n";
+    out << "    finally:\n";
+    out << "        # Stop the program\n";
+    out << "        runtime.stop()\n";
+    out << "\n";
+    out << "    print('SUCCESS!')\n";
+    out << "\n";
+    out << "if __name__ == '__main__':\n";
+    out << "    main()\n";
   }
 };
 
