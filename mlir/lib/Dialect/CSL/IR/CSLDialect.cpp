@@ -16,7 +16,7 @@ namespace xilinx::csl {
 
 void CSLDialect::initialize() {
   addTypes<ColorType, DsdType, ImportedModuleType,
-           CodeRegionType, PortType, StreamType, KernelType>();
+           CodeRegionType, PortType, StreamType, KernelType, RouteType>();
   addOperations<
 #define GET_OP_LIST
 #include "air/Dialect/CSL/CSLOps.cpp.inc"
@@ -43,6 +43,8 @@ Type CSLDialect::parseType(DialectAsmParser &parser) const {
     return StreamType::get(context);
   if (keyword == "kernel")
     return KernelType::get(context);
+  if (keyword == "route")
+    return RouteType::get(context);
 
   parser.emitError(parser.getNameLoc(), "unknown csl type: " + keyword);
   return Type();
@@ -57,6 +59,7 @@ void CSLDialect::printType(Type type, DialectAsmPrinter &os) const {
       .Case<PortType>([&](Type) { os << "port"; })
       .Case<StreamType>([&](Type) { os << "stream"; })
       .Case<KernelType>([&](Type) { os << "kernel"; })
+      .Case<RouteType>([&](Type) { os << "route"; })
       .Default([](Type) { llvm_unreachable("unexpected 'csl' type"); });
 }
 

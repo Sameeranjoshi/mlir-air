@@ -71,6 +71,13 @@ public:
   static constexpr llvm::StringLiteral name = "xilinx.csl.kernel";
 };
 
+/// Opaque handle for a routing configuration.
+class RouteType
+    : public mlir::Type::TypeBase<RouteType, mlir::Type, mlir::TypeStorage> {
+public:
+  using Base::Base;
+  static constexpr llvm::StringLiteral name = "xilinx.csl.route";
+};
 
 } // namespace csl
 } // namespace xilinx

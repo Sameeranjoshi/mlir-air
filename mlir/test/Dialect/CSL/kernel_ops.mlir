@@ -9,66 +9,59 @@
 
 // CHECK-LABEL: module {
 
-// Variable declarations with different types and ranks
-// CHECK: csl.var @buf : memref<1024xf32>
-// CHECK: csl.var @matrix : memref<32x32xf16>
-// CHECK: csl.var @scalar : f32
-// CHECK: csl.var @vector_i16 : memref<256xi16>
-csl.var @buf : memref<1024xf32>
-csl.var @matrix : memref<32x32xf16>
-csl.var @scalar : f32
-csl.var @vector_i16 : memref<256xi16>
-
 // Empty function
-// CHECK: csl.func @noop() : () -> () {
+// CHECK: csl.func @noop {
 // CHECK:   csl.return
 // CHECK: }
-csl.func @noop() : () -> () {
+csl.func @noop {
   csl.return
 }
 
 // Function with compute body
-// CHECK: csl.func @compute() : () -> () {
+// CHECK: csl.func @compute {
 // CHECK:   csl.return
 // CHECK: }
-csl.func @compute() : () -> () {
+csl.func @compute {
   csl.return
 }
 
 // Multiple functions
-// CHECK: csl.func @init() : () -> () {
+// CHECK: csl.func @init {
 // CHECK:   csl.return
 // CHECK: }
-// CHECK: csl.func @finalize() : () -> () {
+// CHECK: csl.func @finalize {
 // CHECK:   csl.return
 // CHECK: }
-csl.func @init() : () -> () {
+csl.func @init {
   csl.return
 }
-csl.func @finalize() : () -> () {
+csl.func @finalize {
   csl.return
 }
 
 // Task bound to a color
-// CHECK: csl.task @recv_task() color(3) : () -> () {
+// CHECK: csl.task @recv_task color(%{{.*}}) {
 // CHECK:   csl.return
 // CHECK: }
-csl.task @recv_task() color(3) : () -> () {
+%c3 = csl.color {id = 3 : i32} : !csl.color
+csl.task @recv_task color(%c3) {
   csl.return
 }
 
 // Task bound to color 0
-// CHECK: csl.task @send_task() color(0) : () -> () {
+// CHECK: csl.task @send_task color(%{{.*}}) {
 // CHECK:   csl.return
 // CHECK: }
-csl.task @send_task() color(0) : () -> () {
+%c0 = csl.color {id = 0 : i32} : !csl.color
+csl.task @send_task color(%c0) {
   csl.return
 }
 
 // Task with higher color id
-// CHECK: csl.task @data_task() color(15) : () -> () {
+// CHECK: csl.task @data_task color(%{{.*}}) {
 // CHECK:   csl.return
 // CHECK: }
-csl.task @data_task() color(15) : () -> () {
+%c15 = csl.color {id = 15 : i32} : !csl.color
+csl.task @data_task color(%c15) {
   csl.return
 }

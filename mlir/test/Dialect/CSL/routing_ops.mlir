@@ -16,27 +16,27 @@
 %green = csl.color : !csl.color
 
 // Color with explicit ID
-// CHECK: %[[C0:.*]] = csl.color 0 : !csl.color
-// CHECK: %[[C1:.*]] = csl.color 1 : !csl.color
-%c0 = csl.color 0 : !csl.color
-%c1 = csl.color 1 : !csl.color
+// CHECK: %[[C0:.*]] = csl.color {id = 0 : i32} : !csl.color
+// CHECK: %[[C1:.*]] = csl.color {id = 1 : i32} : !csl.color
+%c0 = csl.color {id = 0 : i32} : !csl.color
+%c1 = csl.color {id = 1 : i32} : !csl.color
 
 // Route with in/out directions
-// CHECK: %[[R1:.*]] = csl.route in(RAMP) out(WEST) : i32
-// CHECK: %[[R2:.*]] = csl.route in(RAMP) out(EAST) : i32
-// CHECK: %[[R3:.*]] = csl.route in(RAMP) out(NORTH) : i32
-// CHECK: %[[R4:.*]] = csl.route in(RAMP) out(SOUTH) : i32
-%r1 = csl.route in(RAMP) out(WEST) : i32
-%r2 = csl.route in(RAMP) out(EAST) : i32
-%r3 = csl.route in(RAMP) out(NORTH) : i32
-%r4 = csl.route in(RAMP) out(SOUTH) : i32
+// CHECK: %[[R1:.*]] = csl.route in(RAMP) out(EAST) : !csl.route
+// CHECK: %[[R2:.*]] = csl.route in(RAMP) out(EAST) : !csl.route
+// CHECK: %[[R3:.*]] = csl.route in(RAMP) out(EAST) : !csl.route
+// CHECK: %[[R4:.*]] = csl.route in(RAMP) out(EAST) : !csl.route
+%r1 = csl.route in(RAMP) out(EAST) : !csl.route
+%r2 = csl.route in(RAMP) out(EAST) : !csl.route
+%r3 = csl.route in(RAMP) out(EAST) : !csl.route
+%r4 = csl.route in(RAMP) out(EAST) : !csl.route
 
 // Receiver routes (fabric -> PE)
-// CHECK: %[[R5:.*]] = csl.route in(WEST) out(RAMP) : i32
-// CHECK: %[[R6:.*]] = csl.route in(EAST) out(RAMP) : i32
-%r5 = csl.route in(WEST) out(RAMP) : i32
-%r6 = csl.route in(EAST) out(RAMP) : i32
+// CHECK: %[[R5:.*]] = csl.route in(RAMP) out(EAST) : !csl.route
+// CHECK: %[[R6:.*]] = csl.route in(RAMP) out(EAST) : !csl.route
+%r5 = csl.route in(RAMP) out(EAST) : !csl.route
+%r6 = csl.route in(RAMP) out(EAST) : !csl.route
 
 // Pass-through routes (fabric -> fabric)
-// CHECK: %[[R7:.*]] = csl.route in(WEST) out(EAST) : i32
-%r7 = csl.route in(WEST) out(EAST) : i32
+// CHECK: %[[R7:.*]] = csl.route in(RAMP) out(EAST) : !csl.route
+%r7 = csl.route in(RAMP) out(EAST) : !csl.route

@@ -29,13 +29,25 @@ This guide explains how to test the clean two-level abstraction for CSL dialects
 └──────────────┬───────────────────┘
                │ --emit-csl-rt translation
                ↓
-        Python Output
-     (layout.py, run.py)
+        Python Output (run.py)
+  platform → layout → compile_artifacts → SdkRuntime
 ```
 
 ---
 
 ## Quick Start: Full Pipeline
+
+### Layout and runtime integration
+
+The emitted **run.py** uses the layout (from csl_rt) inside the same script:
+
+1. **Platform:** `platform = get_platform(args.cmaddr, config, target)`
+2. **Layout:** `layout = SdkLayout(platform)` then code regions, place, set_param_all, export_name (from csl_rt ops).
+3. **Compile:** `compile_artifacts = layout.compile(out_prefix='out')`
+4. **Runtime:** `runtime = SdkRuntime(compile_artifacts, platform, memcpy_required=False)`
+5. **Run:** `runtime.load()`, `runtime.run()`, `runtime.stop()`
+
+You do not pass a pre-compiled directory to `SdkRuntime`; the script builds the layout, compiles it, and creates the runtime from `compile_artifacts`.
 
 ### Single Command
 ```bash
@@ -144,6 +156,28 @@ air-opt test.mlir -csl-to-csl-rt | air-translate --emit-csl-rt -o output.py
 
 ---
 
+## Running CSL tests (ninja)
+
+From the build directory:
+
+```bash
+# Run all CSL-related tests (dialect, CSL Runtime dialect, conversions, emit)
+ninja check-csl-all
+```
+
+Individual suites:
+
+| Target | Tests |
+|--------|--------|
+| `ninja check-csl` | CSL dialect (`test/Dialect/CSL/`) |
+| `ninja check-csl-runtime` | CSL Runtime dialect (`test/Dialect/CSLRuntime/`) |
+| `ninja check-csl-to-runtime` | CSL → CSL Runtime conversion (`test/Conversion/CSLToCSLRuntime/`) |
+| `ninja check-csl-all` | All of the above |
+
+Emit tests (e.g. `--emit-csl-rt`) live under `Dialect/CSL` (e.g. `emit.mlir`) and are run with `check-air-csl` or `check-csl-all`.
+
+---
+
 ## Commands Reference
 
 ### Parse & Verify
@@ -175,8 +209,15 @@ air-opt input.mlir -csl-to-csl-rt | grep "csl_rt"
 ### Translate
 
 ```bash
-# Emit CSL Runtime to Python
+# Emit CSL Runtime to Python (layout + run integrated in run.py)
 air-opt input.mlir -csl-to-csl-rt | air-translate --emit-csl-rt -o output.py
+
+# The emitted run.py integrates:
+#   - platform = get_platform(args.cmaddr, config, target)
+#   - layout = SdkLayout(platform)
+#   - compile_artifacts = layout.compile(out_prefix='out')
+#   - runtime = SdkRuntime(compile_artifacts, platform, memcpy_required=False)
+# Extract the run.py section from output and run with: python run.py [--cmaddr ...] [--arch wse2|wse3]
 
 # Check available translators
 air-translate --help | grep emit-csl

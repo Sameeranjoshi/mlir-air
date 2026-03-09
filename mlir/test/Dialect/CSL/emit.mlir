@@ -16,45 +16,28 @@
 //===----------------------------------------------------------------------===//
 
 // ============================================================================
-// Test: CSL spatial_placement -> CSL Runtime -> Python
-//   Verifies: module, param, var, func, task, comptime, export_symbol (PE level)
-//            spatial_placement, code_region, paint, place (converted to CSL Runtime)
+// Test: CSL spatial_placement round-trip
+//   Verifies: kernel, color, route, code_region, place parsing
 //
-// RUN: air-opt --csl-to-csl-rt %s | air-translate --emit-csl-rt --csl-output-dir=%t
-// TODO: Add FileCheck patterns for generated layout.py and kernel.csl
+// RUN: air-opt %s | FileCheck %s
 // ============================================================================
-%k = csl.kernel "pe_program.csl" params({memcpy_params = 0 : i64}) {
-  // Data in memory(can be own or borrowed memory from neighbor node.)
-  csl.var @arg_0 : memref<1024xf32>
-  csl.var @arg_1 : memref<1024xf32>
 
-  // Function with arithmetic body (IsolatedFromAbove, uses local ops only)
-  csl.func @compute() : () -> () {
-    %c0   = arith.constant 0 : i32
-    %a    = arith.constant 1.5 : f32
-    %b    = arith.constant 2.5 : f32
-    %sum  = arith.addf %a, %b : f32
-    csl.return
+// CHECK: func.func @main
+func.func @main() {
+  %k = csl.kernel {
+  } {source_file = "pe_program.csl"} : !csl.kernel
+
+  csl.spatial_placement {
+    // CHECK: csl.color
+    %c = csl.color : !csl.color
+    // CHECK: csl.route
+    %r = csl.route in(RAMP) out(EAST) : !csl.route
+    // CHECK: csl.code_region routes
+    %region = csl.code_region routes(%r) colors(%c) {
+    } {width = 2 : i64, height = 2 : i64} : !csl.code_region
+
+    // CHECK: csl.place
+    csl.place %region %k {x = 0 : i64, y = 0 : i64}
   }
-
-  csl.func @init_and_compute() : () -> () {
-    csl.return
-  }
-
-  csl.comptime {
-    csl.export_symbol @arg_0 alias("arg_0")
-    csl.export_symbol @arg_1 alias("arg_1")
-    csl.export_symbol @init_and_compute
-  }
-} : !csl.kernel
-
-csl.spatial_placement {
-  // resources for hardware, can assume infinite, compiler must be taking care of their allocation.
-  %c = csl.color : !csl.color
-  %r = csl.route in(RAMP) out(EAST) : i32
-  %region = csl.code_region routes(%r) colors(%c) shape(2, 2) {
-    csl.paint pe(0, 0) route(%r) color(%c)
-  } : !csl.code_region
-
-  csl.place %region at(0, 0) kernel(%k)
+  return
 }

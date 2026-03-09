@@ -2,14 +2,11 @@
 
 func.func @test_csl_to_csl_rt() {
   csl.spatial_placement {
-    %k = csl.kernel "pe.csl" {
-      csl.func @compute() : () -> () {
-        csl.return
-      }
-    } : !csl.kernel
-    %r = csl.code_region routes() colors() shape(16, 16) {
-    } : !csl.code_region
-    csl.place %r at(0, 0) kernel(%k)
+    %k = csl.kernel {
+    } {source_file = "pe.csl"} : !csl.kernel
+    %r = csl.code_region routes() colors() {
+    } {width = 16 : i64, height = 16 : i64} : !csl.code_region
+    csl.place %r %k {x = 0 : i64, y = 0 : i64}
   }
   return
 }

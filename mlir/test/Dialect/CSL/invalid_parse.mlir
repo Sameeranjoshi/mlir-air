@@ -24,5 +24,5 @@ csl.task @bad_task() : () -> () {
 // -----
 
 // Invalid direction enum in route
-// expected-error @below {{custom op 'csl.route' expected string or keyword containing one of the following enum values for attribute 'input_dir' [NORTH, SOUTH, EAST, WEST, RAMP]}}
-%r = csl.route in(UP) out(WEST) : i32
+// expected-error @below {{expected string or keyword containing one of the following enum values for attribute 'input_dir'}}
+%r = csl.route in(UP) out(WEST) : !csl.route

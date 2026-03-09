@@ -4,55 +4,35 @@
 // SPDX-License-Identifier: MIT
 //
 //===----------------------------------------------------------------------===//
+//
+// Tests for CSL ops that were consolidated or removed.
+// NOTE: csl.param, csl.export_symbol, and csl.comptime were removed in the
+// dialect consolidation (2026-03-08). They are now only available via the
+// CSL Runtime dialect (csl_rt.*) for higher-level SDK abstractions.
+// See MEMORY.md for consolidation details.
+//
+//===----------------------------------------------------------------------===//
 
 // RUN: air-opt %s | FileCheck %s
 
-// CHECK-LABEL: module {
+// CHECK-LABEL: func.func @main
 
-// Module import without params
-// CHECK: %[[MOD:.*]] = csl.import_module "<memcpy/memcpy>" : !csl.imported_module
-%mod = csl.import_module "<memcpy/memcpy>" : !csl.imported_module
+func.func @main() {
+  // CHECK: csl.import_module "<memcpy/memcpy>" : !csl.imported_module
+  %mod = csl.import_module "<memcpy/memcpy>" : !csl.imported_module
 
-// Module import with params
-// CHECK: %[[MOD2:.*]] = csl.import_module "<memcpy/get_params>" params({height = 2 : i32, width = 2 : i32}) : !csl.imported_module
-%mod2 = csl.import_module "<memcpy/get_params>" params({width = 2 : i32, height = 2 : i32}) : !csl.imported_module
+  // CHECK: csl.import_module "<memcpy/get_params>" {params = {height = 2 : i32, width = 2 : i32}} : !csl.imported_module
+  %mod2 = csl.import_module "<memcpy/get_params>" {params = {width = 2 : i32, height = 2 : i32}} : !csl.imported_module
 
-// Multiple module imports
-// CHECK: csl.import_module "<math>" : !csl.imported_module
-%mod3 = csl.import_module "<math>" : !csl.imported_module
+  // CHECK: csl.import_module "<math>" : !csl.imported_module
+  %mod3 = csl.import_module "<math>" : !csl.imported_module
 
-// Module parameters
-// CHECK: csl.param @memcpy_params : i64
-// CHECK: csl.param @tile_id : i32
-// CHECK: csl.param @width : index
-csl.param @memcpy_params : i64
-csl.param @tile_id : i32
-csl.param @width : index
-
-// Export symbol without alias
-// CHECK: csl.export_symbol @compute
-csl.export_symbol @compute
-
-// Export symbol with alias
-// CHECK: csl.export_symbol @buf_ptr alias("data")
-csl.export_symbol @buf_ptr alias("data")
-
-// Comptime block with single export
-// CHECK: csl.comptime {
-// CHECK:   csl.export_symbol @compute
-// CHECK: }
-csl.comptime {
-  csl.export_symbol @compute
+  return
 }
 
-// Comptime block with multiple exports
-// CHECK: csl.comptime {
-// CHECK:   csl.export_symbol @init alias("initialize")
-// CHECK:   csl.export_symbol @buf alias("buffer")
-// CHECK:   csl.export_symbol @finalize
-// CHECK: }
-csl.comptime {
-  csl.export_symbol @init alias("initialize")
-  csl.export_symbol @buf alias("buffer")
-  csl.export_symbol @finalize
-}
+// NOTE: These ops were removed in the consolidation (2026-03-08):
+// - csl.param (now only csl_rt.set_param_all in CSL Runtime dialect)
+// - csl.export_symbol (now only csl_rt.export_name in CSL Runtime dialect)
+// - csl.comptime (inferred by compiler passes)
+//
+// Use csl_rt.* ops (CSL Runtime dialect) for parameter and export operations.

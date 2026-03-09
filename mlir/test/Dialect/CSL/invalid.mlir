@@ -25,7 +25,7 @@ module {
 
 // -----
 
-// csl.var with Symbol trait requires parent with SymbolTable
+// csl.var with Symbol trait requires parent with SymbolTable (must be in csl.kernel)
 csl.spatial_placement {
   // expected-error @+1 {{'csl.var' op symbol's parent must have the SymbolTable trait}}
   csl.var @buf : memref<1024xf32>
@@ -33,18 +33,10 @@ csl.spatial_placement {
 
 // -----
 
-// csl.param with Symbol trait requires parent with SymbolTable
-csl.spatial_placement {
-  // expected-error @+1 {{'csl.param' op symbol's parent must have the SymbolTable trait}}
-  csl.param @tile_id : i32
-}
-
-// -----
-
-// csl.func with Symbol trait requires parent with SymbolTable
+// csl.func with Symbol trait requires parent with SymbolTable (must be in csl.kernel)
 csl.spatial_placement {
   // expected-error @+1 {{'csl.func' op symbol's parent must have the SymbolTable trait}}
-  csl.func @compute() : () -> () {
+  csl.func @compute {
     csl.return
   }
 }

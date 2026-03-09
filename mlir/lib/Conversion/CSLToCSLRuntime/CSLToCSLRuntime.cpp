@@ -17,6 +17,7 @@
 #include "air/Dialect/CSLRuntime/CSLRuntimeOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/BuiltinDialect.h"
+#include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/DialectConversion.h"
@@ -76,6 +77,10 @@ struct SpatialPlacementConversionPattern
       kernelSource = kernelOp.getSourceFileAttr();
     }
 
+    // Extract shape from code_region
+    int64_t width = codeRegionOp.getWidth();
+    int64_t height = codeRegionOp.getHeight();
+
     // Start building csl_rt ops.
     // 1. create_layout
     auto layoutOp = xilinx::csl_rt::CreateLayoutOp::create(
@@ -86,17 +91,53 @@ struct SpatialPlacementConversionPattern
         rewriter, loc, xilinx::csl_rt::CodeRegionType::get(op.getContext()),
         layoutOp.getLayout(), kernelSource,
         StringAttr::get(op.getContext(), "main"), // Default region name
-        rewriter.getIndexAttr(16), // width
-        rewriter.getIndexAttr(16)   // height
+        rewriter.getIndexAttr(width),   // Extract actual width from csl.code_region
+        rewriter.getIndexAttr(height)   // Extract actual height from csl.code_region
     );
 
     // 3. place
-    xilinx::csl_rt::PlaceOp::create(
+    auto placeRtOp = xilinx::csl_rt::PlaceOp::create(
         rewriter, loc, xilinx::csl_rt::CodeRegionType::get(op.getContext()),
         regionOp.getCodeRegion(),
         rewriter.getIndexAttr(0), // x
         rewriter.getIndexAttr(0)  // y
     );
+
+    // 3.5. set_param_all for each parameter from code_region
+    Value currentCodeRegion = placeRtOp.getResult();
+    // Look for "csl.params" attribute in code_region (stored as ArrayAttr)
+    if (auto paramsAttr = codeRegionOp->getAttr("csl.params")) {
+      if (auto paramsArray = dyn_cast<ArrayAttr>(paramsAttr)) {
+        // params is an ArrayAttr with alternating names and values: [name1, val1, name2, val2, ...]
+        for (size_t i = 0; i + 1 < paramsArray.size(); i += 2) {
+          StringRef paramName;
+          int64_t paramValue = 0;
+
+          // Get parameter name from array[i]
+          if (auto strAttr = dyn_cast<StringAttr>(paramsArray[i])) {
+            paramName = strAttr.getValue();
+          } else {
+            continue;
+          }
+
+          // Get parameter value from array[i+1]
+          if (auto intAttr = dyn_cast<IntegerAttr>(paramsArray[i + 1])) {
+            paramValue = intAttr.getValue().getSExtValue();
+          } else {
+            continue;
+          }
+
+          // Create set_param_all op
+          auto paramOp = xilinx::csl_rt::SetParamAllOp::create(
+              rewriter, loc, xilinx::csl_rt::CodeRegionType::get(op.getContext()),
+              currentCodeRegion,
+              StringAttr::get(op.getContext(), paramName),
+              IntegerAttr::get(rewriter.getI64Type(), paramValue)
+          );
+          currentCodeRegion = paramOp.getResult();
+        }
+      }
+    }
 
     // 4. compile
     xilinx::csl_rt::CompileOp::create(

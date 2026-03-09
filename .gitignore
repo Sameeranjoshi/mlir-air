@@ -38,3 +38,4 @@ sandbox
 libadf.a
 *.elf
 *.elf.*
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/llvm/

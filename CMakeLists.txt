@@ -95,7 +95,7 @@ include(HandleLLVMOptions)
 
 # setup python
 include(MLIRDetectPythonEnv)
-mlir_configure_python_dev_packages()
+# mlir_configure_python_dev_packages()  # Temporarily disabled due to Python dev headers issue
 
 # python build directory
 if(NOT AIR_PYTHON_PACKAGES_DIR)

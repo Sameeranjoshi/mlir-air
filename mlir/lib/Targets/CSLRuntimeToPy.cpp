@@ -34,15 +34,39 @@ using namespace xilinx::csl_rt;
 
 namespace {
 
+/// Simple Python code generation utility
+class PythonWriter {
+public:
+  explicit PythonWriter(llvm::raw_ostream &os) : os(os), indentLevel(0) {}
+
+  void indent() { indentLevel++; }
+  void dedent() {
+    if (indentLevel > 0)
+      indentLevel--;
+  }
+
+  llvm::raw_ostream &line() {
+    os << std::string(indentLevel * 4, ' ');
+    return os;
+  }
+
+  void blankLine() { os << "\n"; }
+  llvm::raw_ostream &raw() { return os; }
+
+private:
+  llvm::raw_ostream &os;
+  int indentLevel;
+};
+
 /// Extracts and emits CSL kernel bodies and generates Python runtime.
 class CSLRuntimeToPyTranslator {
 public:
-  CSLRuntimeToPyTranslator(raw_ostream &out) : out(out) {}
+  CSLRuntimeToPyTranslator(llvm::raw_ostream &out) : out(out), writer(out) {}
 
   LogicalResult translate(ModuleOp module) {
     // Step 1: Find and extract all csl.kernel ops
-    std::vector<Operation*> kernels;
-    module.walk([&](Operation *op) {
+    std::vector<mlir::Operation*> kernels;
+    module.walk([&](mlir::Operation *op) {
       if (op->getName().getStringRef() == "csl.kernel") {
         kernels.push_back(op);
       }
@@ -57,13 +81,14 @@ public:
     // Step 3: Generate single run.py file with inline build_layout()
     emitRunPy(module);
 
-    return success();
+    return mlir::success();
   }
 
 private:
-  raw_ostream &out;
+  llvm::raw_ostream &out;
+  PythonWriter writer;
 
-  void emitKernelPrograms(const std::vector<Operation*> &kernels) {
+  void emitKernelPrograms(const std::vector<mlir::Operation*> &kernels) {
     out << "# ============================================================================\n";
     out << "# PE Program (pe_program.csl)\n";
     out << "# ============================================================================\n";
@@ -107,11 +132,9 @@ private:
 
     out << "import argparse\n";
     out << "import numpy as np\n";
-    out << "from cerebras.geometry.geometry import IntVector, IntRectangle\n";
+    out << "# sdkruntimepybind: SdkRuntime API + SdkLayout API\n";
     out << "from cerebras.sdk.runtime.sdkruntimepybind import (\n";
-    out << "    Color, Edge, Route, RoutingPosition, get_edge_routing,\n";
     out << "    SdkRuntime, SdkTarget, SdkLayout, SimfabConfig, get_platform,\n";
-    out << "    MemcpyDataType, MemcpyOrder,\n";
     out << ")\n";
     out << "\n";
 
@@ -130,32 +153,9 @@ private:
     out << "    layout = SdkLayout(platform)\n";
     out << "\n";
 
-    // Walk module to find csl_rt ops
-    std::vector<Operation*> cslRtOps;
-    module.walk([&](Operation *op) {
-      // Check if operation is in csl_rt dialect
-      auto opName = op->getName().getStringRef();
-      if (opName.starts_with("csl_rt.")) {
-        cslRtOps.push_back(op);
-      }
-    });
+    // Collect and emit all csl_rt operations in order
+    emitLayoutOperations(module);
 
-    if (!cslRtOps.empty()) {
-      out << "    # Generated from csl_rt dialect ops:\n";
-      for (Operation *op : cslRtOps) {
-        out << "    # - " << op->getName().getStringRef() << "\n";
-      }
-      out << "\n";
-
-      out << "    # TODO: Emit layout.create_code_region() calls\n";
-      out << "    # TODO: Emit color, route, paint operations\n";
-      out << "    # TODO: Emit input/output port creation\n";
-      out << "    # TODO: Emit parameter setting calls\n";
-    } else {
-      out << "    # No csl_rt ops found - layout is empty\n";
-    }
-
-    out << "\n";
     out << "    # Compile layout\n";
     out << "    compile_artifacts = layout.compile(out_prefix='out')\n";
     out << "    return compile_artifacts\n";
@@ -187,16 +187,9 @@ private:
     out << "    runtime = SdkRuntime(compile_artifacts, platform, memcpy_required=False)\n";
     out << "\n";
 
-    out << "    try:\n";
-    out << "        # Load and run the program\n";
-    out << "        runtime.load()\n";
-    out << "        runtime.run()\n";
-    out << "\n";
-    out << "        # TODO: Add memcpy_h2d, launch, memcpy_d2h calls\n";
-    out << "\n";
-    out << "    finally:\n";
-    out << "        # Stop the program\n";
-    out << "        runtime.stop()\n";
+    // Emit runtime operations
+    emitRuntimeOperations(module);
+
     out << "\n";
     out << "    print('SUCCESS!')\n";
     out << "\n";
@@ -204,10 +197,166 @@ private:
     out << "if __name__ == '__main__':\n";
     out << "    main()\n";
   }
+
+  void emitLayoutOperations(ModuleOp module) {
+    // Process operations at module level and inside functions
+    emitLayoutOpsInFunction(module.getOperation());
+
+    // Also walk through any func.func operations
+    module.walk([&](func::FuncOp func) {
+      emitLayoutOpsInFunction(func.getOperation());
+    });
+  }
+
+  void emitLayoutOpsInFunction(Operation *op) {
+    // Process direct children in order (preserves sequence)
+    for (auto &region : op->getRegions()) {
+      for (auto &block : region.getBlocks()) {
+        for (auto &opChild : block.getOperations()) {
+          auto opName = opChild.getName().getStringRef();
+
+          if (opName == "csl_rt.create_code_region") {
+            auto createCodeRegion = dyn_cast<CreateCodeRegionOp>(&opChild);
+            if (createCodeRegion) {
+              StringRef source = createCodeRegion.getSourceAttr().getValue();
+              StringRef name = createCodeRegion.getNameAttr().getValue();
+              int64_t width = createCodeRegion.getWidthAttr().getValue().getSExtValue();
+              int64_t height =
+                  createCodeRegion.getHeightAttr().getValue().getSExtValue();
+
+              out << "    code_region = layout.create_code_region(\"" << source
+                  << "\", \"" << name << "\", " << width << ", " << height << ")\n";
+            }
+          } else if (opName == "csl_rt.place") {
+            auto place = dyn_cast<PlaceOp>(&opChild);
+            if (place) {
+              int64_t x = place.getXAttr().getValue().getSExtValue();
+              int64_t y = place.getYAttr().getValue().getSExtValue();
+              out << "    code_region.place(" << x << ", " << y << ")\n";
+            }
+          } else if (opName == "csl_rt.set_param_all") {
+            auto setParam = dyn_cast<SetParamAllOp>(&opChild);
+            if (setParam) {
+              StringRef paramName = setParam.getParamNameAttr().getValue();
+              int64_t paramValue = setParam.getParamValueAttr().getValue().getSExtValue();
+              out << "    code_region.set_param_all(\"" << paramName << "\", "
+                  << paramValue << ")\n";
+            }
+          } else if (opName == "csl_rt.export_name") {
+            auto exportName = dyn_cast<ExportNameOp>(&opChild);
+            if (exportName) {
+              StringRef symName = exportName.getSymbolNameAttr().getValue();
+              StringRef symType = exportName.getSymbolTypeAttr().getValue();
+              out << "    layout.export_name(\"" << symName << "\", \"" << symType
+                  << "\")\n";
+            }
+          }
+        }
+      }
+    }
+  }
+
+  void emitRuntimeOperations(ModuleOp module) {
+    // Process operations at module level and inside functions
+    emitRuntimeOpsInFunction(module.getOperation());
+
+    // Also walk through any func.func operations
+    module.walk([&](func::FuncOp func) {
+      emitRuntimeOpsInFunction(func.getOperation());
+    });
+  }
+
+  void emitRuntimeOpsInFunction(Operation *op) {
+    out << "    try:\n";
+    out << "        # Load and run the program\n";
+    out << "        runtime.load()\n";
+    out << "\n";
+
+    // Process direct children in order (preserves sequence)
+    bool foundH2D = false;
+    bool foundLaunch = false;
+    bool foundD2H = false;
+
+    for (auto &region : op->getRegions()) {
+      for (auto &block : region.getBlocks()) {
+        for (auto &opChild : block.getOperations()) {
+          auto opName = opChild.getName().getStringRef();
+
+          if (opName == "csl_rt.load") {
+            // Already emitted above
+          } else if (opName == "csl_rt.get_id") {
+            auto getId = dyn_cast<GetIdOp>(&opChild);
+            if (getId) {
+              StringRef symbolName = getId.getSymbolNameAttr().getValue();
+              out << "        id_" << symbolName << " = runtime.get_id(\""
+                  << symbolName << "\")\n";
+            }
+          } else if (opName == "csl_rt.memcpy_h2d") {
+            if (!foundH2D) {
+              out << "\n";
+              out << "        # Host-to-device transfers\n";
+              foundH2D = true;
+            }
+            auto memcpyH2D = dyn_cast<MemcpyH2dOp>(&opChild);
+            if (memcpyH2D) {
+              int32_t destId = memcpyH2D.getDestIdAttr().getInt();
+              StringRef srcName = memcpyH2D.getSrcNameAttr().getValue();
+              int64_t px = memcpyH2D.getPxAttr().getValue().getSExtValue();
+              int64_t py = memcpyH2D.getPyAttr().getValue().getSExtValue();
+              int64_t w = memcpyH2D.getWAttr().getValue().getSExtValue();
+              int64_t h = memcpyH2D.getHAttr().getValue().getSExtValue();
+              int64_t elemPerPe =
+                  memcpyH2D.getElemPerPeAttr().getValue().getSExtValue();
+
+              out << "        runtime.memcpy_h2d(" << destId << ", \"" << srcName
+                  << "\", " << px << ", " << py << ", " << w << ", " << h << ", "
+                  << elemPerPe << ")\n";
+            }
+          } else if (opName == "csl_rt.launch") {
+            if (!foundLaunch) {
+              out << "\n";
+              out << "        # Launch compute kernel\n";
+              foundLaunch = true;
+            }
+            auto launch = dyn_cast<LaunchOp>(&opChild);
+            if (launch) {
+              StringRef symbolName = launch.getSymbolNameAttr().getValue();
+              out << "        runtime.launch(\"" << symbolName << "\")\n";
+            }
+          } else if (opName == "csl_rt.memcpy_d2h") {
+            if (!foundD2H) {
+              out << "\n";
+              out << "        # Device-to-host transfers\n";
+              foundD2H = true;
+            }
+            auto memcpyD2H = dyn_cast<MemcpyD2hOp>(&opChild);
+            if (memcpyD2H) {
+              StringRef destName = memcpyD2H.getDestNameAttr().getValue();
+              int64_t px = memcpyD2H.getPxAttr().getValue().getSExtValue();
+              int64_t py = memcpyD2H.getPyAttr().getValue().getSExtValue();
+              int64_t w = memcpyD2H.getWAttr().getValue().getSExtValue();
+              int64_t h = memcpyD2H.getHAttr().getValue().getSExtValue();
+              int64_t elemPerPe =
+                  memcpyD2H.getElemPerPeAttr().getValue().getSExtValue();
+
+              out << "        runtime.memcpy_d2h(\"" << destName << "\", " << px
+                  << ", " << py << ", " << w << ", " << h << ", " << elemPerPe
+                  << ")\n";
+            }
+          }
+        }
+      }
+    }
+
+    out << "\n";
+    out << "    finally:\n";
+    out << "        # Stop the program\n";
+    out << "        runtime.stop()\n";
+  }
 };
 
 /// Translation function for csl_rt → Python.
-static LogicalResult translateCSLRuntimeToPy(ModuleOp module, raw_ostream &os) {
+static LogicalResult translateCSLRuntimeToPy(ModuleOp module, llvm::raw_ostream &os) {
   CSLRuntimeToPyTranslator translator(os);
   return translator.translate(module);
 }
@@ -217,12 +366,12 @@ static LogicalResult translateCSLRuntimeToPy(ModuleOp module, raw_ostream &os) {
 void xilinx::csl_rt::registerCSLRuntimeToPyTranslation() {
   TranslateFromMLIRRegistration registration(
       "emit-csl-rt", "Emit CSL Runtime to Python",
-      [](ModuleOp module, raw_ostream &os) {
+      [](ModuleOp module, llvm::raw_ostream &os) {
         return translateCSLRuntimeToPy(module, os);
       },
       [](DialectRegistry &registry) {
-        registry.insert<xilinx::csl::CSLDialect, CSLRuntimeDialect,
-                        func::FuncDialect, arith::ArithDialect,
-                        memref::MemRefDialect>();
+        registry.insert<xilinx::csl::CSLDialect, xilinx::csl_rt::CSLRuntimeDialect,
+                        mlir::func::FuncDialect, mlir::arith::ArithDialect,
+                        mlir::memref::MemRefDialect>();
       });
 }

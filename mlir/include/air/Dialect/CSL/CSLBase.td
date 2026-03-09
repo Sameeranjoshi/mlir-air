@@ -91,6 +91,12 @@ def CSL_KernelType : DialectType<
   "CSL kernel handle">,
   BuildableType<"xilinx::csl::KernelType::get($_builder.getContext())">;
 
+def CSL_RouteType : DialectType<
+  CSL_Dialect,
+  CPred<"llvm::isa<xilinx::csl::RouteType>($_self)">,
+  "CSL route handle">,
+  BuildableType<"xilinx::csl::RouteType::get($_builder.getContext())">;
+
 //===----------------------------------------------------------------------===//
 // CSL Enums
 //===----------------------------------------------------------------------===//
@@ -134,5 +140,6 @@ def CSL_EdgeEnum : I32EnumAttr<"Edge",
     [CSL_EdgeLeft, CSL_EdgeRight, CSL_EdgeTop, CSL_EdgeBottom]> {
   let cppNamespace = "xilinx::csl";
 }
+
 
 #endif // CSL_BASE
