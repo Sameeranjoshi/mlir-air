@@ -95,7 +95,13 @@ include(HandleLLVMOptions)
 
 # setup python
 include(MLIRDetectPythonEnv)
-mlir_configure_python_dev_packages()
+# Only configure Python dev packages if Python3_INCLUDE_DIRS is available
+find_package(Python3 QUIET COMPONENTS Interpreter)
+if(Python3_FOUND AND Python3_Development.Module_FOUND)
+  mlir_configure_python_dev_packages()
+else()
+  message(WARNING "Python3 development headers not found. Python bindings will be disabled.")
+endif()
 
 # python build directory
 if(NOT AIR_PYTHON_PACKAGES_DIR)

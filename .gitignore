@@ -1,3 +1,5 @@
+llvm/
+
 # make artifacts
 CMakeFiles/
 CMakeCache.txt

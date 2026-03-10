@@ -38,6 +38,12 @@ LLVM_DIR="$1"
 BUILD_DIR=${2:-"build"}
 INSTALL_DIR=${3:-"install"}
 
+# Load Python module if available
+if command -v module &> /dev/null; then
+    echo "Loading Python module..."
+    module load python/3.11.3 2>/dev/null || module load python 2>/dev/null || true
+fi
+
 # Auto-detect LLVM install directory
 # Check if user passed source dir (llvm) vs install dir (llvm/install)
 if [ -f "${LLVM_DIR}/lib/cmake/mlir/MLIRConfig.cmake" ]; then

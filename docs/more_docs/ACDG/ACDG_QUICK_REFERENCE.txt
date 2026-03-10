@@ -1,0 +1,195 @@
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                    AIRDependency Pass - Quick Reference Card                  ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+CORE CONCEPT:
+  AIRDependency transforms synchronous code into an Asynchronous Compute
+  Data-flow Graph (ACDG) where operations have explicit tokens representing
+  their completion.
+
+═══════════════════════════════════════════════════════════════════════════════
+
+KEY SYNTAX:
+
+1. ASYNC TOKEN (Operation Result)
+   %token, %result = air.execute -> (type) { ... }
+   ├─ %token = "this operation is done"
+   └─ %result = the actual computed result
+
+2. DEPENDENCY (Input Requirement)
+   %op_token = air.dma_memcpy_nd async [%dependency_token] (...)
+   └─ async [%token] = "wait for this token before starting"
+
+3. SYNCHRONIZATION (Force Completion)
+   %sync_token = air.wait_all async [%t1, %t2, %t3]
+   └─ waits for ALL tokens, then produces a new token
+
+4. LOOP THREADING (Iteration Synchronization)
+   scf.for %i = ... iter_args(%arg = %init) -> (!air.async.token) {
+     %t = air.execute [%arg] { ... }
+     scf.yield %t : !air.async.token
+   }
+   └─ each iteration receives previous iteration's token
+
+5. BRANCH YIELDING (Conditional Completion)
+   %if_token = affine.if %cond -> !air.async.token {
+     %t1 = air.execute { ... }
+     affine.yield %t1 : !air.async.token
+   } else {
+     %t2 = air.execute { ... }
+     affine.yield %t2 : !air.async.token
+   }
+   └─ both branches produce tokens, %if_token represents either
+
+═══════════════════════════════════════════════════════════════════════════════
+
+COMMON COMMANDS:
+
+Basic Pass:
+  air-opt file.mlir -air-dependency
+
+With Canonicalization:
+  air-opt file.mlir --pass-pipeline="builtin.module(air-dependency,air-dependency-canonicalize)"
+
+Full Pipeline:
+  air-opt file.mlir --pass-pipeline="builtin.module(air-dependency,canonicalize,cse,air-dependency-canonicalize)"
+
+Save Output:
+  air-opt file.mlir -air-dependency > output.mlir
+
+Test with FileCheck:
+  air-opt file.mlir -air-dependency | FileCheck file.mlir
+
+═══════════════════════════════════════════════════════════════════════════════
+
+DEPENDENCY PATTERNS:
+
+SEQUENTIAL:         A → B → C
+                   %t1 → [%t1] → %t2
+
+FORK (One → Many):  A → {B, C}
+                   %t_a → [%t_a] → %t_b AND %t_c
+
+JOIN (Many → One):  {A, B} → C
+                   [%t_a, %t_b] → %t_c
+
+LOOP:              i₀ → i₁ → i₂ → ...
+                   Each iteration depends on previous
+
+BRANCH:            A → IF {then: %t1 | else: %t2}
+                   Both produce tokens
+
+═══════════════════════════════════════════════════════════════════════════════
+
+HOW TO READ TRANSFORMED CODE:
+
+1. Find all operations with {id = N}
+2. Look for "async [...]" to see dependencies
+3. Trace %token chains to understand order
+4. Look for air.wait_all to find synchronization points
+5. Check loop iter_args and branch yields
+
+Example:
+  %t0 = air.execute { memref.alloc() }        ← produces token
+  %t1 = air.dma async [%t0] (...)             ← depends on t0
+  %t2 = air.wait_all async [%t1]              ← waits for t1
+  affine.yield %t2                            ← yields to next iteration
+
+═══════════════════════════════════════════════════════════════════════════════
+
+DEBUGGING:
+
+Find orphaned tokens (created but unused):
+  grep '%.*token' output.mlir | grep -v async | sort | uniq -c
+
+Find operations missing dependencies:
+  grep 'async \[\]' output.mlir
+
+Validate token flow:
+  grep 'air.execute\|air.dma\|air.wait_all' output.mlir | wc -l
+
+Check for missing synchronization:
+  # Every loop/branch should have iter_args/yield with tokens
+
+═══════════════════════════════════════════════════════════════════════════════
+
+TEST CASES (in order of complexity):
+
+  dma_memcpy_nd.mlir        ← basic DMA async
+  matmul_nd.mlir            ← producer-consumer chains
+  affine_if.mlir            ← branching
+  scf_for.mlir              ← loop threading
+  scf_if.mlir               ← conditional execution
+  air_channel.mlir          ← channel ordering
+  air_hierarchy.mlir        ← nested herds
+  parallel_herds.mlir       ← independent parallelization
+  reshape_dependency.mlir   ← complex memory ops
+
+═══════════════════════════════════════════════════════════════════════════════
+
+DOCUMENTATION STRUCTURE:
+
+ACDG_README.md
+├─ Start here for navigation and learning paths
+
+ACDG_DEPENDENCY_GUIDE.md
+├─ Core concepts and theory
+└─ Best for understanding "why"
+
+VISUALIZE_DEPENDENCIES.md
+├─ Hands-on commands and analysis
+└─ Best for practical experimentation
+
+ACDG_VISUAL_EXAMPLES.md
+├─ Real before/after transformations
+└─ Best for seeing concrete patterns
+
+ACDG_IMPLEMENTATION_REFERENCE.md
+├─ C++ code walkthrough
+└─ Best for reading source code
+
+═══════════════════════════════════════════════════════════════════════════════
+
+THREE PHASES OF TRANSFORMATION:
+
+PHASE 1: Convert Sync → Async
+  Before:  %alloc = memref.alloc()
+  After:   %t0, %r0 = air.execute { memref.alloc() }
+
+PHASE 2: Analyze Dependencies
+  Build a DAG showing what depends on what
+  Example: alloc → dma → compute
+
+PHASE 3: Apply Dependencies
+  Add [%tokens] to async operations
+  Insert air.wait_all where needed
+  Update yields/returns with tokens
+
+═══════════════════════════════════════════════════════════════════════════════
+
+PIPELINE STAGES (after AIRDependency):
+
+  air-dependency
+      ↓
+  air-dependency-canonicalize  (removes redundant deps)
+      ↓
+  air-dependency-schedule-opt  (optimizes ordering)
+      ↓
+  air-dma-to-channel          (converts DMA to channels)
+      ↓
+  air-to-aie                  (converts to hardware)
+
+═══════════════════════════════════════════════════════════════════════════════
+
+GOLDEN RULES:
+
+  1. Every operation produces a token OR has no results
+  2. Every operation depends on input tokens OR has no deps
+  3. Tokens form a DAG (no cycles)
+  4. Loops thread tokens through iter_args
+  5. Branches yield tokens to represent completion
+  6. air.wait_all joins multiple tokens into one
+  7. Synchronization happens at scope boundaries
+
+═══════════════════════════════════════════════════════════════════════════════
+
