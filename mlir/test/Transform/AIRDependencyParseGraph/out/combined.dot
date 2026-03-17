@@ -1,0 +1,25 @@
+digraph G {
+  rankdir=LR;
+  v0 [label="start", color="yellow", style=filled, shape="box"];
+  v1 [label="HerdOp\n[1, 1]", color="yellow", style=filled, shape="box"];
+  v0 -> v1;
+  subgraph cluster_0 {
+    label="air.herd";
+    style=dashed;
+    s0_v0 [label="start", color="yellow", style=filled, shape="box"];
+    s0_v1 [label="AllocOp\n(L1, 256, i32)", color="chartreuse", style=filled, shape="oval"];
+    s0_v2 [label="ExecuteTerminatorOp", color="chartreuse", style=filled, shape="oval"];
+    s0_v3 [label="DmaMemcpyNdOp", color="cyan", style=filled, shape="oval"];
+    s0_v4 [label="DmaMemcpyNdOp", color="cyan", style=filled, shape="oval"];
+    s0_v5 [label="DeallocOp\n(L1, 256, i32)", color="chartreuse", style=filled, shape="oval"];
+    s0_v6 [label="ExecuteTerminatorOp", color="chartreuse", style=filled, shape="oval"];
+    s0_v7 [label="HerdTerminator", color="yellow", style=filled, shape="box"];
+    s0_v0 -> s0_v1;
+    s0_v1 -> s0_v2;
+    s0_v2 -> s0_v3;
+    s0_v3 -> s0_v4;
+    s0_v4 -> s0_v5;
+    s0_v5 -> s0_v6;
+    s0_v6 -> s0_v7;
+  }
+}
