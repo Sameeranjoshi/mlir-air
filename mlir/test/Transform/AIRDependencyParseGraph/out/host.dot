@@ -1,0 +1,6 @@
+digraph G {
+  rankdir=LR;
+  v0 [label="start", color="yellow", style=filled, shape="box"];
+  v1 [label="HerdOp\n[1, 1]", color="yellow", style=filled, shape="box"];
+  v0 -> v1;
+}
