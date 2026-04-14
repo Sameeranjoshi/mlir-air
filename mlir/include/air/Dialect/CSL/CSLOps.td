@@ -405,6 +405,76 @@ def CSL_ImportModuleOp : CSL_Op<"import_module", []> {
 }
 
 //===----------------------------------------------------------------------===//
+// Runtime / host-interface ops
+//===----------------------------------------------------------------------===//
+
+//===----------------------------------------------------------------------===//
+// csl.export_name — Host-visible name and type for a buffer or function
+//===----------------------------------------------------------------------===//
+
+def CSL_ExportNameOp : CSL_Op<"export_name"> {
+  let summary = "Declare a host-visible exported name with a type";
+  let description = [{
+    Declares a name that the host runtime can address. The optional
+    `direction` attribute distinguishes input buffers (`"in"`) from
+    output buffers (`"out"`). Function-typed exports (host-callable
+    kernel entry points) have no direction.
+
+    Lowering: `csl-to-csl-rt` uses the `direction` attribute to decide
+    whether to synthesize `memcpy_h2d` or `memcpy_d2h` in the host
+    runtime sequence. The translator emits the corresponding
+    `@export_name(...)` call in `layout.csl`.
+
+    Examples:
+    ```mlir
+    csl.export_name "a" : memref<256xf32> {direction = "in"}
+    csl.export_name "c" : memref<256xf32> {direction = "out"}
+    csl.export_name "compute" : () -> ()
+    ```
+  }];
+
+  let arguments = (ins
+    StrAttr:$sym_name,
+    TypeAttr:$exported_type,
+    OptionalAttr<StrAttr>:$direction
+  );
+
+  let assemblyFormat = [{
+    $sym_name `:` $exported_type (`{` `direction` `=` $direction^ `}`)? attr-dict
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// csl.export_symbol — Inside csl.comptime: export a kernel-local symbol
+//===----------------------------------------------------------------------===//
+
+def CSL_ExportSymbolOp : CSL_Op<"export_symbol"> {
+  let summary = "Export a kernel-local symbol via @export_symbol";
+  let description = [{
+    Inside a `csl.comptime` block, declares that a kernel-local
+    symbol (variable or function) should be made callable / readable
+    from the host. The optional `alias` attribute provides an
+    alternative name for the host side; when omitted, the symbol's
+    own name is used.
+
+    Examples:
+    ```mlir
+    csl.export_symbol @x alias("a")
+    csl.export_symbol @compute
+    ```
+  }];
+
+  let arguments = (ins
+    FlatSymbolRefAttr:$symbol,
+    OptionalAttr<StrAttr>:$alias
+  );
+
+  let assemblyFormat = [{
+    $symbol (`alias` `(` $alias^ `)`)? attr-dict
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // Data movement ops (deferred — commented out)
 //===----------------------------------------------------------------------===//
 // TODO: Data movement ops are deferred. Uncomment when CSL DSD lowering is ready.
