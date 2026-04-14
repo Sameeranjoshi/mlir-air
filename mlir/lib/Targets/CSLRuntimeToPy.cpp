@@ -25,13 +25,18 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Support/FileUtilities.h"
 #include "mlir/Tools/mlir-translate/Translation.h"
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/CommandLine.h"
+#include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -161,6 +166,516 @@ LogicalResult LayoutEmitter::emit(ModuleOp module) {
   return success();
 }
 
+//===----------------------------------------------------------------------===//
+// KernelEmitter
+//
+// Walks csl.kernel ops and writes one .csl file per kernel (e.g. vecadd_pe.csl)
+// matching the hand-written golden reference.
+//===----------------------------------------------------------------------===//
+
+class KernelEmitter {
+public:
+  KernelEmitter(StringRef outDir, ModuleOp module)
+      : outDir(outDir.str()), module(module) {}
+
+  LogicalResult emit();
+
+private:
+  std::string outDir;
+  ModuleOp module;
+
+  // Map of host-level export name -> direction ("in"/"out"/function)
+  // Built once from the host func's csl.export_name ops.
+  std::map<std::string, std::string> hostExportDir; // name -> "in"/"out"/""(func)
+
+  // Helpers
+  static StringRef cslEltType(Type elt, Operation *op, bool &ok) {
+    if (elt.isF32())   return "f32";
+    if (elt.isF16())   return "f16";
+    if (elt.isInteger(32)) return "i32";
+    if (elt.isInteger(16)) return "i16";
+    op->emitOpError("KernelEmitter: unsupported element type for CSL var");
+    ok = false;
+    return "f32";
+  }
+
+  /// Validate that every op in the kernel (recursively) is in the dispatch
+  /// table. Returns failure() if anything is unknown.
+  LogicalResult validateKernelOps(xilinx::csl::KernelOp kernelOp);
+
+  /// Emit one kernel file. Returns failure() on error.
+  LogicalResult emitKernel(xilinx::csl::KernelOp kernelOp,
+                           llvm::raw_fd_ostream &os);
+
+  /// Emit the body of a csl.func (the ops inside it), writing to os.
+  LogicalResult emitFuncBody(xilinx::csl::FuncOp funcOp,
+                             llvm::raw_fd_ostream &os,
+                             llvm::DenseMap<mlir::Value, std::string> &nameMap,
+                             unsigned &tempCount, unsigned indent);
+};
+
+// -------- helpers --------
+
+static bool isKernelOpAllowed(Operation *op) {
+  return isa<xilinx::csl::VarOp>(op) ||
+         isa<xilinx::csl::FuncOp>(op) ||
+         isa<xilinx::csl::ReturnOp>(op) ||
+         isa<xilinx::csl::ExportSymbolOp>(op) ||
+         isa<arith::ConstantOp>(op) ||
+         isa<scf::ForOp>(op) ||
+         isa<scf::YieldOp>(op) ||
+         isa<memref::LoadOp>(op) ||
+         isa<memref::StoreOp>(op) ||
+         isa<arith::AddFOp>(op);
+}
+
+LogicalResult KernelEmitter::validateKernelOps(xilinx::csl::KernelOp kernelOp) {
+  namespace cslns = xilinx::csl;
+  LogicalResult result = success();
+
+  // Walk all ops in the kernel body recursively.
+  kernelOp.walk([&](Operation *op) {
+    // Skip the kernel itself and csl.func containers (they are allowed wrappers)
+    if (op == kernelOp.getOperation()) return WalkResult::advance();
+    if (isa<cslns::KernelOp>(op))       return WalkResult::advance();
+    if (isa<cslns::FuncOp>(op))         return WalkResult::advance();
+    // For scf.for, validate preconditions
+    if (auto forOp = dyn_cast<scf::ForOp>(op)) {
+      auto loOp = forOp.getLowerBound().getDefiningOp<arith::ConstantIndexOp>();
+      auto stepOp = forOp.getStep().getDefiningOp<arith::ConstantIndexOp>();
+      auto hiOp = forOp.getUpperBound().getDefiningOp<arith::ConstantIndexOp>();
+      if (!loOp || loOp.value() != 0 || !stepOp || stepOp.value() != 1 || !hiOp) {
+        op->emitOpError("KernelEmitter: scf.for requires lo=0, step=1, constant hi");
+        result = failure();
+      }
+      return WalkResult::advance();
+    }
+    if (!isKernelOpAllowed(op)) {
+      op->emitOpError(
+          llvm::Twine("KernelEmitter: unsupported MLIR op for CSL kernel emission: ") +
+          op->getName().getStringRef());
+      result = failure();
+    }
+    return WalkResult::advance();
+  });
+
+  return result;
+}
+
+LogicalResult KernelEmitter::emit() {
+  namespace cslns = xilinx::csl;
+
+  // Collect host-level csl.export_name ops from the first func.func.
+  func::FuncOp hostFunc;
+  module.walk([&](func::FuncOp f) {
+    if (!hostFunc) hostFunc = f;
+  });
+  if (hostFunc) {
+    for (auto &op : hostFunc.getBody().getOps()) {
+      if (auto en = dyn_cast<cslns::ExportNameOp>(&op)) {
+        std::string name = en.getSymName().str();
+        auto dir = en.getDirection();
+        if (dir.has_value())
+          hostExportDir[name] = dir->str();
+        else
+          hostExportDir[name] = ""; // function export
+      }
+    }
+  }
+
+  // Ensure output directory exists.
+  if (auto ec = llvm::sys::fs::create_directories(outDir)) {
+    llvm::errs() << "KernelEmitter: failed to create output dir '"
+                 << outDir << "': " << ec.message() << "\n";
+    return failure();
+  }
+
+  // Find and emit each csl.kernel.
+  LogicalResult result = success();
+  module.walk([&](cslns::KernelOp kernelOp) {
+    if (failed(result)) return;
+
+    // Validate before opening any file.
+    if (failed(validateKernelOps(kernelOp))) {
+      result = failure();
+      return;
+    }
+
+    StringRef sourceFile = kernelOp.getSourceFile().value_or("pe.csl");
+
+    llvm::SmallString<256> path(outDir);
+    llvm::sys::path::append(path, sourceFile);
+    std::error_code ec;
+    llvm::raw_fd_ostream os(path, ec);
+    if (ec) {
+      llvm::errs() << "KernelEmitter: cannot open '" << path
+                   << "': " << ec.message() << "\n";
+      result = failure();
+      return;
+    }
+
+    if (failed(emitKernel(kernelOp, os)))
+      result = failure();
+  });
+
+  return result;
+}
+
+// Write indentation
+static void writeIndent(llvm::raw_fd_ostream &os, unsigned level) {
+  for (unsigned i = 0; i < level; ++i)
+    os << "  ";
+}
+
+LogicalResult KernelEmitter::emitFuncBody(xilinx::csl::FuncOp funcOp,
+                                          llvm::raw_fd_ostream &os,
+                                          llvm::DenseMap<mlir::Value, std::string> &nameMap,
+                                          unsigned &tempCount, unsigned indent) {
+  for (auto &op : funcOp.getBody().getOps()) {
+    if (isa<xilinx::csl::ReturnOp>(op)) {
+      // Nothing emitted for csl.return
+      continue;
+    }
+    if (isa<scf::YieldOp>(op)) {
+      // Nothing emitted for scf.yield
+      continue;
+    }
+    if (auto constOp = dyn_cast<arith::ConstantOp>(op)) {
+      // Map SSA value to literal string — inline at use site
+      if (auto intAttr = dyn_cast<IntegerAttr>(constOp.getValue())) {
+        nameMap[constOp.getResult()] = std::to_string(intAttr.getInt());
+      }
+      continue;
+    }
+    if (auto forOp = dyn_cast<scf::ForOp>(op)) {
+      auto hiOp = forOp.getUpperBound().getDefiningOp<arith::ConstantIndexOp>();
+      int64_t hi = hiOp ? hiOp.value() : 0;
+
+      // Name the induction var
+      std::string iname = "i";
+      nameMap[forOp.getInductionVar()] = iname;
+
+      writeIndent(os, indent);
+      os << "for (@range(i32, " << hi << ")) |" << iname << "| {\n";
+
+      // Pre-scan: mark which results have exactly one use (eligible for inlining).
+      // A result is "inline-able" if it has exactly one use and the use is in
+      // the same block (no multi-use temps needed).
+      llvm::DenseSet<Value> inlineVals;
+      for (auto &bodyOp : forOp.getBody()->getOperations()) {
+        if (isa<memref::LoadOp>(bodyOp) || isa<arith::AddFOp>(bodyOp)) {
+          if (bodyOp.getNumResults() == 1) {
+            Value result = bodyOp.getResult(0);
+            if (result.hasOneUse())
+              inlineVals.insert(result);
+          }
+        }
+      }
+
+      // Track "inlined" expressions — values whose string expr is in nameMap but
+      // no var statement was emitted.
+      llvm::DenseSet<Value> inlinedExprs;
+
+      // Emit loop body ops — walk the body block
+      for (auto &bodyOp : forOp.getBody()->getOperations()) {
+        if (isa<scf::YieldOp>(bodyOp)) continue;
+        if (auto loadOp = dyn_cast<memref::LoadOp>(bodyOp)) {
+          // Find the csl.var for the memref operand
+          std::string bufName;
+          if (auto varOp = dyn_cast_or_null<xilinx::csl::VarOp>(
+                  loadOp.getMemref().getDefiningOp())) {
+            bufName = varOp.getSymName().str();
+          } else if (nameMap.count(loadOp.getMemref())) {
+            bufName = nameMap[loadOp.getMemref()];
+          } else {
+            loadOp.emitOpError("KernelEmitter: memref.load operand not mapped");
+            return failure();
+          }
+          std::string idxName;
+          if (loadOp.getIndices().size() == 1) {
+            Value idx = loadOp.getIndices()[0];
+            if (nameMap.count(idx)) idxName = nameMap[idx];
+            else idxName = "?";
+          }
+          std::string expr = bufName + "[" + idxName + "]";
+          if (inlineVals.count(loadOp.getResult())) {
+            // Inline: record expression, skip statement
+            nameMap[loadOp.getResult()] = expr;
+            inlinedExprs.insert(loadOp.getResult());
+          } else {
+            std::string tname = "t" + std::to_string(tempCount++);
+            nameMap[loadOp.getResult()] = tname;
+            writeIndent(os, indent + 1);
+            os << "var " << tname << " = " << expr << ";\n";
+          }
+          continue;
+        }
+        if (auto addOp = dyn_cast<arith::AddFOp>(bodyOp)) {
+          std::string lhs = nameMap.count(addOp.getLhs()) ? nameMap[addOp.getLhs()] : "?";
+          std::string rhs = nameMap.count(addOp.getRhs()) ? nameMap[addOp.getRhs()] : "?";
+          std::string expr = lhs + " + " + rhs;
+          if (inlineVals.count(addOp.getResult())) {
+            nameMap[addOp.getResult()] = expr;
+            inlinedExprs.insert(addOp.getResult());
+          } else {
+            std::string tname = "t" + std::to_string(tempCount++);
+            nameMap[addOp.getResult()] = tname;
+            writeIndent(os, indent + 1);
+            os << "var " << tname << " = " << expr << ";\n";
+          }
+          continue;
+        }
+        if (auto storeOp = dyn_cast<memref::StoreOp>(bodyOp)) {
+          std::string bufName;
+          if (auto varOp = dyn_cast_or_null<xilinx::csl::VarOp>(
+                  storeOp.getMemref().getDefiningOp())) {
+            bufName = varOp.getSymName().str();
+          } else if (nameMap.count(storeOp.getMemref())) {
+            bufName = nameMap[storeOp.getMemref()];
+          } else {
+            storeOp.emitOpError("KernelEmitter: memref.store memref operand not mapped");
+            return failure();
+          }
+          std::string idxName;
+          if (storeOp.getIndices().size() == 1) {
+            Value idx = storeOp.getIndices()[0];
+            if (nameMap.count(idx)) idxName = nameMap[idx];
+            else idxName = "?";
+          }
+          std::string valName = nameMap.count(storeOp.getValue()) ?
+              nameMap[storeOp.getValue()] : "?";
+          writeIndent(os, indent + 1);
+          os << bufName << "[" << idxName << "] = " << valName << ";\n";
+          continue;
+        }
+        if (auto constOp2 = dyn_cast<arith::ConstantOp>(bodyOp)) {
+          if (auto intAttr = dyn_cast<IntegerAttr>(constOp2.getValue()))
+            nameMap[constOp2.getResult()] = std::to_string(intAttr.getInt());
+          continue;
+        }
+        bodyOp.emitOpError(
+            llvm::Twine("KernelEmitter: unsupported op in scf.for body: ") +
+            bodyOp.getName().getStringRef());
+        return failure();
+      }
+
+      writeIndent(os, indent);
+      os << "}\n";
+      continue;
+    }
+    if (auto loadOp = dyn_cast<memref::LoadOp>(op)) {
+      std::string bufName;
+      if (auto varOp = dyn_cast_or_null<xilinx::csl::VarOp>(
+              loadOp.getMemref().getDefiningOp())) {
+        bufName = varOp.getSymName().str();
+      } else if (nameMap.count(loadOp.getMemref())) {
+        bufName = nameMap[loadOp.getMemref()];
+      } else {
+        loadOp.emitOpError("KernelEmitter: memref.load operand not mapped");
+        return failure();
+      }
+      std::string idxName;
+      if (loadOp.getIndices().size() == 1) {
+        Value idx = loadOp.getIndices()[0];
+        if (nameMap.count(idx)) idxName = nameMap[idx];
+        else idxName = "?";
+      }
+      std::string tname = "t" + std::to_string(tempCount++);
+      nameMap[loadOp.getResult()] = tname;
+      writeIndent(os, indent);
+      os << "var " << tname << " = " << bufName << "[" << idxName << "];\n";
+      continue;
+    }
+    if (auto addOp = dyn_cast<arith::AddFOp>(op)) {
+      std::string lhs = nameMap.count(addOp.getLhs()) ? nameMap[addOp.getLhs()] : "?";
+      std::string rhs = nameMap.count(addOp.getRhs()) ? nameMap[addOp.getRhs()] : "?";
+      std::string tname = "t" + std::to_string(tempCount++);
+      nameMap[addOp.getResult()] = tname;
+      writeIndent(os, indent);
+      os << "var " << tname << " = " << lhs << " + " << rhs << ";\n";
+      continue;
+    }
+    if (auto storeOp = dyn_cast<memref::StoreOp>(op)) {
+      std::string bufName;
+      if (auto varOp = dyn_cast_or_null<xilinx::csl::VarOp>(
+              storeOp.getMemref().getDefiningOp())) {
+        bufName = varOp.getSymName().str();
+      } else if (nameMap.count(storeOp.getMemref())) {
+        bufName = nameMap[storeOp.getMemref()];
+      } else {
+        storeOp.emitOpError("KernelEmitter: memref.store memref operand not mapped");
+        return failure();
+      }
+      std::string idxName;
+      if (storeOp.getIndices().size() == 1) {
+        Value idx = storeOp.getIndices()[0];
+        if (nameMap.count(idx)) idxName = nameMap[idx];
+        else idxName = "?";
+      }
+      std::string valName = nameMap.count(storeOp.getValue()) ?
+          nameMap[storeOp.getValue()] : "?";
+      writeIndent(os, indent);
+      os << bufName << "[" << idxName << "] = " << valName << ";\n";
+      continue;
+    }
+    op.emitOpError(
+        llvm::Twine("KernelEmitter: unsupported op in csl.func body: ") +
+        op.getName().getStringRef());
+    return failure();
+  }
+  return success();
+}
+
+LogicalResult KernelEmitter::emitKernel(xilinx::csl::KernelOp kernelOp,
+                                         llvm::raw_fd_ostream &os) {
+  namespace cslns = xilinx::csl;
+
+  os << "// Generated by air-translate --emit-csl-rt (KernelEmitter).\n\n";
+
+  // 1. Header: always emitted.
+  os << "param memcpy_params: comptime_struct;\n\n";
+  os << "const sys_mod = @import_module(\"<memcpy/memcpy>\", memcpy_params);\n\n";
+
+  // 2. Collect csl.var ops and determine N (common dim).
+  struct VarInfo {
+    std::string symName;
+    std::string eltType;
+    int64_t dim;
+    mlir::Value ssaVal;
+  };
+  llvm::SmallVector<VarInfo, 4> vars;
+  bool dimOk = true;
+
+  for (auto &op : kernelOp.getBody().getOps()) {
+    if (auto varOp = dyn_cast<cslns::VarOp>(&op)) {
+      auto memTy = dyn_cast<MemRefType>(varOp.getResult().getType());
+      if (!memTy || memTy.getRank() != 1) {
+        varOp.emitOpError("KernelEmitter: csl.var must have 1-D memref type");
+        return failure();
+      }
+      bool typeOk = true;
+      std::string eltName = cslEltType(memTy.getElementType(), varOp, typeOk).str();
+      if (!typeOk) return failure();
+      int64_t dim = memTy.getDimSize(0);
+      vars.push_back({varOp.getSymName().str(), eltName, dim, varOp.getResult()});
+    }
+  }
+
+  // Check if all vars share the same dim.
+  int64_t commonDim = vars.empty() ? -1 : vars[0].dim;
+  for (auto &v : vars) {
+    if (v.dim != commonDim) { dimOk = false; break; }
+  }
+  bool useN = dimOk && !vars.empty() && commonDim > 0;
+  if (useN)
+    os << "const N: i32 = " << commonDim << ";\n\n";
+
+  // 3. Var declarations.
+  for (auto &v : vars) {
+    std::string sizeStr = useN ? "N" : std::to_string(v.dim);
+    os << "var " << v.symName << ": [" << sizeStr << "]" << v.eltType << ";\n";
+  }
+  if (!vars.empty()) os << "\n";
+
+  // 4. Collect csl.export_symbol ops: sym -> alias (or empty if no alias).
+  // Also categorise: var-with-alias -> pointer alias, func-no-alias -> function export.
+  struct ExportInfo {
+    std::string symName;
+    std::string alias;  // empty if no alias attribute
+  };
+  llvm::SmallVector<ExportInfo, 8> exports;
+  for (auto &op : kernelOp.getBody().getOps()) {
+    if (auto expSym = dyn_cast<cslns::ExportSymbolOp>(&op)) {
+      std::string sym = expSym.getSymbol().str();
+      std::string al = expSym.getAlias().value_or("").str();
+      exports.push_back({sym, al});
+    }
+  }
+
+  // Build a set of var sym_names for lookup.
+  std::set<std::string> varSymNames;
+  for (auto &v : vars) varSymNames.insert(v.symName);
+
+  // 4. Pointer aliases.
+  // For each export with an alias, and whose sym is a var: emit pointer alias.
+  // Direction comes from hostExportDir[alias].
+  bool hasPtrs = false;
+  for (auto &exp : exports) {
+    if (exp.alias.empty()) continue; // no alias => function export
+    if (!varSymNames.count(exp.symName)) continue; // not a var
+
+    // Find var info
+    std::string eltType;
+    for (auto &v : vars) {
+      if (v.symName == exp.symName) { eltType = v.eltType; break; }
+    }
+    // Look up direction from host-level csl.export_name with name == alias
+    auto it = hostExportDir.find(exp.alias);
+    bool isIn = (it != hostExportDir.end() && it->second == "in");
+
+    std::string qualifier = isIn ? "var" : "const";
+    // Pointer name is derived from the alias (e.g. alias "a" -> a_ptr)
+    os << qualifier << " " << exp.alias << "_ptr: [*]" << eltType
+       << " = &" << exp.symName << ";\n";
+    hasPtrs = true;
+  }
+  if (hasPtrs) os << "\n";
+
+  // 5. Function definitions.
+  // Collect function-typed exports (no alias) to know which funcs get unblock_cmd_stream.
+  std::set<std::string> funcExports;
+  for (auto &exp : exports) {
+    if (exp.alias.empty() && !varSymNames.count(exp.symName))
+      funcExports.insert(exp.symName);
+    // Also check host-level export_name to determine if it's function-typed
+  }
+  // Any func whose name appears as a function-type host export.
+  std::set<std::string> hostFuncExports;
+  for (auto &kv : hostExportDir) {
+    if (kv.second.empty()) // empty direction means function type
+      hostFuncExports.insert(kv.first);
+  }
+
+  for (auto &op : kernelOp.getBody().getOps()) {
+    if (auto funcOp = dyn_cast<cslns::FuncOp>(&op)) {
+      StringRef fname = funcOp.getSymName();
+      os << "fn " << fname << "() void {\n";
+
+      // Build name map: pre-populate csl.var SSA results
+      llvm::DenseMap<mlir::Value, std::string> nameMap;
+      for (auto &kop : kernelOp.getBody().getOps()) {
+        if (auto varOp = dyn_cast<cslns::VarOp>(&kop))
+          nameMap[varOp.getResult()] = varOp.getSymName().str();
+      }
+      unsigned tempCount = 0;
+
+      if (failed(emitFuncBody(funcOp, os, nameMap, tempCount, /*indent=*/1)))
+        return failure();
+
+      // Append unblock_cmd_stream if this func is a function-typed host export
+      if (hostFuncExports.count(fname.str()))
+        os << "  sys_mod.unblock_cmd_stream();\n";
+
+      os << "}\n\n";
+    }
+  }
+
+  // 6. Comptime block.
+  os << "comptime {\n";
+  for (auto &exp : exports) {
+    if (!exp.alias.empty() && varSymNames.count(exp.symName)) {
+      // Pointer alias export: use alias_ptr name
+      os << "  @export_symbol(" << exp.alias << "_ptr, \"" << exp.alias << "\");\n";
+    } else if (exp.alias.empty()) {
+      // Function export (no alias)
+      os << "  @export_symbol(" << exp.symName << ");\n";
+    }
+  }
+  os << "}\n";
+
+  return success();
+}
+
 /// Simple Python code generation utility
 class PythonWriter {
 public:
@@ -196,21 +711,12 @@ public:
     if (failed(layoutEmitter.emit(module)))
       return failure();
 
-    // Step 1: Find and extract all csl.kernel ops
-    std::vector<mlir::Operation*> kernels;
-    module.walk([&](mlir::Operation *op) {
-      if (op->getName().getStringRef() == "csl.kernel") {
-        kernels.push_back(op);
-      }
-    });
+    // Step 1: Emit PE program .csl files via KernelEmitter (Phase 5)
+    KernelEmitter kernelEmitter(cslOutputDir, module);
+    if (failed(kernelEmitter.emit()))
+      return failure();
 
-    // Step 2: Generate PE program files from csl.kernel ops
-    if (!kernels.empty()) {
-      emitKernelPrograms(kernels);
-      out << "\n";
-    }
-
-    // Step 3: Generate single run.py file with inline build_layout()
+    // Step 2: Generate single run.py file with inline build_layout()
     emitRunPy(module);
 
     return mlir::success();
@@ -219,38 +725,6 @@ public:
 private:
   llvm::raw_ostream &out;
   PythonWriter writer;
-
-  void emitKernelPrograms(const std::vector<mlir::Operation*> &kernels) {
-    out << "# ============================================================================\n";
-    out << "# PE Program (pe_program.csl)\n";
-    out << "# ============================================================================\n";
-    out << "# Extracted from csl.kernel ops in the input MLIR\n";
-    out << "# This should be written to: pe_program.csl\n";
-    out << "\n";
-
-    for (size_t i = 0; i < kernels.size(); ++i) {
-      // Get the kernel filename if available (would be in csl.kernel sourceFile)
-      // For now, just label them
-      if (kernels.size() > 1) {
-        out << "# Kernel " << (i + 1) << ":\n";
-      }
-
-      // Walk the kernel body to extract structure
-      out << "// Generated PE Program\n";
-      out << "// Contains: variables, functions, tasks, comptime blocks\n";
-      out << "\n";
-
-      // Extract key information from kernel op
-      // Note: In a full implementation, this would walk the kernel's region
-      // and emit proper CSL code for each op type
-      out << "// param declarations from csl.param ops\n";
-      out << "// var declarations from csl.var ops\n";
-      out << "// function definitions from csl.func ops\n";
-      out << "// task definitions from csl.task ops\n";
-      out << "// comptime blocks from csl.comptime ops\n";
-      out << "\n";
-    }
-  }
 
   void emitRunPy(ModuleOp module) {
     out << "# ============================================================================\n";
@@ -504,6 +978,6 @@ void xilinx::csl_rt::registerCSLRuntimeToPyTranslation() {
       [](DialectRegistry &registry) {
         registry.insert<xilinx::csl::CSLDialect, xilinx::csl_rt::CSLRuntimeDialect,
                         mlir::func::FuncDialect, mlir::arith::ArithDialect,
-                        mlir::memref::MemRefDialect>();
+                        mlir::memref::MemRefDialect, mlir::scf::SCFDialect>();
       });
 }
