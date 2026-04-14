@@ -18,3 +18,12 @@ using namespace mlir;
 
 #define GET_OP_CLASSES
 #include "air/Dialect/CSL/CSLOps.cpp.inc"
+
+//===----------------------------------------------------------------------===//
+// CSL_VarOp
+//===----------------------------------------------------------------------===//
+
+void xilinx::csl::VarOp::getAsmResultNames(
+    OpAsmSetValueNameFn setNameFn) {
+  setNameFn(getResult(), getSymName());
+}

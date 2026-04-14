@@ -21,7 +21,7 @@
 // CHECK-DAG:    csl.export_symbol @compute
 // CHECK:     } {source_file = "vecadd_pe.csl"} : !csl.kernel
 // CHECK:     %[[R:.*]] = csl.code_region routes() colors() {
-// CHECK:     } {width = 1 : i64, height = 1 : i64} : !csl.code_region
+// CHECK:     }{width = 1 : i64, height = 1 : i64} : !csl.code_region
 // CHECK:     csl.place %[[R]] %[[K]] {x = 0 : i64, y = 0 : i64}
 // CHECK:   }
 // CHECK-DAG: csl.export_name "a" : memref<256xf32>{direction = "in"}

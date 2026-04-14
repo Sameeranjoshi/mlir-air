@@ -22,6 +22,7 @@
 
 include "air/Dialect/CSL/CSLBase.td"
 include "mlir/IR/BuiltinAttributes.td"
+include "mlir/IR/OpAsmInterface.td"
 include "mlir/IR/SymbolInterfaces.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
@@ -282,7 +283,6 @@ def CSL_KernelOp : CSL_Op<"kernel", [
 //===----------------------------------------------------------------------===//
 
 def CSL_FuncOp : CSL_Op<"func", [
-    IsolatedFromAbove,
     Symbol
   ]> {
   let summary = "PE function declaration";
@@ -357,25 +357,36 @@ def CSL_ReturnOp : CSL_Op<"return", [
 // csl.var — PE variable declaration
 //===----------------------------------------------------------------------===//
 
-def CSL_VarOp : CSL_Op<"var", [Symbol]> {
+def CSL_VarOp : CSL_Op<"var", [
+    DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmResultNames"]>
+  ]> {
   let summary = "PE variable declaration";
   let description = [{
-    Declares a variable in the PE's local memory. Corresponds to
-    `var name: [N]T` in CSL.
+    Declares a variable in the PE's local memory and produces an SSA
+    result for use by ops in enclosing regions such as csl.func.
+    Corresponds to `var name: [N]T` in CSL.
+
+    The result carries the same type as the declared memref. The printer
+    names the result after the sym_name (via getAsmResultNames) so that
+    `%a_buf = csl.var @a_buf : memref<256xf32>` appears in the textual IR.
+
+    NOTE: csl.var does not carry the Symbol trait because MLIR symbols
+    cannot have SSA results. The sym_name is used purely as a human-readable
+    identifier and for csl.export_symbol string matching.
 
     Example:
     ```mlir
-    csl.var @buf : memref<1024xf32>
-    csl.var @matrix : memref<32x32xf16>
+    %a_buf = csl.var @a_buf : memref<1024xf32>
+    %mat   = csl.var @matrix : memref<32x32xf16>
     ```
   }];
 
   let arguments = (ins
-    SymbolNameAttr:$sym_name,
-    TypeAttr:$type
+    SymbolNameAttr:$sym_name
   );
+  let results = (outs AnyType:$result);
 
-  let assemblyFormat = "$sym_name `:` $type attr-dict";
+  let assemblyFormat = "$sym_name `:` type($result) attr-dict";
 }
 
 //===----------------------------------------------------------------------===//
