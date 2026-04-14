@@ -476,25 +476,4 @@ def AIRWrapFuncWithParallelPass : Pass<"air-wrap-func-with-parallel", "func::Fun
   ];
 }
 
-def AIRToCSL : Pass<"air-to-csl", "ModuleOp"> {
-  let summary = "Lower AIR dialect to Cerebras CSL output files";
-  let constructor = "xilinx::air::createAIRToCSLPass()";
-  let description = [{
-    This pass converts AIR dialect `launch`, `segment`, and `herd` operations
-    into Cerebras CSL (Cerebras Software Language) text files.
-
-    The mapping is:
-      - `air.segment` -> `layout.csl` (PE grid topology and tile code assignment)
-      - `air.herd`    -> `pe_program.csl` (per-PE kernel code)
-      - `air.launch`  -> `run.py` (host-side runtime orchestration)
-
-    Output files are written to the directory specified by `output-dir`.
-  }];
-  let options = [
-    Option<"clOutputDir", "output-dir", "std::string",
-           /*default=*/"\".\"",
-           "Output directory for generated CSL files.">,
-  ];
-}
-
 #endif

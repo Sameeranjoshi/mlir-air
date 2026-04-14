@@ -18,7 +18,6 @@ namespace {
 #define GEN_PASS_REGISTRATION_AIRTOASYNC
 #define GEN_PASS_REGISTRATION_INSERTEMPTYLAUNCHOVERHERD
 #define GEN_PASS_REGISTRATION_AIRWRAPFUNCWITHPARALLELPASS
-#define GEN_PASS_REGISTRATION_AIRTOCSL
 
 #if AIR_ENABLE_GPU
 // GPU passes
@@ -49,7 +48,6 @@ void xilinx::air::registerConversionPasses() {
   registerAIRToAsync();
   registerInsertEmptyLaunchOverHerd();
   registerAIRWrapFuncWithParallelPass();
-  registerAIRToCSL();
 
 #if AIR_ENABLE_GPU
   // GPU passes
