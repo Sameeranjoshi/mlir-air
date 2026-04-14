@@ -31,23 +31,23 @@
 
 module {
   func.func @vecadd(%a: memref<256xf32>, %b: memref<256xf32>, %c: memref<256xf32>) {
-    %c1 = arith.constant 1 : index
-    air.launch (%tx) in (%sx=%c1) args(%a0=%a, %b0=%b, %c0=%c)
+    %one = arith.constant 1 : index
+    air.launch (%tx) in (%sx=%one) args(%la=%a, %lb=%b, %lc=%c)
         : memref<256xf32>, memref<256xf32>, memref<256xf32> {
-      air.segment @seg0 args(%a1=%a0, %b1=%b0, %c1_=%c0)
+      air.segment @seg0 args(%sa=%la, %sb=%lb, %sc=%lc)
           : memref<256xf32>, memref<256xf32>, memref<256xf32> {
-        %c1_0 = arith.constant 1 : index
-        air.herd @h tile(%htx, %hty) in (%hsx=%c1_0, %hsy=%c1_0)
-            args(%a2=%a1, %b2=%b1, %c2=%c1_)
+        %one2 = arith.constant 1 : index
+        air.herd @h tile(%htx, %hty) in (%hsx=%one2, %hsy=%one2)
+            args(%ha=%sa, %hb=%sb, %hc=%sc)
             : memref<256xf32>, memref<256xf32>, memref<256xf32> {
-          %c0 = arith.constant 0 : index
-          %c256 = arith.constant 256 : index
-          %c1_1 = arith.constant 1 : index
-          scf.for %i = %c0 to %c256 step %c1_1 {
-            %va = memref.load %a2[%i] : memref<256xf32>
-            %vb = memref.load %b2[%i] : memref<256xf32>
+          %lo = arith.constant 0 : index
+          %hi = arith.constant 256 : index
+          %step = arith.constant 1 : index
+          scf.for %i = %lo to %hi step %step {
+            %va = memref.load %ha[%i] : memref<256xf32>
+            %vb = memref.load %hb[%i] : memref<256xf32>
             %vc = arith.addf %va, %vb : f32
-            memref.store %vc, %c2[%i] : memref<256xf32>
+            memref.store %vc, %hc[%i] : memref<256xf32>
           }
           air.herd_terminator
         }
