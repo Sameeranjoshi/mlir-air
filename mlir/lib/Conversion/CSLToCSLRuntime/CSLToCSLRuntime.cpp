@@ -5,8 +5,22 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// Conversion pass: CSL dialect (spatial/semantic) → csl_rt (runtime) dialect.
-// Implements minimal path lowering for one spatial_placement with one code_region.
+// Synthesizes host-side csl_rt.* runtime ops from csl.export_name ops.
+//
+// The pass walks each func.func containing csl.export_name ops and appends:
+//   %layout  = csl_rt.create_layout
+//   %art     = csl_rt.compile %layout
+//   %rt      = csl_rt.runtime_create %art
+//   %h1..%hN = csl_rt.memcpy_h2d chained, one per "in" export
+//   %lc      = csl_rt.launch for the fn-typed export
+//   %d1..%dM = csl_rt.memcpy_d2h chained, one per "out" export
+//
+// csl.spatial_placement, csl.kernel, csl.export_name, csl.export_symbol are
+// LEFT IN PLACE — the translator walks them directly to produce layout.csl
+// and pe_program.csl.
+//
+// Runtime lifecycle calls (load/run/stop) are HostEmitter boilerplate; they
+// are not synthesized here.
 //
 //===----------------------------------------------------------------------===//
 
@@ -16,142 +30,18 @@
 #include "air/Dialect/CSLRuntime/CSLRuntimeDialect.h"
 #include "air/Dialect/CSLRuntime/CSLRuntimeOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
-#include "mlir/IR/BuiltinDialect.h"
-#include "mlir/IR/BuiltinAttributes.h"
-#include "mlir/IR/PatternMatch.h"
+#include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/Pass/Pass.h"
-#include "mlir/Transforms/DialectConversion.h"
 
 using namespace mlir;
 
+namespace csl    = xilinx::csl;
+namespace csl_rt = xilinx::csl_rt;
+
 namespace {
 
-/// Conversion pattern: lower csl.spatial_placement → sequence of csl_rt ops.
-/// Minimal path: one code_region, one place, multiple set_param_all and export_name.
-struct SpatialPlacementConversionPattern
-    : public OpConversionPattern<xilinx::csl::SpatialPlacementOp> {
-  using OpConversionPattern::OpConversionPattern;
-
-  LogicalResult matchAndRewrite(xilinx::csl::SpatialPlacementOp op,
-                                 OpAdaptor adaptor,
-                                 ConversionPatternRewriter &rewriter) const override {
-    auto loc = op.getLoc();
-    auto &body = op.getBodyRegion();
-
-    if (body.empty()) {
-      return failure();
-    }
-
-    // Scan the body to find:
-    // - One code_region op (mandatory)
-    // - One place op (mandatory)
-
-    Block &block = body.front();
-    xilinx::csl::CodeRegionOp codeRegionOp = nullptr;
-    xilinx::csl::PlaceOp placeOp = nullptr;
-
-    // TODO: Handle ports, streams, dataflow - for now only simple path
-    for (auto &op : block) {
-      if (auto crOp = dyn_cast<xilinx::csl::CodeRegionOp>(op)) {
-        if (codeRegionOp)
-          return failure(); // Multiple code regions not supported
-        codeRegionOp = crOp;
-      } else if (auto pOp = dyn_cast<xilinx::csl::PlaceOp>(op)) {
-        if (placeOp)
-          return failure(); // Multiple places not supported
-        placeOp = pOp;
-      } else if (!isa<xilinx::csl::ColorOp, xilinx::csl::RouteOp, xilinx::csl::KernelOp>(op)) {
-        // Allow only these semantic ops; anything else is unsupported
-        return failure();
-      }
-    }
-
-    if (!codeRegionOp || !placeOp) {
-      return failure();
-    }
-
-    // Extract kernel source file from place op (bound kernel).
-    // For now, default to "pe.csl" if not found.
-    StringAttr kernelSource = StringAttr::get(op.getContext(), "pe.csl");
-    if (auto kernelOp = placeOp.getKernel().getDefiningOp<xilinx::csl::KernelOp>()) {
-      kernelSource = kernelOp.getSourceFileAttr();
-    }
-
-    // Extract shape from code_region
-    int64_t width = codeRegionOp.getWidth();
-    int64_t height = codeRegionOp.getHeight();
-
-    // Start building csl_rt ops.
-    // 1. create_layout
-    auto layoutOp = xilinx::csl_rt::CreateLayoutOp::create(
-        rewriter, loc, xilinx::csl_rt::LayoutType::get(op.getContext()));
-
-    // 2. create_code_region
-    auto regionOp = xilinx::csl_rt::CreateCodeRegionOp::create(
-        rewriter, loc, xilinx::csl_rt::CodeRegionType::get(op.getContext()),
-        layoutOp.getLayout(), kernelSource,
-        StringAttr::get(op.getContext(), "main"), // Default region name
-        rewriter.getIndexAttr(width),   // Extract actual width from csl.code_region
-        rewriter.getIndexAttr(height)   // Extract actual height from csl.code_region
-    );
-
-    // 3. place
-    auto placeRtOp = xilinx::csl_rt::PlaceOp::create(
-        rewriter, loc, xilinx::csl_rt::CodeRegionType::get(op.getContext()),
-        regionOp.getCodeRegion(),
-        rewriter.getIndexAttr(0), // x
-        rewriter.getIndexAttr(0)  // y
-    );
-
-    // 3.5. set_param_all for each parameter from code_region
-    Value currentCodeRegion = placeRtOp.getResult();
-    // Look for "csl.params" attribute in code_region (stored as ArrayAttr)
-    if (auto paramsAttr = codeRegionOp->getAttr("csl.params")) {
-      if (auto paramsArray = dyn_cast<ArrayAttr>(paramsAttr)) {
-        // params is an ArrayAttr with alternating names and values: [name1, val1, name2, val2, ...]
-        for (size_t i = 0; i + 1 < paramsArray.size(); i += 2) {
-          StringRef paramName;
-          int64_t paramValue = 0;
-
-          // Get parameter name from array[i]
-          if (auto strAttr = dyn_cast<StringAttr>(paramsArray[i])) {
-            paramName = strAttr.getValue();
-          } else {
-            continue;
-          }
-
-          // Get parameter value from array[i+1]
-          if (auto intAttr = dyn_cast<IntegerAttr>(paramsArray[i + 1])) {
-            paramValue = intAttr.getValue().getSExtValue();
-          } else {
-            continue;
-          }
-
-          // Create set_param_all op
-          auto paramOp = xilinx::csl_rt::SetParamAllOp::create(
-              rewriter, loc, xilinx::csl_rt::CodeRegionType::get(op.getContext()),
-              currentCodeRegion,
-              StringAttr::get(op.getContext(), paramName),
-              IntegerAttr::get(rewriter.getI64Type(), paramValue)
-          );
-          currentCodeRegion = paramOp.getResult();
-        }
-      }
-    }
-
-    // 4. compile
-    xilinx::csl_rt::CompileOp::create(
-        rewriter, loc, xilinx::csl_rt::CompileArtifactsType::get(op.getContext()),
-        layoutOp.getLayout());
-
-    // Erase the original op
-    rewriter.eraseOp(op);
-
-    return success();
-  }
-};
-
-/// Pass: CSL → csl_rt conversion.
 class CSLToCSLRuntimePass
     : public PassWrapper<CSLToCSLRuntimePass, OperationPass<ModuleOp>> {
 public:
@@ -159,28 +49,102 @@ public:
 
   StringRef getArgument() const final { return "csl-to-csl-rt"; }
   StringRef getDescription() const final {
-    return "Convert CSL dialect to CSL Runtime dialect";
+    return "Synthesize host-side csl_rt.* runtime sequence from csl.export_name";
   }
 
   void getDependentDialects(DialectRegistry &registry) const override {
-    registry.insert<xilinx::csl_rt::CSLRuntimeDialect>();
+    registry.insert<csl_rt::CSLRuntimeDialect>();
   }
 
   void runOnOperation() override {
-    auto module = getOperation();
-    auto &context = getContext();
+    ModuleOp module = getOperation();
+    module.walk([&](func::FuncOp func) { lowerFunc(func); });
+  }
 
-    // Set up conversion target and patterns.
-    ConversionTarget target(context);
-    target.addLegalDialect<BuiltinDialect, func::FuncDialect,
-                           xilinx::csl_rt::CSLRuntimeDialect>();
-    target.addIllegalOp<xilinx::csl::SpatialPlacementOp>();
+private:
+  void lowerFunc(func::FuncOp func) {
+    // Collect host-level csl.export_name ops in declaration order.
+    SmallVector<csl::ExportNameOp, 4> inExports, outExports;
+    csl::ExportNameOp fnExport = nullptr;
 
-    RewritePatternSet patterns(&context);
-    patterns.add<SpatialPlacementConversionPattern>(&context);
+    // Walk only the direct children of the func body (not nested regions).
+    for (Operation &op : func.getBody().front()) {
+      auto en = dyn_cast<csl::ExportNameOp>(op);
+      if (!en)
+        continue;
+      auto dir = en.getDirection(); // std::optional<StringRef>
+      if (dir && *dir == "in")
+        inExports.push_back(en);
+      else if (dir && *dir == "out")
+        outExports.push_back(en);
+      else if (isa<FunctionType>(en.getExportedType()))
+        fnExport = en;
+    }
 
-    if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
-      signalPassFailure();
+    if (inExports.empty() && outExports.empty() && !fnExport)
+      return; // nothing to do
+
+    // Insert the synthesized sequence before the func's terminator.
+    Operation *term = func.getBody().front().getTerminator();
+    OpBuilder b(term);
+    Location loc = func.getLoc();
+    MLIRContext *ctx = func.getContext();
+
+    // 1. create_layout (no operands, returns !csl_rt.layout)
+    auto layoutTy = csl_rt::LayoutType::get(ctx);
+    auto layout = csl_rt::CreateLayoutOp::create(b, loc, layoutTy);
+
+    // 2. compile (takes layout, returns !csl_rt.compile_artifacts)
+    auto artTy = csl_rt::CompileArtifactsType::get(ctx);
+    auto art = csl_rt::CompileOp::create(b, loc, artTy,
+                                          layout.getLayout(),
+                                          /*out_prefix=*/StringAttr{});
+
+    // 3. runtime_create (takes artifacts, returns !csl_rt.runtime)
+    auto rtTy = csl_rt::RuntimeType::get(ctx);
+    auto rt = csl_rt::RuntimeCreateOp::create(b, loc, rtTy, art.getArtifacts());
+
+    Value cur = rt.getRuntime();
+
+    // 4. memcpy_h2d for each "in" export
+    for (csl::ExportNameOp en : inExports) {
+      auto memTy = cast<MemRefType>(en.getExportedType());
+      int64_t n = memTy.getNumElements();
+      auto h2d = csl_rt::MemcpyH2dOp::create(
+          b, loc, rtTy, cur,
+          b.getI32IntegerAttr(0),           // dest_id: placeholder
+          b.getStringAttr(en.getSymName()), // src_name: buffer name
+          b.getIndexAttr(0),                // px
+          b.getIndexAttr(0),                // py
+          b.getIndexAttr(1),                // w
+          b.getIndexAttr(1),                // h
+          b.getIndexAttr(n));               // elem_per_pe
+      cur = h2d.getResult();
+    }
+
+    // 5. launch for the function-typed export
+    if (fnExport) {
+      auto launch = csl_rt::LaunchOp::create(
+          b, loc, rtTy, cur,
+          b.getStringAttr(fnExport.getSymName()),
+          /*nonblock=*/BoolAttr{});
+      cur = launch.getResult();
+    }
+
+    // 6. memcpy_d2h for each "out" export
+    for (csl::ExportNameOp en : outExports) {
+      auto memTy = cast<MemRefType>(en.getExportedType());
+      int64_t n = memTy.getNumElements();
+      auto d2h = csl_rt::MemcpyD2hOp::create(
+          b, loc, rtTy, cur,
+          b.getStringAttr(en.getSymName()), // dest_name: buffer name
+          b.getI32IntegerAttr(0),           // src_id: placeholder
+          b.getIndexAttr(0),                // px
+          b.getIndexAttr(0),                // py
+          b.getIndexAttr(1),                // w
+          b.getIndexAttr(1),                // h
+          b.getIndexAttr(n));               // elem_per_pe
+      cur = d2h.getResult();
     }
   }
 };
