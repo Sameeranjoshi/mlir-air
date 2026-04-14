@@ -676,289 +676,239 @@ LogicalResult KernelEmitter::emitKernel(xilinx::csl::KernelOp kernelOp,
   return success();
 }
 
-/// Simple Python code generation utility
-class PythonWriter {
+//===----------------------------------------------------------------------===//
+// HostEmitter
+//
+// Walks csl.export_name ops in the host func.func and writes run.py to the
+// output directory. The generated script uses the memcpy workflow:
+//   SdkRuntime(args.name, cmaddr=args.cmaddr) opens a pre-compiled directory.
+//===----------------------------------------------------------------------===//
+
+class HostEmitter {
 public:
-  explicit PythonWriter(llvm::raw_ostream &os) : os(os), indentLevel(0) {}
+  HostEmitter(StringRef outDir, ModuleOp module)
+      : outDir(outDir.str()), module(module) {}
 
-  void indent() { indentLevel++; }
-  void dedent() {
-    if (indentLevel > 0)
-      indentLevel--;
-  }
-
-  llvm::raw_ostream &line() {
-    os << std::string(indentLevel * 4, ' ');
-    return os;
-  }
-
-  void blankLine() { os << "\n"; }
-  llvm::raw_ostream &raw() { return os; }
+  LogicalResult emit(ModuleOp module);
 
 private:
-  llvm::raw_ostream &os;
-  int indentLevel;
+  std::string outDir;
+  ModuleOp module;
 };
+
+LogicalResult HostEmitter::emit(ModuleOp module) {
+  namespace cslns = xilinx::csl;
+
+  // 1. Find the host func.func.
+  func::FuncOp hostFunc;
+  module.walk([&](func::FuncOp f) {
+    if (!hostFunc) hostFunc = f;
+  });
+  if (!hostFunc)
+    return success(); // nothing to emit if there's no host function
+
+  // 2. Collect csl.export_name ops, partitioned by direction.
+  struct ExportInfo {
+    std::string name;
+    int64_t numElems; // -1 for function-typed exports
+    std::string dir;  // "in", "out", or "" (function)
+  };
+  llvm::SmallVector<ExportInfo, 8> inputs, outputs;
+  std::string funcExportName; // the function-typed export
+
+  for (auto &op : hostFunc.getBody().getOps()) {
+    auto en = dyn_cast<cslns::ExportNameOp>(&op);
+    if (!en) continue;
+
+    std::string name = en.getSymName().str();
+    Type exportedType = en.getExportedType();
+    auto dir = en.getDirection();
+
+    if (auto memTy = dyn_cast<MemRefType>(exportedType)) {
+      int64_t N = (memTy.getRank() >= 1) ? memTy.getDimSize(0) : -1;
+      std::string dirStr = dir.has_value() ? dir->str() : "";
+      if (dirStr == "in")
+        inputs.push_back({name, N, "in"});
+      else
+        outputs.push_back({name, N, "out"});
+    } else if (isa<FunctionType>(exportedType)) {
+      funcExportName = name;
+    }
+  }
+
+  // 3. Determine N (element count) from the first buffer export.
+  int64_t N = -1;
+  if (!inputs.empty() && inputs[0].numElems > 0)
+    N = inputs[0].numElems;
+  else if (!outputs.empty() && outputs[0].numElems > 0)
+    N = outputs[0].numElems;
+
+  // 4. Ensure the output directory exists and open run.py.
+  if (auto ec = llvm::sys::fs::create_directories(outDir)) {
+    llvm::errs() << "HostEmitter: failed to create output dir '"
+                 << outDir << "': " << ec.message() << "\n";
+    return failure();
+  }
+  llvm::SmallString<256> path(outDir);
+  llvm::sys::path::append(path, "run.py");
+  std::error_code ec;
+  llvm::raw_fd_ostream os(path, ec);
+  if (ec) {
+    llvm::errs() << "HostEmitter: cannot open '" << path
+                 << "': " << ec.message() << "\n";
+    return failure();
+  }
+
+  // 5. Emit run.py.
+
+  // Shebang + imports
+  os << "#!/usr/bin/env cs_python\n";
+  os << "\n";
+  os << "import argparse\n";
+  os << "import sys\n";
+  os << "import numpy as np\n";
+  os << "\n";
+  os << "from cerebras.sdk.runtime.sdkruntimepybind import (  "
+        "# pylint: disable=no-name-in-module\n";
+  os << "    SdkRuntime,\n";
+  os << "    MemcpyDataType,\n";
+  os << "    MemcpyOrder,\n";
+  os << ")\n";
+  os << "\n";
+
+  // Constant N
+  if (N > 0)
+    os << "N = " << N << "\n";
+  os << "\n";
+
+  // Argument parser
+  os << "parser = argparse.ArgumentParser()\n";
+  os << "parser.add_argument(\"--name\", "
+        "help=\"compiled artifact directory (output of cslc)\")\n";
+  os << "parser.add_argument(\"--cmaddr\", default=None, "
+        "help=\"IP:port for CS system\")\n";
+  os << "parser.add_argument(\"--check\", action=\"store_true\", "
+        "help=\"validate result and exit 0/1\")\n";
+  os << "args = parser.parse_args()\n";
+  os << "\n";
+
+  // Host arrays
+  os << "# Build host arrays.\n";
+  for (unsigned i = 0; i < inputs.size(); ++i) {
+    if (i == 0)
+      os << inputs[i].name << " = np.arange(N, dtype=np.float32)\n";
+    else
+      os << inputs[i].name << " = np.arange(N, dtype=np.float32) * "
+         << (i + 1) << ".0\n";
+  }
+  for (auto &out_buf : outputs)
+    os << out_buf.name << " = np.zeros(N, dtype=np.float32)\n";
+  // expected = first_input + second_input (vecadd milestone pattern)
+  if (inputs.size() >= 2)
+    os << "expected = " << inputs[0].name << " + " << inputs[1].name << "\n";
+  os << "\n";
+
+  // Runner creation
+  os << "# Create runtime and load compiled artifacts.\n";
+  os << "runner = SdkRuntime(args.name, cmaddr=args.cmaddr)\n";
+  os << "\n";
+
+  // get_id for all buffers
+  for (auto &inp : inputs)
+    os << "id_" << inp.name << " = runner.get_id(\"" << inp.name << "\")\n";
+  for (auto &out_buf : outputs)
+    os << "id_" << out_buf.name << " = runner.get_id(\""
+       << out_buf.name << "\")\n";
+  os << "\n";
+
+  // load + run
+  os << "runner.load()\n";
+  os << "runner.run()\n";
+  os << "\n";
+
+  // memcpy_h2d
+  os << "# Copy inputs to device.\n";
+  for (auto &inp : inputs) {
+    int64_t elemCount = (inp.numElems > 0) ? inp.numElems : N;
+    std::string nStr = (elemCount == N && N > 0) ? "N" : std::to_string(elemCount);
+    os << "runner.memcpy_h2d(id_" << inp.name << ", " << inp.name
+       << ", 0, 0, 1, 1, " << nStr << ",\n";
+    os << "                  streaming=False,\n";
+    os << "                  order=MemcpyOrder.ROW_MAJOR,\n";
+    os << "                  data_type=MemcpyDataType.MEMCPY_32BIT,\n";
+    os << "                  nonblock=False)\n";
+  }
+  os << "\n";
+
+  // launch
+  os << "# Launch the compute kernel.\n";
+  if (!funcExportName.empty())
+    os << "runner.launch(\"" << funcExportName << "\", nonblock=False)\n";
+  os << "\n";
+
+  // memcpy_d2h
+  os << "# Copy result back from device.\n";
+  for (auto &out_buf : outputs) {
+    int64_t elemCount = (out_buf.numElems > 0) ? out_buf.numElems : N;
+    std::string nStr = (elemCount == N && N > 0) ? "N" : std::to_string(elemCount);
+    os << "runner.memcpy_d2h(" << out_buf.name << ", id_" << out_buf.name
+       << ", 0, 0, 1, 1, " << nStr << ",\n";
+    os << "                  streaming=False,\n";
+    os << "                  order=MemcpyOrder.ROW_MAJOR,\n";
+    os << "                  data_type=MemcpyDataType.MEMCPY_32BIT,\n";
+    os << "                  nonblock=False)\n";
+  }
+  os << "\n";
+
+  // stop
+  os << "runner.stop()\n";
+  os << "\n";
+
+  // Validator block
+  if (!outputs.empty() && inputs.size() >= 2) {
+    std::string outName = outputs[0].name;
+    os << "if args.check:\n";
+    os << "    if not np.array_equal(" << outName << ", expected):\n";
+    os << "        mismatches = np.where(" << outName << " != expected)[0]\n";
+    os << "        print(f\"FAIL: {len(mismatches)} mismatches\", file=sys.stderr)\n";
+    os << "        for i in mismatches[:8]:\n";
+    os << "            print(f\"  " << outName
+       << "[{i}] = {" << outName << "[i]}  expected {expected[i]}\","
+          " file=sys.stderr)\n";
+    os << "        sys.exit(1)\n";
+    os << "    print(\"PASS\")\n";
+    os << "sys.exit(0)\n";
+  }
+
+  return success();
+}
 
 /// Extracts and emits CSL kernel bodies and generates Python runtime.
 class CSLRuntimeToPyTranslator {
 public:
-  CSLRuntimeToPyTranslator(llvm::raw_ostream &out) : out(out), writer(out) {}
+  CSLRuntimeToPyTranslator(llvm::raw_ostream &out) : out(out) {}
 
   LogicalResult translate(ModuleOp module) {
-    // Step 0: Emit layout.csl via LayoutEmitter (Phase 4)
-    LayoutEmitter layoutEmitter(cslOutputDir);
-    if (failed(layoutEmitter.emit(module)))
+    LayoutEmitter layoutEmit(cslOutputDir);
+    if (failed(layoutEmit.emit(module)))
       return failure();
 
-    // Step 1: Emit PE program .csl files via KernelEmitter (Phase 5)
-    KernelEmitter kernelEmitter(cslOutputDir, module);
-    if (failed(kernelEmitter.emit()))
+    KernelEmitter kernelEmit(cslOutputDir, module);
+    if (failed(kernelEmit.emit()))
       return failure();
 
-    // Step 2: Generate single run.py file with inline build_layout()
-    emitRunPy(module);
+    HostEmitter hostEmit(cslOutputDir, module);
+    if (failed(hostEmit.emit(module)))
+      return failure();
 
-    return mlir::success();
+    // The `os` stream passed to the translator callback gets a summary message.
+    out << "# Generated layout.csl, pe_program.csl, and run.py to "
+        << cslOutputDir << "\n";
+    return success();
   }
 
 private:
   llvm::raw_ostream &out;
-  PythonWriter writer;
-
-  void emitRunPy(ModuleOp module) {
-    out << "# ============================================================================\n";
-    out << "# run.py - Complete Host Runtime Program\n";
-    out << "# ============================================================================\n";
-    out << "\n";
-
-    out << "#!/usr/bin/env cs_python\n";
-    out << "\"\"\"Auto-generated run.py using SdkLayout and SdkRuntime API.\"\"\"\n";
-    out << "\n";
-
-    out << "import argparse\n";
-    out << "import numpy as np\n";
-    out << "# sdkruntimepybind: SdkRuntime API + SdkLayout API\n";
-    out << "from cerebras.sdk.runtime.sdkruntimepybind import (\n";
-    out << "    SdkRuntime, SdkTarget, SdkLayout, SimfabConfig, get_platform,\n";
-    out << ")\n";
-    out << "\n";
-
-    // Emit build_layout function
-    out << "def build_layout(platform):\n";
-    out << "    \"\"\"\n";
-    out << "    Build and compile the layout for the WSE.\n";
-    out << "    \n";
-    out << "    Args:\n";
-    out << "        platform: SdkRuntime platform object\n";
-    out << "    \n";
-    out << "    Returns:\n";
-    out << "        compile_artifacts: Result of layout.compile(out_prefix='out')\n";
-    out << "    \"\"\"\n";
-    out << "    # Create layout\n";
-    out << "    layout = SdkLayout(platform)\n";
-    out << "\n";
-
-    // Collect and emit all csl_rt operations in order
-    emitLayoutOperations(module);
-
-    out << "    # Compile layout\n";
-    out << "    compile_artifacts = layout.compile(out_prefix='out')\n";
-    out << "    return compile_artifacts\n";
-    out << "\n";
-    out << "\n";
-
-    // Emit main function
-    out << "def main():\n";
-    out << "    # Parse command-line arguments\n";
-    out << "    parser = argparse.ArgumentParser(description='Run WSE kernel')\n";
-    out << "    parser.add_argument('--cmaddr', type=str, default=None,\n";
-    out << "                        help='IP:port for CS system')\n";
-    out << "    parser.add_argument('--arch', type=str, choices=['wse2', 'wse3'],\n";
-    out << "                        default='wse3', help='Target WSE architecture')\n";
-    out << "    args = parser.parse_args()\n";
-    out << "\n";
-
-    out << "    # Setup platform\n";
-    out << "    config = SimfabConfig(dump_core=True)\n";
-    out << "    target = SdkTarget.WSE3 if args.arch == 'wse3' else SdkTarget.WSE2\n";
-    out << "    platform = get_platform(args.cmaddr, config, target)\n";
-    out << "\n";
-
-    out << "    # Build and compile layout\n";
-    out << "    compile_artifacts = build_layout(platform)\n";
-    out << "\n";
-
-    out << "    # Create and run runtime\n";
-    out << "    runtime = SdkRuntime(compile_artifacts, platform, memcpy_required=False)\n";
-    out << "\n";
-
-    // Emit runtime operations
-    emitRuntimeOperations(module);
-
-    out << "\n";
-    out << "    print('SUCCESS!')\n";
-    out << "\n";
-    out << "\n";
-    out << "if __name__ == '__main__':\n";
-    out << "    main()\n";
-  }
-
-  void emitLayoutOperations(ModuleOp module) {
-    // Process operations at module level and inside functions
-    emitLayoutOpsInFunction(module.getOperation());
-
-    // Also walk through any func.func operations
-    module.walk([&](func::FuncOp func) {
-      emitLayoutOpsInFunction(func.getOperation());
-    });
-  }
-
-  void emitLayoutOpsInFunction(Operation *op) {
-    // Process direct children in order (preserves sequence)
-    for (auto &region : op->getRegions()) {
-      for (auto &block : region.getBlocks()) {
-        for (auto &opChild : block.getOperations()) {
-          auto opName = opChild.getName().getStringRef();
-
-          if (opName == "csl_rt.create_code_region") {
-            auto createCodeRegion = dyn_cast<CreateCodeRegionOp>(&opChild);
-            if (createCodeRegion) {
-              StringRef source = createCodeRegion.getSourceAttr().getValue();
-              StringRef name = createCodeRegion.getNameAttr().getValue();
-              int64_t width = createCodeRegion.getWidthAttr().getValue().getSExtValue();
-              int64_t height =
-                  createCodeRegion.getHeightAttr().getValue().getSExtValue();
-
-              out << "    code_region = layout.create_code_region(\"" << source
-                  << "\", \"" << name << "\", " << width << ", " << height << ")\n";
-            }
-          } else if (opName == "csl_rt.place") {
-            auto place = dyn_cast<PlaceOp>(&opChild);
-            if (place) {
-              int64_t x = place.getXAttr().getValue().getSExtValue();
-              int64_t y = place.getYAttr().getValue().getSExtValue();
-              out << "    code_region.place(" << x << ", " << y << ")\n";
-            }
-          } else if (opName == "csl_rt.set_param_all") {
-            auto setParam = dyn_cast<SetParamAllOp>(&opChild);
-            if (setParam) {
-              StringRef paramName = setParam.getParamNameAttr().getValue();
-              int64_t paramValue = setParam.getParamValueAttr().getValue().getSExtValue();
-              out << "    code_region.set_param_all(\"" << paramName << "\", "
-                  << paramValue << ")\n";
-            }
-          } else if (opName == "csl_rt.export_name") {
-            auto exportName = dyn_cast<ExportNameOp>(&opChild);
-            if (exportName) {
-              StringRef symName = exportName.getSymbolNameAttr().getValue();
-              StringRef symType = exportName.getSymbolTypeAttr().getValue();
-              out << "    layout.export_name(\"" << symName << "\", \"" << symType
-                  << "\")\n";
-            }
-          }
-        }
-      }
-    }
-  }
-
-  void emitRuntimeOperations(ModuleOp module) {
-    // Process operations at module level and inside functions
-    emitRuntimeOpsInFunction(module.getOperation());
-
-    // Also walk through any func.func operations
-    module.walk([&](func::FuncOp func) {
-      emitRuntimeOpsInFunction(func.getOperation());
-    });
-  }
-
-  void emitRuntimeOpsInFunction(Operation *op) {
-    out << "    try:\n";
-    out << "        # Load and run the program\n";
-    out << "        runtime.load()\n";
-    out << "\n";
-
-    // Process direct children in order (preserves sequence)
-    bool foundH2D = false;
-    bool foundLaunch = false;
-    bool foundD2H = false;
-
-    for (auto &region : op->getRegions()) {
-      for (auto &block : region.getBlocks()) {
-        for (auto &opChild : block.getOperations()) {
-          auto opName = opChild.getName().getStringRef();
-
-          if (opName == "csl_rt.load") {
-            // Already emitted above
-          } else if (opName == "csl_rt.get_id") {
-            auto getId = dyn_cast<GetIdOp>(&opChild);
-            if (getId) {
-              StringRef symbolName = getId.getSymbolNameAttr().getValue();
-              out << "        id_" << symbolName << " = runtime.get_id(\""
-                  << symbolName << "\")\n";
-            }
-          } else if (opName == "csl_rt.memcpy_h2d") {
-            if (!foundH2D) {
-              out << "\n";
-              out << "        # Host-to-device transfers\n";
-              foundH2D = true;
-            }
-            auto memcpyH2D = dyn_cast<MemcpyH2dOp>(&opChild);
-            if (memcpyH2D) {
-              int32_t destId = memcpyH2D.getDestIdAttr().getInt();
-              StringRef srcName = memcpyH2D.getSrcNameAttr().getValue();
-              int64_t px = memcpyH2D.getPxAttr().getValue().getSExtValue();
-              int64_t py = memcpyH2D.getPyAttr().getValue().getSExtValue();
-              int64_t w = memcpyH2D.getWAttr().getValue().getSExtValue();
-              int64_t h = memcpyH2D.getHAttr().getValue().getSExtValue();
-              int64_t elemPerPe =
-                  memcpyH2D.getElemPerPeAttr().getValue().getSExtValue();
-
-              out << "        runtime.memcpy_h2d(" << destId << ", \"" << srcName
-                  << "\", " << px << ", " << py << ", " << w << ", " << h << ", "
-                  << elemPerPe << ")\n";
-            }
-          } else if (opName == "csl_rt.launch") {
-            if (!foundLaunch) {
-              out << "\n";
-              out << "        # Launch compute kernel\n";
-              foundLaunch = true;
-            }
-            auto launch = dyn_cast<LaunchOp>(&opChild);
-            if (launch) {
-              StringRef symbolName = launch.getSymbolNameAttr().getValue();
-              out << "        runtime.launch(\"" << symbolName << "\")\n";
-            }
-          } else if (opName == "csl_rt.memcpy_d2h") {
-            if (!foundD2H) {
-              out << "\n";
-              out << "        # Device-to-host transfers\n";
-              foundD2H = true;
-            }
-            auto memcpyD2H = dyn_cast<MemcpyD2hOp>(&opChild);
-            if (memcpyD2H) {
-              StringRef destName = memcpyD2H.getDestNameAttr().getValue();
-              int64_t px = memcpyD2H.getPxAttr().getValue().getSExtValue();
-              int64_t py = memcpyD2H.getPyAttr().getValue().getSExtValue();
-              int64_t w = memcpyD2H.getWAttr().getValue().getSExtValue();
-              int64_t h = memcpyD2H.getHAttr().getValue().getSExtValue();
-              int64_t elemPerPe =
-                  memcpyD2H.getElemPerPeAttr().getValue().getSExtValue();
-
-              out << "        runtime.memcpy_d2h(\"" << destName << "\", " << px
-                  << ", " << py << ", " << w << ", " << h << ", " << elemPerPe
-                  << ")\n";
-            }
-          }
-        }
-      }
-    }
-
-    out << "\n";
-    out << "    finally:\n";
-    out << "        # Stop the program\n";
-    out << "        runtime.stop()\n";
-  }
 };
 
 /// Translation function for csl_rt → Python.

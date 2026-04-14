@@ -5,22 +5,15 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// Tests CSL Runtime dialect → Python code generation via mlir-translate --emit-csl-rt
-//
-// The --emit-csl-rt translation converts CSL Runtime operations to equivalent Python
-// code using the Cerebras SDK's SdkLayout API.
+// Smoke test: --emit-csl-rt translates CSL Runtime ops without error and
+// emits the expected summary comment to stdout (the SdkLayout-based
+// build_layout path has been replaced by HostEmitter / LayoutEmitter).
 //
 // RUN: air-translate --emit-csl-rt %s | FileCheck %s
 //
+// CHECK: Generated layout.csl, pe_program.csl, and run.py to
+//
 //===----------------------------------------------------------------------===//
-
-// CHECK-LABEL: def build_layout(platform):
-// CHECK: layout = SdkLayout(platform)
-// CHECK: code_region = layout.create_code_region("pe.csl", "kernel", 8, 8)
-// CHECK: code_region.place(0, 0)
-// CHECK: code_region.set_param_all("width", 8)
-// CHECK: compile_artifacts = layout.compile(out_prefix='out')
-// CHECK: return compile_artifacts
 
 func.func @test_csl_rt_to_py() {
   %layout = csl_rt.create_layout : !csl_rt.layout
