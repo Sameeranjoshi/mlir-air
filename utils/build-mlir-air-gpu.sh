@@ -100,8 +100,8 @@ CMAKE_ARGS="$CMAKE_ARGS -DAIR_ENABLE_AIE=OFF"
 CMAKE_ARGS="$CMAKE_ARGS -DAIR_ENABLE_GPU=ON"
 
 # Python settings
-CMAKE_ARGS="$CMAKE_ARGS -DPython3_FIND_VIRTUALENV=ONLY"
-CMAKE_ARGS="$CMAKE_ARGS -DPython_FIND_VIRTUALENV=ONLY"
+CMAKE_ARGS="$CMAKE_ARGS -DPython3_EXECUTABLE=${PYTHON3_EXECUTABLE:-$(command -v python3)}"
+CMAKE_ARGS="$CMAKE_ARGS -DPython_EXECUTABLE=${PYTHON3_EXECUTABLE:-$(command -v python3)}"
 CMAKE_ARGS="$CMAKE_ARGS ${PYBIND11_ARG}"
 CMAKE_ARGS="$CMAKE_ARGS ${PYTHON_BINDINGS_ARG}"
 CMAKE_ARGS="$CMAKE_ARGS ${LIT_ARG}"
@@ -120,8 +120,12 @@ if command -v ccache &> /dev/null; then
     CMAKE_ARGS="$CMAKE_ARGS -DLLVM_CCACHE_BUILD=ON"
 fi
 
-# Detect compiler
-if command -v clang &> /dev/null; then
+# Detect compiler: honor CC/CXX env vars first (needed for conda-forge toolchain
+# matching the LLVM build), then fall back to clang if available.
+if [ -n "${CC:-}" ] && [ -n "${CXX:-}" ]; then
+    CMAKE_ARGS="$CMAKE_ARGS -DCMAKE_C_COMPILER=${CC}"
+    CMAKE_ARGS="$CMAKE_ARGS -DCMAKE_CXX_COMPILER=${CXX}"
+elif command -v clang &> /dev/null; then
     CMAKE_ARGS="$CMAKE_ARGS -DCMAKE_C_COMPILER=clang"
     CMAKE_ARGS="$CMAKE_ARGS -DCMAKE_CXX_COMPILER=clang++"
 fi
