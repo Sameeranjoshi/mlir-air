@@ -477,7 +477,42 @@ Each follow-up has a clear entry path through this milestone's architecture: mos
 - Estimates. Implementation plan will produce them.
 - CI integration. The test runs locally; CI is a separate concern.
 
-## 12. Approval
+## 12. Phase 0 Discovery — Memcpy Workflow (amendment)
+
+**Amended:** 2026-04-14 after Phase 0 implementation.
+
+The original spec assumed the Cerebras `SdkLayout` Python API was the right host-side target: `run.py` would build a layout, call `layout.compile()`, instantiate `SdkRuntime` from the in-memory artifacts, and run. The Phase 0 implementer discovered that **this path does not support host-device memcpy**, which the milestone requires (h2d for `a`, `b`, d2h for `c`). The memcpy workflow uses a different pattern:
+
+1. A `layout.csl` file is written alongside the PE program. It contains a `layout { }` block with `@set_rectangle`, `@set_tile_code` (passing memcpy params), and `@export_name` declarations with the third bool arg indicating host-writability.
+2. The PE program imports `<memcpy/memcpy>`, allocates buffers, declares pointer aliases (`var a_ptr: [*]f32 = &a_buf;` / `const c_ptr: [*]f32 = &c_buf;`), calls `sys_mod.unblock_cmd_stream()` at the end of host-launched functions, and `@export_symbol`s the pointers (not the buffers).
+3. An external `cslc --arch=wse3 layout.csl --memcpy --channels 1 --fabric-dims=8,3 --fabric-offsets=4,1 -o out` step compiles the two CSL files into an artifact directory.
+4. `run.py` is simpler: it imports `SdkRuntime` and `MemcpyDataType`/`MemcpyOrder`, constructs `SdkRuntime(args.name, cmaddr=args.cmaddr)` on the pre-compiled directory, and calls `get_id`/`memcpy_h2d`/`launch`/`memcpy_d2h`/`stop` with explicit `streaming`/`order`/`data_type`/`nonblock` kwargs. It does **not** call `SdkLayout` or `layout.compile()`.
+
+This was verified on CS-3: the hand-written golden pair compiles with `cslc` and runs with `cs_python` to a PASS validator result.
+
+### Impact on the rest of this spec
+
+- **§5.1 Pipeline diagram:** the `--emit-csl-rt` step now writes **three** files (`layout.csl`, `pe_program.csl`, `run.py`) instead of two. A `cslc ... --memcpy` invocation sits between `--emit-csl-rt` and `cs_python`.
+- **§5.3.1 IR contract:** the `csl.kernel` body needs pointer aliases (`csl.var @a_ptr ...` with an initializer pointing to `@a_buf`). TBD whether this requires a new `csl.ptr_alias` op or can be expressed as an existing `csl.var` with an initializer value. Phase 2 will decide during implementation.
+- **§5.3.2 csl-to-csl-rt extension:** drops the `create_layout` / `create_code_region` / `place` / `compile` / `export_name` (on layout) lowering — these correspond to the Python `SdkLayout` path which we're not using. **Keeps** the runtime sequence synthesis (`runtime_create`, `load`, `memcpy_h2d`, `launch`, `memcpy_d2h`, `stop`). The `csl.spatial_placement` op is left in place by the pass; the translator consumes it directly.
+- **§5.3.3 translator (rework):** is now three sub-emitters:
+  - **LayoutEmitter** — walks `csl.spatial_placement` + `csl.code_region` + `csl.place` + `csl.export_name` and writes `layout.csl`.
+  - **KernelEmitter** — walks `csl.kernel` body and writes `pe_program.csl` (unchanged from original plan, but also emits `@import_module("<memcpy/memcpy>", memcpy_params)`, the pointer aliases, and `sys_mod.unblock_cmd_stream()` in the appropriate places).
+  - **HostEmitter** — walks `csl_rt.*` ops and writes `run.py` using `SdkRuntime(args.name, ...)` on the pre-compiled directory. No `build_layout()` function.
+- **§8.5 Hardware test:** the pipeline command becomes:
+
+  ```bash
+  air-opt vecadd.mlir -air-to-csl-dialect -csl-to-csl-rt | \
+    air-translate --emit-csl-rt -o $OUT_DIR
+  cslc --arch=wse3 $OUT_DIR/layout.csl --memcpy --channels 1 \
+       --fabric-dims=8,3 --fabric-offsets=4,1 -o $OUT_DIR/out
+  cs_python $OUT_DIR/run.py --name $OUT_DIR/out --check
+  ```
+- **§9.1 Milestone delivery:** adds the LayoutEmitter sub-component; removes the `build_layout()` Python generation claim.
+
+The golden files at `mlir/test/Conversion/AIRToCSL/golden/` are the authoritative reference for what all three output files should look like, superseding the spec fragments where they disagree.
+
+## 13. Approval
 
 All five sections (Architecture, Components, Data Flow, Error Handling, Testing) were presented to the user and approved during the brainstorming session on 2026-04-13.
 
