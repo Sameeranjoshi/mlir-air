@@ -34,6 +34,8 @@ int main(int argc, char **argv) {
   xilinx::air::registerAIRRtTranslations();
   // CSL dialect: use conversion to CSL Runtime, then emit via --emit-csl-rt
   xilinx::csl_rt::registerCSLRuntimeToPyTranslation();
+  // CSL v2 dialect: emit pe_program.csl, csl_layout.py, run.py directly
+  xilinx::csl::registerCSLV2ToPyTranslations();
 
   return failed(mlirTranslateMain(argc, argv, "AIR MLIR Translation Tool"));
 }

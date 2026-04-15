@@ -9,6 +9,7 @@
 #define CSL_DIALECT_H
 
 #include "mlir/IR/Dialect.h"
+#include "mlir/IR/Types.h"
 #include "llvm/ADT/StringRef.h"
 
 namespace xilinx {
@@ -78,6 +79,44 @@ public:
   using Base::Base;
   static constexpr llvm::StringLiteral name = "xilinx.csl.route";
 };
+
+// ---------------------------------------------------------------------------
+// v2 types
+// ---------------------------------------------------------------------------
+
+/// Storage for !csl.comptime<T> — a compile-time-only value (CSL param).
+struct ComptimeTypeStorage : mlir::TypeStorage {
+  using KeyTy = mlir::Type;
+  explicit ComptimeTypeStorage(mlir::Type t) : innerType(t) {}
+  bool operator==(const KeyTy &key) const { return innerType == key; }
+  static llvm::hash_code hashKey(const KeyTy &key) {
+    return mlir::hash_value(key);
+  }
+  static ComptimeTypeStorage *construct(mlir::TypeStorageAllocator &alloc,
+                                        const KeyTy &key) {
+    return new (alloc.allocate<ComptimeTypeStorage>())
+        ComptimeTypeStorage(key);
+  }
+  mlir::Type innerType;
+};
+
+/// !csl.comptime<T> — marks a block argument of csl.program as a CSL param.
+/// Maps to "param x: T;" in emitted CSL source.
+class ComptimeType
+    : public mlir::Type::TypeBase<ComptimeType, mlir::Type,
+                                  ComptimeTypeStorage> {
+public:
+  using Base::Base;
+  static constexpr llvm::StringLiteral name = "xilinx.csl.comptime";
+  static ComptimeType get(mlir::MLIRContext *ctx, mlir::Type innerType) {
+    return Base::get(ctx, innerType);
+  }
+  mlir::Type getInnerType() const { return getImpl()->innerType; }
+};
+
+/// Register the --emit-csl-program / --emit-csl-layout / --emit-csl-host
+/// translation entries (from CSLV2ToPy.cpp) into the mlir-translate tool.
+void registerCSLV2ToPyTranslations();
 
 } // namespace csl
 } // namespace xilinx
