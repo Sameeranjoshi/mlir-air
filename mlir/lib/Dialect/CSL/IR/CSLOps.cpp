@@ -27,3 +27,202 @@ void xilinx::csl::VarOp::getAsmResultNames(
     OpAsmSetValueNameFn setNameFn) {
   setNameFn(getResult(), getSymName());
 }
+
+//===----------------------------------------------------------------------===//
+// CSL v2: WaferOp — custom assembly: @sym_name {arch = "..."} { body }
+//===----------------------------------------------------------------------===//
+
+mlir::ParseResult xilinx::csl::WaferOp::parse(
+    mlir::OpAsmParser &parser, mlir::OperationState &result) {
+  // @sym_name
+  StringAttr nameAttr;
+  if (parser.parseSymbolName(nameAttr, mlir::SymbolTable::getSymbolAttrName(),
+                              result.attributes))
+    return mlir::failure();
+
+  // Optional {arch = "...", ...} attribute dict
+  if (parser.parseOptionalAttrDict(result.attributes))
+    return mlir::failure();
+
+  auto *body = result.addRegion();
+  if (parser.parseRegion(*body, {}))
+    return mlir::failure();
+  if (body->empty())
+    body->emplaceBlock();
+  return mlir::success();
+}
+
+void xilinx::csl::WaferOp::print(mlir::OpAsmPrinter &printer) {
+  printer << ' ';
+  printer.printSymbolName(getSymName());
+  printer.printOptionalAttrDict((*this)->getAttrs(),
+      {WaferOp::getSymNameAttrName()});
+  printer << ' ';
+  printer.printRegion(getBody());
+}
+
+//===----------------------------------------------------------------------===//
+// CSL v2: LayoutOp — custom assembly:
+// {width = N : i64, height = M : i64} @sym_name { body }
+//===----------------------------------------------------------------------===//
+
+mlir::ParseResult xilinx::csl::LayoutOp::parse(
+    mlir::OpAsmParser &parser, mlir::OperationState &result) {
+  // {width = N, height = M, ...} attribute dict (comes before sym_name)
+  if (parser.parseOptionalAttrDict(result.attributes))
+    return mlir::failure();
+
+  // @sym_name
+  StringAttr nameAttr;
+  if (parser.parseSymbolName(nameAttr, mlir::SymbolTable::getSymbolAttrName(),
+                              result.attributes))
+    return mlir::failure();
+
+  auto *body = result.addRegion();
+  if (parser.parseRegion(*body, {}))
+    return mlir::failure();
+  if (body->empty())
+    body->emplaceBlock();
+  return mlir::success();
+}
+
+void xilinx::csl::LayoutOp::print(mlir::OpAsmPrinter &printer) {
+  printer.printOptionalAttrDict((*this)->getAttrs(),
+      {LayoutOp::getSymNameAttrName()});
+  printer << ' ';
+  printer.printSymbolName(getSymName());
+  printer << ' ';
+  printer.printRegion(getBody());
+}
+
+//===----------------------------------------------------------------------===//
+// CSL v2: CSLProgramOp — custom assembly for comptime block args
+//
+// Format: @sym_name (%arg: !csl.comptime<T>, ...) { body }
+//         @sym_name { body }   (no-arg variant)
+//===----------------------------------------------------------------------===//
+
+mlir::ParseResult xilinx::csl::ProgramOp::parse(
+    mlir::OpAsmParser &parser, mlir::OperationState &result) {
+  using namespace mlir;
+
+  // Parse @sym_name
+  StringAttr nameAttr;
+  if (parser.parseSymbolName(nameAttr, mlir::SymbolTable::getSymbolAttrName(),
+                              result.attributes))
+    return failure();
+
+  // Parse optional ( %arg: !csl.comptime<T>, ... )
+  SmallVector<OpAsmParser::Argument> regionArgs;
+  if (succeeded(parser.parseOptionalLParen())) {
+    // Empty parens: ()
+    if (failed(parser.parseOptionalRParen())) {
+      do {
+        OpAsmParser::Argument arg;
+        if (parser.parseArgument(arg, /*allowType=*/true))
+          return failure();
+        regionArgs.push_back(arg);
+      } while (succeeded(parser.parseOptionalComma()));
+      if (parser.parseRParen())
+        return failure();
+    }
+  }
+
+  auto *body = result.addRegion();
+  if (parser.parseRegion(*body, regionArgs))
+    return mlir::failure();
+  if (body->empty())
+    body->emplaceBlock();
+  return mlir::success();
+}
+
+void xilinx::csl::ProgramOp::print(mlir::OpAsmPrinter &printer) {
+  printer << ' ';
+  printer.printSymbolName(getSymName());
+
+  // Print block args if any
+  Block &entry = getBody().front();
+  if (!entry.getArguments().empty()) {
+    printer << '(';
+    llvm::interleaveComma(entry.getArguments(), printer,
+                          [&](mlir::BlockArgument arg) {
+      printer.printOperand(arg);
+      printer << ": ";
+      printer.printType(arg.getType());
+    });
+    printer << ')';
+  }
+
+  printer << ' ';
+  printer.printRegion(getBody(), /*printEntryBlockArgs=*/false);
+}
+
+//===----------------------------------------------------------------------===//
+// CSL v2: HostOp — custom assembly for func-like args + layout attr
+//
+// Format: @sym_name (%arg: type, ...) {layout = @sym} { body }
+//===----------------------------------------------------------------------===//
+
+mlir::ParseResult xilinx::csl::HostOp::parse(
+    mlir::OpAsmParser &parser, mlir::OperationState &result) {
+  using namespace mlir;
+
+  // Parse @sym_name
+  StringAttr nameAttr;
+  if (parser.parseSymbolName(nameAttr, mlir::SymbolTable::getSymbolAttrName(),
+                              result.attributes))
+    return failure();
+
+  // Parse ( %arg: type, ... )
+  SmallVector<OpAsmParser::Argument> args;
+  if (parser.parseLParen())
+    return failure();
+  if (failed(parser.parseOptionalRParen())) {
+    do {
+      OpAsmParser::Argument arg;
+      if (parser.parseArgument(arg, /*allowType=*/true))
+        return failure();
+      args.push_back(arg);
+    } while (succeeded(parser.parseOptionalComma()));
+    if (parser.parseRParen())
+      return failure();
+  }
+
+  // Parse {layout = @sym}
+  if (parser.parseLBrace())
+    return failure();
+  if (parser.parseKeyword("layout") || parser.parseEqual())
+    return failure();
+  FlatSymbolRefAttr layoutAttr;
+  if (parser.parseAttribute(layoutAttr))
+    return failure();
+  result.addAttribute("layout", layoutAttr);
+  if (parser.parseRBrace())
+    return failure();
+
+  auto *body = result.addRegion();
+  if (parser.parseRegion(*body, args))
+    return mlir::failure();
+  if (body->empty())
+    body->emplaceBlock();
+  return mlir::success();
+}
+
+void xilinx::csl::HostOp::print(mlir::OpAsmPrinter &printer) {
+  printer << ' ';
+  printer.printSymbolName(getSymName());
+  printer << '(';
+  Block &entry = getBody().front();
+  llvm::interleaveComma(entry.getArguments(), printer,
+                        [&](mlir::BlockArgument arg) {
+    printer.printOperand(arg);
+    printer << ": ";
+    printer.printType(arg.getType());
+  });
+  printer << ") {layout = ";
+  printer.printAttributeWithoutType(getLayoutAttr());
+  printer << "} ";
+  printer.printOptionalAttrDict((*this)->getAttrs(),
+      {HostOp::getSymNameAttrName(), "layout"});
+  printer.printRegion(getBody(), /*printEntryBlockArgs=*/false);
+}

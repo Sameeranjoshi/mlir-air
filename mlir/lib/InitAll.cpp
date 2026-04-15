@@ -14,6 +14,8 @@
 #include "air/Dialect/AIRRt/AIRRtDialect.h"
 #include "air/Dialect/CSL/CSLDialect.h"
 #include "air/Dialect/CSL/CSLOps.h"
+#include "air/Dialect/CSL/CSLLayoutOps.h"
+#include "air/Dialect/CSL/CSLHostOps.h"
 #include "air/Dialect/CSLRuntime/CSLRuntimeDialect.h"
 #include "air/Dialect/CSLRuntime/CSLRuntimeOps.h"
 #include "air/Interfaces/AIRInterfaces.h"
@@ -23,7 +25,10 @@
 
 void xilinx::air::registerAllDialects(mlir::DialectRegistry &registry) {
   registry.insert<xilinx::air::airDialect, xilinx::airrt::AIRRtDialect,
-                  xilinx::csl::CSLDialect, xilinx::csl_rt::CSLRuntimeDialect>();
+                  xilinx::csl::CSLDialect,
+                  xilinx::csl_layout::CSLLayoutDialect,
+                  xilinx::csl_host::CSLHostDialect,
+                  xilinx::csl_rt::CSLRuntimeDialect>();
   xilinx::air::registerTransformDialectExtension(registry);
   xilinx::air::registerCodegenInterfaces(registry);
 }

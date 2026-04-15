@@ -16,7 +16,8 @@ namespace xilinx::csl {
 
 void CSLDialect::initialize() {
   addTypes<ColorType, DsdType, ImportedModuleType,
-           CodeRegionType, PortType, StreamType, KernelType, RouteType>();
+           CodeRegionType, PortType, StreamType, KernelType, RouteType,
+           ComptimeType>();
   addOperations<
 #define GET_OP_LIST
 #include "air/Dialect/CSL/CSLOps.cpp.inc"
@@ -45,6 +46,16 @@ Type CSLDialect::parseType(DialectAsmParser &parser) const {
     return KernelType::get(context);
   if (keyword == "route")
     return RouteType::get(context);
+  if (keyword == "comptime") {
+    if (parser.parseLess())
+      return Type();
+    Type innerType;
+    if (parser.parseType(innerType))
+      return Type();
+    if (parser.parseGreater())
+      return Type();
+    return ComptimeType::get(context, innerType);
+  }
 
   parser.emitError(parser.getNameLoc(), "unknown csl type: " + keyword);
   return Type();
@@ -60,6 +71,11 @@ void CSLDialect::printType(Type type, DialectAsmPrinter &os) const {
       .Case<StreamType>([&](Type) { os << "stream"; })
       .Case<KernelType>([&](Type) { os << "kernel"; })
       .Case<RouteType>([&](Type) { os << "route"; })
+      .Case<ComptimeType>([&](ComptimeType t) {
+        os << "comptime<";
+        os.printType(t.getInnerType());
+        os << ">";
+      })
       .Default([](Type) { llvm_unreachable("unexpected 'csl' type"); });
 }
 

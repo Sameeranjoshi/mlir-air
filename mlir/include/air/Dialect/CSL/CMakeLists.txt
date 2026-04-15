@@ -9,3 +9,9 @@ mlir_tablegen(CSLEnums.h.inc -gen-enum-decls)
 mlir_tablegen(CSLEnums.cpp.inc -gen-enum-defs)
 add_public_tablegen_target(MLIRCSLEnumsIncGen)
 add_dependencies(csl-headers MLIRCSLEnumsIncGen)
+
+# csl_layout sub-dialect
+add_mlir_dialect(CSLLayoutOps csl_layout)
+
+# csl_host sub-dialect
+add_mlir_dialect(CSLHostOps csl_host)

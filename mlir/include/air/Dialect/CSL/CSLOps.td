@@ -526,4 +526,164 @@ def CSL_ExportSymbolOp : CSL_Op<"export_symbol"> {
 //   let assemblyFormat = "$dst `,` $src `:` type($dst) `,` type($src) attr-dict";
 // }
 
+
+//===----------------------------------------------------------------------===//
+// CSL Dialect v2 — Structural + Kernel Ops
+//
+// These ops form the v2 IR family:
+//   csl.wafer  — top-level WSE program container
+//   csl.program — PE kernel template (one .csl file)
+//   csl.export  — mark a symbol as host-visible
+//   csl.layout  — placement container (emits csl_layout.py)
+//   csl.host    — host runtime container (emits run.py)
+//===----------------------------------------------------------------------===//
+
+include "mlir/IR/SymbolInterfaces.td"
+
+//===----------------------------------------------------------------------===//
+// csl.wafer — WSE program container (analogous to aie.device)
+//===----------------------------------------------------------------------===//
+
+def CSL_WaferOp : CSL_Op<"wafer", [
+    IsolatedFromAbove,
+    SymbolTable,
+    NoTerminator]> {
+  let summary = "WSE program container";
+  let description = [{
+    Top-level container for a complete WSE program. Contains csl.program,
+    csl.layout, and csl.host as sibling ops sharing a single symbol table.
+    Analogous to aie.device — sits inside module {}, is the logical
+    program boundary.
+
+    ```mlir
+    module {
+      csl.wafer @wseprog {arch = "wse3"} {
+        csl.program @vecadd_pe { ... }
+        csl.layout {width=1, height=1} @layout { ... }
+        csl.host @main(...) {layout = @layout} { ... }
+      }
+    }
+    ```
+  }];
+  let arguments = (ins SymbolNameAttr:$sym_name, StrAttr:$arch);
+  let regions = (region SizedRegion<1>:$body);
+  let hasCustomAssemblyFormat = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// csl.program — PE kernel template (one per pe_program.csl file)
+//===----------------------------------------------------------------------===//
+
+def CSL_ProgramOp : CSL_Op<"program", [
+    Symbol,
+    SymbolTable,
+    NoTerminator,
+    HasParent<"WaferOp">]> {
+  let summary = "PE kernel template";
+  let description = [{
+    Models a single pe_program.csl source file. Has no coordinates —
+    placement is handled by csl.layout. Block arguments typed with
+    !csl.comptime<T> map to CSL 'param' declarations.
+
+    ```mlir
+    csl.program @vecadd_pe(%col: !csl.comptime<i16>) {
+      %a = csl.var @a : memref<256xf32>
+      csl.func @compute { ... }
+      csl.export @a {alias = "a"}
+    }
+    ```
+  }];
+  let arguments = (ins SymbolNameAttr:$sym_name);
+  let regions = (region SizedRegion<1>:$body);
+  // Custom format handles optional (%arg: !csl.comptime<T>, ...) block args.
+  let hasCustomAssemblyFormat = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// csl.export — mark a symbol as host-visible
+//===----------------------------------------------------------------------===//
+
+def CSL_ExportOp : CSL_Op<"export", [
+    HasParent<"ProgramOp">]> {
+  let summary = "Mark a PE symbol as host-visible";
+  let description = [{
+    Marks a csl.var or csl.func as accessible from the host runtime.
+    The `direction` attribute (in/out) is added by -csl-derive-exports.
+
+    ```mlir
+    csl.export @a { alias = "a" }           // var with host-facing alias
+    csl.export @compute { kind = "func" }   // function export
+    // After -csl-derive-exports:
+    csl.export @a { alias = "a", direction = "in" }
+    ```
+  }];
+  let arguments = (ins
+    FlatSymbolRefAttr:$sym,
+    OptionalAttr<StrAttr>:$alias,
+    OptionalAttr<StrAttr>:$kind,
+    OptionalAttr<StrAttr>:$direction
+  );
+  let assemblyFormat = "$sym attr-dict";
+}
+
+//===----------------------------------------------------------------------===//
+// csl.layout — placement + routing container (emits csl_layout.py)
+//===----------------------------------------------------------------------===//
+
+def CSL_LayoutOp : CSL_Op<"layout", [
+    Symbol,
+    SymbolTable,
+    NoTerminator,
+    HasParent<"WaferOp">]> {
+  let summary = "Layout container mapping programs to PE rectangles";
+  let description = [{
+    Models the csl_layout.py file generated via sdkLayout Python API.
+    Contains csl_layout.* ops for placement and host-visible exports.
+
+    ```mlir
+    csl.layout {width = 1 : i64, height = 1 : i64} @main_layout {
+      csl_layout.place @vecadd_pe {} at (0, 0)
+      csl_layout.export @a from @vecadd_pe::@a
+    }
+    ```
+  }];
+  let arguments = (ins
+    SymbolNameAttr:$sym_name,
+    I64Attr:$width,
+    I64Attr:$height
+  );
+  let regions = (region SizedRegion<1>:$body);
+  let hasCustomAssemblyFormat = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// csl.host — host runtime orchestration (emits run.py)
+//===----------------------------------------------------------------------===//
+
+def CSL_HostOp : CSL_Op<"host", [
+    Symbol,
+    NoTerminator,
+    HasParent<"WaferOp">]> {
+  let summary = "Host runtime orchestration container";
+  let description = [{
+    Models run.py. Contains csl_host.* ops for memcpy and launch.
+    References the layout by symbol. Block args are the host-side
+    function parameters (memrefs to transfer).
+
+    ```mlir
+    csl.host @main(%a: memref<256xf32>) {layout = @main_layout} {
+      csl_host.memcpy_h2d %a to @main_layout::@a {...}
+      csl_host.launch @main_layout::@compute
+    }
+    ```
+  }];
+  let arguments = (ins
+    SymbolNameAttr:$sym_name,
+    FlatSymbolRefAttr:$layout
+  );
+  let regions = (region SizedRegion<1>:$body);
+  // Custom format handles (%arg: type, ...) {layout = @sym} {body}.
+  let hasCustomAssemblyFormat = 1;
+}
+
 #endif // CSL_OPS
