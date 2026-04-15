@@ -18,8 +18,8 @@
 // CHECK:     c[i0] = t3;
 // CHECK:   }
 // CHECK: }
-// CHECK-NOT: @export_symbol(&a_internal
 // CHECK: comptime {
+// CHECK-NOT: @export_symbol(&a_internal
 // CHECK:   @export_symbol(&a, "a");
 // CHECK:   @export_symbol(&b, "b");
 // CHECK:   @export_symbol(&c, "c");
