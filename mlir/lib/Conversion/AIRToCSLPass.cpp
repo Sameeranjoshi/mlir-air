@@ -31,7 +31,21 @@ using namespace mlir::func;
 
 namespace {
 
-/// Return true if `arg` is used as the memref operand of a memref.store.
+// TODO(V1 limitation): does not follow memref.subview / memref.cast /
+// memref.expand_shape. Args reached through view ops will be misclassified.
+
+/// Check whether `arg` is used as the memref operand of a memref.load anywhere
+/// in its use-list. V1: direct uses only; does not follow view-like ops.
+static bool isLoadSource(BlockArgument arg) {
+  for (Operation *user : arg.getUsers())
+    if (auto loadOp = dyn_cast<memref::LoadOp>(user))
+      if (loadOp.getMemRef() == arg)
+        return true;
+  return false;
+}
+
+/// Check whether `arg` is used as the memref operand of a memref.store anywhere
+/// in its use-list. V1: direct uses only; does not follow view-like ops.
 static bool isStoreTarget(BlockArgument arg) {
   for (Operation *user : arg.getUsers())
     if (auto storeOp = dyn_cast<memref::StoreOp>(user))
@@ -47,6 +61,12 @@ static LogicalResult lowerFuncToWafer(FuncOp func) {
   func.walk([&](xilinx::air::LaunchOp op) { launches.push_back(op); });
   if (launches.empty())
     return success();
+
+  if (launches.size() > 1) {
+    func.emitError("-air-to-csl: multiple air.launch ops per func are not yet "
+                   "supported");
+    return failure();
+  }
 
   MLIRContext *ctx = func.getContext();
   OpBuilder moduleBuilder(ctx);
@@ -65,10 +85,13 @@ static LogicalResult lowerFuncToWafer(FuncOp func) {
   ArrayRef<BlockArgument> kArgs = herd.getKernelArguments();
   unsigned nArgs = kArgs.size();
 
-  // Classify each kernel arg: output if it is a store target.
-  SmallVector<bool, 4> isOut(nArgs, false);
-  for (unsigned i = 0; i < nArgs; ++i)
-    isOut[i] = isStoreTarget(kArgs[i]);
+  // Classify each kernel arg: an arg may be read, written, or both (RMW).
+  SmallVector<bool, 4> isRead(nArgs, false);
+  SmallVector<bool, 4> isWritten(nArgs, false);
+  for (unsigned i = 0; i < nArgs; ++i) {
+    isRead[i] = isLoadSource(kArgs[i]);
+    isWritten[i] = isStoreTarget(kArgs[i]);
+  }
 
   // Program name = herd's sym_name if present, else "pe".
   std::string progName =
@@ -116,13 +139,30 @@ static LogicalResult lowerFuncToWafer(FuncOp func) {
   IRMapping mapping;
   for (unsigned i = 0; i < nArgs; ++i)
     mapping.map(kArgs[i], varVals[i]);
-  // Map tile id/size block args to safe constants.
-  Value zeroIdx = arith::ConstantIndexOp::create(fb, loc, 0);
-  Value oneIdx = arith::ConstantIndexOp::create(fb, loc, 1);
+  // Only emit constants if ids or sizes are actually used in the herd body.
+  bool needZero = false, needOne = false;
   for (BlockArgument id : herd.getIds())
-    mapping.map(id, zeroIdx);
+    if (!id.use_empty()) {
+      needZero = true;
+      break;
+    }
   for (BlockArgument sz : herd.getSize())
-    mapping.map(sz, oneIdx);
+    if (!sz.use_empty()) {
+      needOne = true;
+      break;
+    }
+
+  Value zeroIdx, oneIdx;
+  if (needZero)
+    zeroIdx = arith::ConstantIndexOp::create(fb, loc, 0);
+  if (needOne)
+    oneIdx = arith::ConstantIndexOp::create(fb, loc, 1);
+  for (BlockArgument id : herd.getIds())
+    if (!id.use_empty())
+      mapping.map(id, zeroIdx);
+  for (BlockArgument sz : herd.getSize())
+    if (!sz.use_empty())
+      mapping.map(sz, oneIdx);
 
   // Clone all ops except the herd terminator.
   for (Operation &op : herd.getBody().front()) {
@@ -195,9 +235,9 @@ static LogicalResult lowerFuncToWafer(FuncOp func) {
 
   auto layoutSymAttr = StringAttr::get(ctx, layoutName);
 
-  // csl_host.memcpy_h2d for input args
+  // csl_host.memcpy_h2d for read args (before launch) — includes RMW args
   for (unsigned i = 0; i < nArgs; ++i) {
-    if (isOut[i])
+    if (!isRead[i])
       continue;
     SymbolRefAttr sym = SymbolRefAttr::get(
         layoutSymAttr, {FlatSymbolRefAttr::get(ctx, varNames[i])});
@@ -213,9 +253,9 @@ static LogicalResult lowerFuncToWafer(FuncOp func) {
         layoutSymAttr, {FlatSymbolRefAttr::get(ctx, "compute")});
     xilinx::csl_host::LaunchOp::create(hb, loc, launchSym);
   }
-  // csl_host.memcpy_d2h for output args
+  // csl_host.memcpy_d2h for written args (after launch) — includes RMW args
   for (unsigned i = 0; i < nArgs; ++i) {
-    if (!isOut[i])
+    if (!isWritten[i])
       continue;
     SymbolRefAttr sym = SymbolRefAttr::get(
         layoutSymAttr, {FlatSymbolRefAttr::get(ctx, varNames[i])});

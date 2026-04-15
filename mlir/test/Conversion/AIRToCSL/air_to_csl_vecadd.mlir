@@ -25,10 +25,14 @@
 // CHECK:           csl_layout.export "arg2" from @h::@arg2
 // CHECK:           csl_layout.export "compute" from @h::@compute {kind = "func"}
 // CHECK:         csl.host @vecadd
-// CHECK:           csl_host.memcpy_h2d %{{.*}} to @{{.*}}::@arg0
-// CHECK:           csl_host.memcpy_h2d %{{.*}} to @{{.*}}::@arg1
-// CHECK:           csl_host.launch @{{.*}}::@compute
-// CHECK:           csl_host.memcpy_d2h @{{.*}}::@arg2 to %{{.*}}
+// CHECK:           csl_host.memcpy_h2d %{{.*}} to @vecadd_layout::@arg0
+// CHECK:           csl_host.memcpy_h2d %{{.*}} to @vecadd_layout::@arg1
+// CHECK:           csl_host.launch @vecadd_layout::@compute
+// CHECK:           csl_host.memcpy_d2h @vecadd_layout::@arg2 to %{{.*}}
+//
+// Verify the original func.func and air.herd have been erased.
+// CHECK-NOT: func.func @vecadd
+// CHECK-NOT: air.herd
 
 module {
   func.func @vecadd(%a: memref<256xf32>, %b: memref<256xf32>,
