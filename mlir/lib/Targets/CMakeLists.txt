@@ -7,6 +7,7 @@ add_mlir_library(
   AIRTargets.cpp
   AIRHerdToJSON.cpp
   CSLRuntimeToPy.cpp
+  CSLV2ToPy.cpp
 
   LINK_LIBS PUBLIC
   AIRRtDialect
