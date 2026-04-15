@@ -9,6 +9,7 @@
 #define CSL_DIALECT_H
 
 #include "mlir/IR/Dialect.h"
+#include "mlir/IR/TypeSupport.h"
 #include "mlir/IR/Types.h"
 #include "llvm/ADT/StringRef.h"
 

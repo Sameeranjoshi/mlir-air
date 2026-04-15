@@ -276,6 +276,8 @@ LogicalResult ProgramEmitter::emit(ModuleOp module) {
       auto kind = expOp.getKind();
       // kind="func" exports are always emitted — they represent host-callable
       // functions and must appear in the comptime block regardless of direction.
+      // We check the kind attribute rather than walking the symbol table because
+      // the attribute is the authoritative contract (see csl.export in CSLOps.td).
       bool isFuncExport = kind.has_value() && *kind == "func";
       if (!isFuncExport && dir.has_value() && *dir == "internal")
         continue;
