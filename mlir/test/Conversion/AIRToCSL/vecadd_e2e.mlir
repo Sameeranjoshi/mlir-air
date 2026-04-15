@@ -9,6 +9,13 @@
 // PROG: var arg1: [256]f32;
 // PROG: var arg2: [256]f32;
 // PROG: fn compute() void {
+// PROG:   var {{.*}}: u16 = 0;
+// PROG:   while ({{.*}} < 256) : ({{.*}} += 1) {
+// PROG:     var {{.*}} = arg0[{{.*}}];
+// PROG:     var {{.*}} = arg1[{{.*}}];
+// PROG:     var {{.*}}: f32 = {{.*}} + {{.*}};
+// PROG:     arg2[{{.*}}] = {{.*}};
+// PROG:   }
 // PROG: }
 // PROG: comptime {
 // PROG:   @export_symbol(&arg0, "arg0");
