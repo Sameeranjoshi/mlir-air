@@ -28,30 +28,39 @@ add_lit_testsuites(AIRMLIR ${CMAKE_CURRENT_SOURCE_DIR} DEPENDS ${TEST_DEPENDS})
 #   ninja check-csl-emitters     — Targets/CSLV2ToPy/   (--emit-csl-program/layout/host)
 #===----------------------------------------------------------------------===//
 
+# Locate the lit runner — use LLVM_EXTERNAL_LIT (set by LLVM build) with -v for
+# verbose output (shows individual test names instead of progress dots).
+set(CSL_LIT_COMMAND ${LLVM_EXTERNAL_LIT} -v --timeout 30)
+
 # 1. CSL dialect tests (csl.*, csl_layout.*, csl_host.* ops)
-add_lit_testsuite(check-csl-dialect "Running CSL dialect tests"
-                  ${CMAKE_CURRENT_BINARY_DIR}/Dialect/CSL
-                  DEPENDS ${TEST_DEPENDS})
+add_custom_target(check-csl-dialect
+  COMMAND ${CSL_LIT_COMMAND} ${CMAKE_CURRENT_BINARY_DIR}/Dialect/CSL
+  DEPENDS ${TEST_DEPENDS}
+  COMMENT "Running CSL dialect tests")
 set_target_properties(check-csl-dialect PROPERTIES FOLDER "Tests/CSL")
 
 # 2. AIR → CSL conversion tests (-air-to-csl, -csl-derive-exports, e2e pipeline)
-add_lit_testsuite(check-csl-conversion "Running AIR to CSL conversion tests"
-                  ${CMAKE_CURRENT_BINARY_DIR}/Conversion/AIRToCSL
-                  DEPENDS ${TEST_DEPENDS})
+add_custom_target(check-csl-conversion
+  COMMAND ${CSL_LIT_COMMAND} ${CMAKE_CURRENT_BINARY_DIR}/Conversion/AIRToCSL
+  DEPENDS ${TEST_DEPENDS}
+  COMMENT "Running AIR to CSL conversion tests")
 set_target_properties(check-csl-conversion PROPERTIES FOLDER "Tests/CSL")
 
 # 3. CSL emitter tests (--emit-csl-program, --emit-csl-layout, --emit-csl-host)
-add_lit_testsuite(check-csl-emitters "Running CSL emitter tests"
-                  ${CMAKE_CURRENT_BINARY_DIR}/Targets/CSLV2ToPy
-                  DEPENDS ${TEST_DEPENDS})
+add_custom_target(check-csl-emitters
+  COMMAND ${CSL_LIT_COMMAND} ${CMAKE_CURRENT_BINARY_DIR}/Targets/CSLV2ToPy
+  DEPENDS ${TEST_DEPENDS}
+  COMMENT "Running CSL emitter tests")
 set_target_properties(check-csl-emitters PROPERTIES FOLDER "Tests/CSL")
 
 # Aggregate: check-csl runs all three suites
-add_custom_target(check-csl DEPENDS
-  check-csl-dialect
-  check-csl-conversion
-  check-csl-emitters
-)
+add_custom_target(check-csl
+  COMMAND ${CSL_LIT_COMMAND}
+    ${CMAKE_CURRENT_BINARY_DIR}/Dialect/CSL
+    ${CMAKE_CURRENT_BINARY_DIR}/Conversion/AIRToCSL
+    ${CMAKE_CURRENT_BINARY_DIR}/Targets/CSLV2ToPy
+  DEPENDS ${TEST_DEPENDS}
+  COMMENT "Running all CSL tests")
 set_target_properties(check-csl PROPERTIES FOLDER "Tests/CSL")
 
 add_dependencies(check-all check-air-mlir check-csl-dialect)
