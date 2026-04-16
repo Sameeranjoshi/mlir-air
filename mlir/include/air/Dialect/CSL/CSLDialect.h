@@ -80,9 +80,19 @@ public:
   mlir::Type getInnerType() const { return getImpl()->innerType; }
 };
 
-/// Register the --emit-csl-program / --emit-csl-layout / --emit-csl-host
-/// translation entries (from CSLV2ToPy.cpp) into the mlir-translate tool.
-void registerCSLV2ToPyTranslations();
+/// Individual translation registrations (one per output).
+/// Defined in mlir/lib/Targets/CSLEmit/.
+void registerCSLProgramTranslation();
+void registerCSLLayoutTranslation();
+void registerCSLHostTranslation();
+
+/// Unified --emit-csl registration (writes all three files into --output-dir).
+/// Defined in mlir/lib/Targets/CSLEmit/CSLEmitAll.cpp.
+void registerCSLEmitAllTranslation();
+
+/// Register all four translations (program, layout, host, emit-all) at once.
+/// Defined in mlir/lib/Targets/CSLEmit/CSLEmitAll.cpp.
+void registerCSLEmitTranslations();
 
 } // namespace csl
 } // namespace xilinx

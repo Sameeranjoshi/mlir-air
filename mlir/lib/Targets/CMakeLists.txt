@@ -6,7 +6,10 @@ add_mlir_library(
   AIRTargets
   AIRTargets.cpp
   AIRHerdToJSON.cpp
-  CSLV2ToPy.cpp
+  CSLEmit/CSLProgramEmitter.cpp
+  CSLEmit/CSLLayoutEmitter.cpp
+  CSLEmit/CSLHostEmitter.cpp
+  CSLEmit/CSLEmitAll.cpp
 
   LINK_LIBS PUBLIC
   AIRRtDialect
