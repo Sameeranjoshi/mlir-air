@@ -333,8 +333,17 @@ def CSL_ProgramOp : CSL_Op<"program", [
       csl.export @a {alias = "a"}
     }
     ```
+
+    The `param_names` attribute is populated by the custom parser from the
+    SSA names of the block arguments (e.g., `["col"]`).  It lets later
+    passes such as `-csl-verify-params` compare user-facing parameter names
+    against the attributes carried on `csl_layout.place` ops, and it is
+    used by the printer so round-trip preserves the original names.
   }];
-  let arguments = (ins SymbolNameAttr:$sym_name);
+  let arguments = (ins
+    SymbolNameAttr:$sym_name,
+    OptionalAttr<StrArrayAttr>:$param_names
+  );
   let regions = (region SizedRegion<1>:$body);
   // Custom format handles optional (%arg: !csl.comptime<T>, ...) block args.
   let hasCustomAssemblyFormat = 1;

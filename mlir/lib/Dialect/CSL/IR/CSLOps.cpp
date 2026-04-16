@@ -128,6 +128,22 @@ mlir::ParseResult xilinx::csl::ProgramOp::parse(
     }
   }
 
+  // Capture the SSA names of the block arguments (without the leading '%')
+  // as a `param_names` ArrayAttr so later passes and the printer can use
+  // them for validation and round-trip preservation.
+  if (!regionArgs.empty()) {
+    SmallVector<Attribute> names;
+    names.reserve(regionArgs.size());
+    for (auto &arg : regionArgs) {
+      StringRef rawName = arg.ssaName.name;
+      if (rawName.starts_with("%"))
+        rawName = rawName.drop_front();
+      names.push_back(StringAttr::get(parser.getContext(), rawName));
+    }
+    result.addAttribute("param_names",
+                        ArrayAttr::get(parser.getContext(), names));
+  }
+
   auto *body = result.addRegion();
   if (parser.parseRegion(*body, regionArgs))
     return mlir::failure();
@@ -140,18 +156,32 @@ void xilinx::csl::ProgramOp::print(mlir::OpAsmPrinter &printer) {
   printer << ' ';
   printer.printSymbolName(getSymName());
 
-  // Print block args if any
+  // Print block args if any, using the stored `param_names` when present
+  // so round-trip preserves user-facing names like `%col` instead of `%arg0`.
   Block &entry = getBody().front();
   if (!entry.getArguments().empty()) {
     printer << '(';
-    llvm::interleaveComma(entry.getArguments(), printer,
-                          [&](mlir::BlockArgument arg) {
-      printer.printOperand(arg);
+    mlir::ArrayAttr names = getParamNamesAttr();
+    for (unsigned i = 0, e = entry.getArguments().size(); i < e; ++i) {
+      if (i > 0)
+        printer << ", ";
+      mlir::BlockArgument arg = entry.getArgument(i);
+      if (names && i < names.size()) {
+        printer << '%'
+                << mlir::cast<mlir::StringAttr>(names[i]).getValue();
+      } else {
+        printer.printOperand(arg);
+      }
       printer << ": ";
       printer.printType(arg.getType());
-    });
+    }
     printer << ')';
   }
+
+  // Suppress `param_names` from the attribute dict since it's printed
+  // implicitly through the block-argument syntax above.
+  printer.printOptionalAttrDict((*this)->getAttrs(),
+      {ProgramOp::getSymNameAttrName(), "param_names"});
 
   printer << ' ';
   printer.printRegion(getBody(), /*printEntryBlockArgs=*/false);

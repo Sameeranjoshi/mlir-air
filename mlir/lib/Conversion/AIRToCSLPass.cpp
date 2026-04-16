@@ -191,7 +191,8 @@ static LogicalResult lowerFuncToWafer(FuncOp func) {
 
   // ---- csl.program @<progName> ----
   auto progOp = xilinx::csl::ProgramOp::create(wb, loc,
-                                               wb.getStringAttr(progName));
+                                               wb.getStringAttr(progName),
+                                               /*param_names=*/mlir::ArrayAttr{});
   if (progOp.getBody().empty())
     progOp.getBody().emplaceBlock();
   Block *progBlock = &progOp.getBody().front();
