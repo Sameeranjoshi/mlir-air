@@ -18,7 +18,6 @@ set(LIBS
   ${extension_libs}
   AIRDialect
   AIRRtDialect
-  CSLRuntimeDialect
   AIRUtil
   AIRConversionPasses
   AIRTransformPasses

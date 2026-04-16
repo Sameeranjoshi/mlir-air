@@ -3,5 +3,4 @@
 
 # Target translation tests (CSL Runtime → CSL text files)
 
-add_subdirectory(CSLRuntimeToCSL)
 add_subdirectory(CSLV2ToPy)

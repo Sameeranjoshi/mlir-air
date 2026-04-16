@@ -14,12 +14,10 @@
 #include "air/Conversion/AIRRtToNpuPass.h"
 #include "air/Conversion/AIRToAIEPass.h"
 #include "air/Conversion/AIRToAsyncPass.h"
-#include "air/Conversion/AIRToCSLDialectPass.h"
 #include "air/Conversion/AIRToCSLPass.h"
 #include "air/Conversion/CSLDeriveExportsPass.h"
 #include "air/Conversion/AIRToROCDLPass.h"
 #include "air/Conversion/ConvertToAIRPass.h"
-#include "air/Conversion/CSLToCSLRuntimePass.h"
 #include "air/Conversion/GPUKernelOutlinePass.h"
 namespace xilinx {
 namespace air {

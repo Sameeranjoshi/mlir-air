@@ -5,9 +5,7 @@
 set(CONVERSION_SOURCES
   ConvertToAIRPass.cpp
   AIRToAsyncPass.cpp
-  AIRToCSLDialect/AIRToCSLDialect.cpp
   AIRToCSLPass.cpp
-  CSLToCSLRuntime/CSLToCSLRuntime.cpp
   CSLDeriveExports.cpp
   Passes.cpp
 )
@@ -16,7 +14,6 @@ set(CONVERSION_LINK_LIBS
   AIRDialect
   AIRRtDialect
   CSLDialect
-  CSLRuntimeDialect
   AIRUtil
   MLIRIR
   MLIRLinalgUtils

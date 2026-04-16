@@ -9,7 +9,6 @@
 #include "air/Dialect/AIR/AIRDialect.h"
 #include "air/Dialect/AIRRt/AIRRtDialect.h"
 #include "air/Dialect/CSL/CSLDialect.h"
-#include "air/Dialect/CSLRuntime/CSLRuntimeDialect.h"
 
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/MLIRContext.h"
@@ -32,8 +31,6 @@ int main(int argc, char **argv) {
 
   registerAllTranslations();
   xilinx::air::registerAIRRtTranslations();
-  // CSL dialect: use conversion to CSL Runtime, then emit via --emit-csl-rt
-  xilinx::csl_rt::registerCSLRuntimeToPyTranslation();
   // CSL v2 dialect: emit pe_program.csl, csl_layout.py, run.py directly
   xilinx::csl::registerCSLV2ToPyTranslations();
 

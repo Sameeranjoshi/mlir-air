@@ -68,14 +68,6 @@ void xilinx::air::registerConversionPasses() {
   // CSL dialect lowering passes
   mlir::registerPass(
       []() -> std::unique_ptr<mlir::Pass> {
-        return createAIRToCSLDialectPass();
-      });
-  mlir::registerPass(
-      []() -> std::unique_ptr<mlir::Pass> {
-        return createCSLToCSLRuntimePass();
-      });
-  mlir::registerPass(
-      []() -> std::unique_ptr<mlir::Pass> {
         return createCSLDeriveExportsPass();
       });
   mlir::registerPass(
