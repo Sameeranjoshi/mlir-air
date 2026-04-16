@@ -20,33 +20,41 @@ set_target_properties(check-air-mlir PROPERTIES FOLDER "Tests")
 add_lit_testsuites(AIRMLIR ${CMAKE_CURRENT_SOURCE_DIR} DEPENDS ${TEST_DEPENDS})
 
 #===----------------------------------------------------------------------===//
-# CSL Dialect Test Suites — Simplified Naming
+# CSL Test Suites
+#
+#   ninja check-csl              — all CSL tests
+#   ninja check-csl-dialect      — Dialect/CSL/         (op round-trip, diagnostics)
+#   ninja check-csl-conversion   — Conversion/AIRToCSL/ (-air-to-csl, derive-exports, e2e)
+#   ninja check-csl-emitters     — Targets/CSLV2ToPy/   (--emit-csl-program/layout/host)
 #===----------------------------------------------------------------------===//
 
-# CSL Dialect tests (csl.* operations, parsing, round-trip)
-add_lit_testsuite(check-csld "Running CSL dialect tests"
+# 1. CSL dialect tests (csl.*, csl_layout.*, csl_host.* ops)
+add_lit_testsuite(check-csl-dialect "Running CSL dialect tests"
                   ${CMAKE_CURRENT_BINARY_DIR}/Dialect/CSL
                   DEPENDS ${TEST_DEPENDS})
-set_target_properties(check-csld PROPERTIES FOLDER "Tests/CSL")
+set_target_properties(check-csl-dialect PROPERTIES FOLDER "Tests/CSL")
 
-# AIR to CSL conversion tests (V2 pipeline)
-add_lit_testsuite(check-air-to-csl "Running AIR to CSL conversion tests"
+# 2. AIR → CSL conversion tests (-air-to-csl, -csl-derive-exports, e2e pipeline)
+add_lit_testsuite(check-csl-conversion "Running AIR to CSL conversion tests"
                   ${CMAKE_CURRENT_BINARY_DIR}/Conversion/AIRToCSL
                   DEPENDS ${TEST_DEPENDS})
-set_target_properties(check-air-to-csl PROPERTIES FOLDER "Tests/CSL")
+set_target_properties(check-csl-conversion PROPERTIES FOLDER "Tests/CSL")
 
-# Convenience alias: check-csl runs all CSL tests
+# 3. CSL emitter tests (--emit-csl-program, --emit-csl-layout, --emit-csl-host)
+add_lit_testsuite(check-csl-emitters "Running CSL emitter tests"
+                  ${CMAKE_CURRENT_BINARY_DIR}/Targets/CSLV2ToPy
+                  DEPENDS ${TEST_DEPENDS})
+set_target_properties(check-csl-emitters PROPERTIES FOLDER "Tests/CSL")
+
+# Aggregate: check-csl runs all three suites
 add_custom_target(check-csl DEPENDS
-  check-csld
-  check-air-to-csl
+  check-csl-dialect
+  check-csl-conversion
+  check-csl-emitters
 )
 set_target_properties(check-csl PROPERTIES FOLDER "Tests/CSL")
 
-# Legacy alias for compatibility
-add_custom_target(check-csl-all DEPENDS check-csl)
-set_target_properties(check-csl-all PROPERTIES FOLDER "Tests/CSL")
-
-add_dependencies(check-all check-air-mlir check-csld)
+add_dependencies(check-all check-air-mlir check-csl-dialect)
 
 add_subdirectory(CppUnitTests)
 add_subdirectory(Targets)
