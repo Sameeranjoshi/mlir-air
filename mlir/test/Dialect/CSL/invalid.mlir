@@ -25,10 +25,11 @@ module {
 
 // -----
 
-// csl.func with Symbol trait requires parent with SymbolTable (must be in csl.kernel)
-csl.spatial_placement {
+// csl.func with Symbol trait requires parent with SymbolTable
+func.func @bad_func_parent() {
   // expected-error @+1 {{'csl.func' op symbol's parent must have the SymbolTable trait}}
   csl.func @compute {
     csl.return
   }
+  return
 }

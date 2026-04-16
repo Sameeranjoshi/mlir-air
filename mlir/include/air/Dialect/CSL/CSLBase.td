@@ -34,19 +34,17 @@ def CSL_Dialect : Dialect {
     kernels, and host runtime interfaces -- as first-class MLIR operations
     with verification and optimization opportunities.
 
-    The dialect is organized into six conceptual sub-dialect categories,
+    The dialect is organized into the following conceptual categories,
     all sharing the `csl` namespace:
 
-    - **Layout**: top-level spatial configuration (`csl.layout`,
-      `csl.set_rectangle`).
     - **Routing**: color declaration and directional routing
       (`csl.color`, `csl.route`).
     - **Kernel**: PE-level compute (`csl.func`, `csl.task`, `csl.var`).
-    - **Data Movement**: DSD creation and bulk moves (`csl.get_mem_dsd`,
-      `csl.get_fab_dsd`, `csl.mov`).
-    - **Runtime**: module system and host interface
-      (`csl.import_module`, `csl.export_name`, `csl.export_symbol`,
-       `csl.module`, `csl.comptime`).
+    - **Runtime**: module import (`csl.import_module`).
+    - **V2 Structural**: WSE program hierarchy (`csl.wafer`,
+      `csl.program`, `csl.export`, `csl.layout`, `csl.host`).
+    - **Data Movement** (deferred): DSD creation and bulk moves
+      (`csl.get_mem_dsd`, `csl.get_fab_dsd`, `csl.mov`).
   }];
 
   let extraClassDeclaration = [{
@@ -84,12 +82,6 @@ def CSL_ImportedModuleType : DialectType<
   CPred<"llvm::isa<xilinx::csl::ImportedModuleType>($_self)">,
   "CSL imported module type">,
   BuildableType<"xilinx::csl::ImportedModuleType::get($_builder.getContext())">;
-
-def CSL_KernelType : DialectType<
-  CSL_Dialect,
-  CPred<"llvm::isa<xilinx::csl::KernelType>($_self)">,
-  "CSL kernel handle">,
-  BuildableType<"xilinx::csl::KernelType::get($_builder.getContext())">;
 
 def CSL_RouteType : DialectType<
   CSL_Dialect,

@@ -6,13 +6,14 @@
 //===----------------------------------------------------------------------===//
 //
 // Consolidated TableGen file containing all active CSL dialect operations.
-// This includes routing ops, layout/spatial ops, PE program ops, and
+// This includes routing ops, PE program ops, V2 structural ops, and
 // (commented) data movement ops.
 //
-// Final op count: 12 active ops
+// Active op count: 13
 //   - Routing (2): csl.color, csl.route
-//   - Layout (4): csl.spatial_placement, csl.code_region, csl.place, csl.dataflow
-//   - PE Program (5): csl.kernel, csl.func, csl.task, csl.return, csl.var, csl.import_module
+//   - PE Program (4): csl.func, csl.task, csl.return, csl.var
+//   - Runtime (1): csl.import_module
+//   - V2 Structural (5): csl.wafer, csl.program, csl.export, csl.layout, csl.host
 //   - Deferred (3): csl.get_mem_dsd, csl.get_fab_dsd, csl.mov
 //
 //===----------------------------------------------------------------------===//
@@ -25,28 +26,6 @@ include "mlir/IR/BuiltinAttributes.td"
 include "mlir/IR/OpAsmInterface.td"
 include "mlir/IR/SymbolInterfaces.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
-
-//===----------------------------------------------------------------------===//
-// Type predicates (layout / spatial)
-//===----------------------------------------------------------------------===//
-
-def CSL_CodeRegionType : DialectType<
-  CSL_Dialect,
-  CPred<"llvm::isa<xilinx::csl::CodeRegionType>($_self)">,
-  "CSL code region handle">,
-  BuildableType<"xilinx::csl::CodeRegionType::get($_builder.getContext())">;
-
-def CSL_PortType : DialectType<
-  CSL_Dialect,
-  CPred<"llvm::isa<xilinx::csl::PortType>($_self)">,
-  "CSL port handle">,
-  BuildableType<"xilinx::csl::PortType::get($_builder.getContext())">;
-
-def CSL_StreamType : DialectType<
-  CSL_Dialect,
-  CPred<"llvm::isa<xilinx::csl::StreamType>($_self)">,
-  "CSL stream handle">,
-  BuildableType<"xilinx::csl::StreamType::get($_builder.getContext())">;
 
 //===----------------------------------------------------------------------===//
 // Routing ops — color and route declaration
@@ -88,7 +67,7 @@ def CSL_RouteOp : CSL_Op<"route", []> {
     Direction values follow the Direction enum: NORTH=0, SOUTH=1, EAST=2,
     WEST=3, RAMP=4 (RAMP = PE compute unit).
 
-    The result is a `!csl.route` handle used by code_region and other ops.
+    The result is a `!csl.route` handle used by layout and other ops.
 
     Examples:
     ```mlir
@@ -107,176 +86,8 @@ def CSL_RouteOp : CSL_Op<"route", []> {
 }
 
 //===----------------------------------------------------------------------===//
-// Layout ops — spatial placement and region structure
+// PE Program ops — functions, tasks, variables
 //===----------------------------------------------------------------------===//
-
-//===----------------------------------------------------------------------===//
-// csl.spatial_placement — Top-level spatial placement container
-//===----------------------------------------------------------------------===//
-
-def CSL_SpatialPlacementOp : CSL_Op<"spatial_placement", [
-    SingleBlock,
-    NoTerminator
-  ]> {
-  let summary = "Top-level spatial placement container";
-  let description = [{
-    Top-level container for the spatial placement programming model.
-    The body holds color/route/kernel declarations, code region definitions
-    with per-PE configuration, placement with kernel binding, and dataflow
-    connections between ports.
-
-    Example:
-    ```mlir
-    csl.spatial_placement {
-      %red = csl.color : !csl.color
-      %r1 = csl.route {input_dir = RAMP, output_dir = WEST} : !csl.route
-      %k1 = csl.kernel "pe.csl" { } : !csl.kernel
-      %regionA = csl.code_region routes(%r1) colors(%red) {
-        csl.place %regionA %k1 {x = 0 : i64, y = 0 : i64}
-      } : !csl.code_region
-    }
-    ```
-  }];
-
-  let regions = (region SizedRegion<1>:$body);
-  let assemblyFormat = "$body attr-dict";
-}
-
-//===----------------------------------------------------------------------===//
-// csl.code_region — Define a code region with routes and colors
-//===----------------------------------------------------------------------===//
-
-def CSL_CodeRegionOp : CSL_Op<"code_region", [
-    SingleBlock,
-    NoTerminator,
-    AttrSizedOperandSegments
-  ]> {
-  let summary = "Define a PE grid code region with routes and colors";
-  let description = [{
-    Defines a code region with routing configurations, colors, and PE grid shape.
-    The body may contain ops to configure per-PE behavior.
-    Returns a `!csl.code_region` handle used by place and dataflow ops.
-
-    Example:
-    ```mlir
-    %r1 = csl.route {input_dir = RAMP, output_dir = WEST} : !csl.route
-    %c = csl.color {id = 3 : i32} : !csl.color
-    %regionA = csl.code_region routes(%r1) colors(%c) {
-      ...
-    } {width = 4 : i64, height = 4 : i64} : !csl.code_region
-    ```
-  }];
-
-  let arguments = (ins
-    OptionalAttr<StrAttr>:$region_name,
-    Variadic<CSL_RouteType>:$routes,
-    Variadic<CSL_ColorType>:$colors,
-    I64Attr:$width,
-    I64Attr:$height
-  );
-  let results = (outs CSL_CodeRegionType:$result);
-  let regions = (region SizedRegion<1>:$body);
-
-  let assemblyFormat = [{
-    ($region_name^)? `routes` `(` $routes `)` `colors` `(` $colors `)`
-    $body `{` `width` `=` $width `:` `i64` `,` `height` `=` $height `:` `i64` `}` attr-dict `:` type($result)
-  }];
-}
-
-//===----------------------------------------------------------------------===//
-// csl.place — Place a kernel at spatial coordinates
-//===----------------------------------------------------------------------===//
-
-def CSL_PlaceOp : CSL_Op<"place", []> {
-  let summary = "Place a kernel at spatial coordinates";
-  let description = [{
-    Assigns a kernel to a (x, y) position in the spatial grid.
-    Decouples kernel definition from region, allowing any kernel to be
-    placed on any region.
-
-    Example:
-    ```mlir
-    csl.place %region %kernel {x = 0 : i64, y = 0 : i64}
-    ```
-  }];
-
-  let arguments = (ins
-    CSL_CodeRegionType:$region,
-    CSL_KernelType:$kernel,
-    I64Attr:$x,
-    I64Attr:$y
-  );
-
-  let assemblyFormat = "$region $kernel attr-dict";
-}
-
-//===----------------------------------------------------------------------===//
-// csl.dataflow — Connect two ports
-//===----------------------------------------------------------------------===//
-
-def CSL_DataflowOp : CSL_Op<"dataflow", []> {
-  let summary = "Connect a source port to a destination port";
-  let description = [{
-    Creates a directed data connection between two I/O ports across regions.
-    The `cslc` compiler automatically finds optimal routes between the
-    connected ports.
-
-    Example:
-    ```mlir
-    csl.dataflow %src_port -> %dst_port
-    ```
-  }];
-
-  let arguments = (ins
-    CSL_PortType:$src,
-    CSL_PortType:$dst
-  );
-
-  let assemblyFormat = "$src `->` $dst attr-dict";
-}
-
-//===----------------------------------------------------------------------===//
-// PE Program ops — kernel, functions, tasks, variables
-//===----------------------------------------------------------------------===//
-
-//===----------------------------------------------------------------------===//
-// csl.kernel — PE kernel program container
-//===----------------------------------------------------------------------===//
-
-def CSL_KernelOp : CSL_Op<"kernel", [
-    SingleBlock,
-    NoTerminator,
-    SymbolTable
-  ]> {
-  let summary = "PE kernel program container";
-  let description = [{
-    A kernel container that groups PE-level compute operations (functions,
-    tasks, variables) together with a CSL source file path and optional
-    compile-time parameters. Returns a `!csl.kernel` handle that can be
-    bound to a code region via `csl.place`.
-
-    Example:
-    ```mlir
-    %k = csl.kernel {source_file = "pe.csl"} {
-      csl.func @compute { csl.return }
-    } : !csl.kernel
-
-    %k2 = csl.kernel {source_file = "pe.csl", params = {width = 100 : i32}} {
-      csl.var @buf : memref<1024xf32>
-      csl.func @compute { csl.return }
-    } : !csl.kernel
-    ```
-  }];
-
-  let arguments = (ins
-    OptionalAttr<StrAttr>:$source_file,
-    OptionalAttr<DictionaryAttr>:$params
-  );
-  let results = (outs CSL_KernelType:$result);
-  let regions = (region SizedRegion<1>:$body);
-
-  let assemblyFormat = "$body attr-dict `:` type($result)";
-}
 
 //===----------------------------------------------------------------------===//
 // csl.func — PE function declaration
@@ -372,7 +183,7 @@ def CSL_VarOp : CSL_Op<"var", [
 
     NOTE: csl.var does not carry the Symbol trait because MLIR symbols
     cannot have SSA results. The sym_name is used purely as a human-readable
-    identifier and for csl.export_symbol string matching.
+    identifier and for csl.export string matching.
 
     Example:
     ```mlir
@@ -413,76 +224,6 @@ def CSL_ImportModuleOp : CSL_Op<"import_module", []> {
   let results = (outs CSL_ImportedModuleType:$result);
 
   let assemblyFormat = "$module_name attr-dict `:` type($result)";
-}
-
-//===----------------------------------------------------------------------===//
-// Runtime / host-interface ops
-//===----------------------------------------------------------------------===//
-
-//===----------------------------------------------------------------------===//
-// csl.export_name — Host-visible name and type for a buffer or function
-//===----------------------------------------------------------------------===//
-
-def CSL_ExportNameOp : CSL_Op<"export_name"> {
-  let summary = "Declare a host-visible exported name with a type";
-  let description = [{
-    Declares a name that the host runtime can address. The optional
-    `direction` attribute distinguishes input buffers (`"in"`) from
-    output buffers (`"out"`). Function-typed exports (host-callable
-    kernel entry points) have no direction.
-
-    Lowering: `csl-to-csl-rt` uses the `direction` attribute to decide
-    whether to synthesize `memcpy_h2d` or `memcpy_d2h` in the host
-    runtime sequence. The translator emits the corresponding
-    `@export_name(...)` call in `layout.csl`.
-
-    Examples:
-    ```mlir
-    csl.export_name "a" : memref<256xf32> {direction = "in"}
-    csl.export_name "c" : memref<256xf32> {direction = "out"}
-    csl.export_name "compute" : () -> ()
-    ```
-  }];
-
-  let arguments = (ins
-    StrAttr:$sym_name,
-    TypeAttr:$exported_type,
-    OptionalAttr<StrAttr>:$direction
-  );
-
-  let assemblyFormat = [{
-    $sym_name `:` $exported_type (`{` `direction` `=` $direction^ `}`)? attr-dict
-  }];
-}
-
-//===----------------------------------------------------------------------===//
-// csl.export_symbol — Inside csl.comptime: export a kernel-local symbol
-//===----------------------------------------------------------------------===//
-
-def CSL_ExportSymbolOp : CSL_Op<"export_symbol"> {
-  let summary = "Export a kernel-local symbol via @export_symbol";
-  let description = [{
-    Inside a `csl.comptime` block, declares that a kernel-local
-    symbol (variable or function) should be made callable / readable
-    from the host. The optional `alias` attribute provides an
-    alternative name for the host side; when omitted, the symbol's
-    own name is used.
-
-    Examples:
-    ```mlir
-    csl.export_symbol @x alias("a")
-    csl.export_symbol @compute
-    ```
-  }];
-
-  let arguments = (ins
-    FlatSymbolRefAttr:$symbol,
-    OptionalAttr<StrAttr>:$alias
-  );
-
-  let assemblyFormat = [{
-    $symbol (`alias` `(` $alias^ `)`)? attr-dict
-  }];
 }
 
 //===----------------------------------------------------------------------===//

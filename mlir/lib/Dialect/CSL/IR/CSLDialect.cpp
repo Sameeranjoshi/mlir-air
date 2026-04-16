@@ -15,8 +15,7 @@ using namespace mlir;
 namespace xilinx::csl {
 
 void CSLDialect::initialize() {
-  addTypes<ColorType, DsdType, ImportedModuleType,
-           CodeRegionType, PortType, StreamType, KernelType, RouteType,
+  addTypes<ColorType, DsdType, ImportedModuleType, RouteType,
            ComptimeType>();
   addOperations<
 #define GET_OP_LIST
@@ -36,14 +35,6 @@ Type CSLDialect::parseType(DialectAsmParser &parser) const {
     return DsdType::get(context);
   if (keyword == "imported_module")
     return ImportedModuleType::get(context);
-  if (keyword == "code_region")
-    return CodeRegionType::get(context);
-  if (keyword == "port")
-    return PortType::get(context);
-  if (keyword == "stream")
-    return StreamType::get(context);
-  if (keyword == "kernel")
-    return KernelType::get(context);
   if (keyword == "route")
     return RouteType::get(context);
   if (keyword == "comptime") {
@@ -66,10 +57,6 @@ void CSLDialect::printType(Type type, DialectAsmPrinter &os) const {
       .Case<ColorType>([&](Type) { os << "color"; })
       .Case<DsdType>([&](Type) { os << "dsd"; })
       .Case<ImportedModuleType>([&](Type) { os << "imported_module"; })
-      .Case<CodeRegionType>([&](Type) { os << "code_region"; })
-      .Case<PortType>([&](Type) { os << "port"; })
-      .Case<StreamType>([&](Type) { os << "stream"; })
-      .Case<KernelType>([&](Type) { os << "kernel"; })
       .Case<RouteType>([&](Type) { os << "route"; })
       .Case<ComptimeType>([&](ComptimeType t) {
         os << "comptime<";
