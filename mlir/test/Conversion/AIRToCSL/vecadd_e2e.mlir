@@ -39,15 +39,26 @@
 // LAYOUT:     return layout
 
 // ---- Host checks ----
-// HOST: from csl_layout import get_layout
-// HOST: def main(target, arg0, arg1, arg2):
-// HOST:     artifacts = get_layout(target).compile("out/")
-// HOST:     N = 256
-// HOST:     with SdkRuntime(artifacts) as runner:
-// HOST:         runner.memcpy_h2d(runner.get_id("arg0"), arg0, 0, 0, 1, 1, N)
-// HOST:         runner.memcpy_h2d(runner.get_id("arg1"), arg1, 0, 0, 1, 1, N)
-// HOST:         runner.launch("compute", nonblock=False)
-// HOST:         runner.memcpy_d2h(arg2, runner.get_id("arg2"), 0, 0, 1, 1, N)
+// HOST: #!/usr/bin/env cs_python
+// HOST: import argparse
+// HOST: from cerebras.sdk.runtime.sdkruntimepybind import (
+// HOST:     SdkRuntime,
+// HOST:     MemcpyOrder,
+// HOST:     MemcpyDataType,
+// HOST: )
+// HOST: N = 256
+// HOST: arg0 = np.arange(N, dtype=np.float32)
+// HOST: arg1 = np.arange(N, dtype=np.float32) * 2.0
+// HOST: arg2 = np.zeros(N, dtype=np.float32)
+// HOST: runner = SdkRuntime(args.name, cmaddr=args.cmaddr)
+// HOST: runner.load()
+// HOST: runner.run()
+// HOST: runner.memcpy_h2d(runner.get_id("arg0"), arg0, 0, 0, 1, 1, N,
+// HOST: runner.memcpy_h2d(runner.get_id("arg1"), arg1, 0, 0, 1, 1, N,
+// HOST: runner.launch("compute", nonblock=False)
+// HOST: runner.memcpy_d2h(arg2, runner.get_id("arg2"), 0, 0, 1, 1, N,
+// HOST: runner.stop()
+// HOST: print("SUCCESS!")
 
 module {
   func.func @vecadd(%a: memref<256xf32>, %b: memref<256xf32>,

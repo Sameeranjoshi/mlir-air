@@ -5,11 +5,20 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// Registers --emit-csl, which writes all three CSL output files
-// (<program>.csl, csl_layout.py, run.py) into --output-dir=<path>.
+// Registers --emit-csl, which writes all the CSL output files into
+// --output-dir=<path>:
+//   <program>.csl       — device kernel
+//   layout.csl          — cslc layout wrapper (wires memcpy_params)
+//   csl_layout.py       — SdkLayout constructor (Python, optional alternative)
+//   run.py              — runnable host driver (cs_python)
+//   commands_wse3.sh    — one-command runner for CS-3 simulator
+//   commands_wse2.sh    — one-command runner for CS-2 simulator
 //
-// Also provides registerCSLEmitTranslations() that registers all four
-// CSL translations in one call.
+// The commands_wse{2,3}.sh scripts compile `layout.csl` via `cslc --memcpy`
+// into `compiled/` and then invoke `cs_python run.py --name=compiled`.
+//
+// Also provides registerCSLEmitTranslations() that registers all CSL
+// translations in one call.
 //
 //===----------------------------------------------------------------------===//
 
@@ -56,9 +65,161 @@ static llvm::cl::opt<std::string> EmitCslOutputDir(
     llvm::cl::desc("Output directory for --emit-csl (required)"),
     llvm::cl::init(""));
 
+/// Write `contents` to `<dir>/<filename>` and chmod it executable (0755).
+static LogicalResult writeExecutable(ModuleOp module, llvm::StringRef dir,
+                                     llvm::StringRef filename,
+                                     llvm::StringRef contents) {
+  llvm::SmallString<128> path(dir);
+  llvm::sys::path::append(path, filename);
+  std::error_code ec;
+  {
+    llvm::raw_fd_ostream out(llvm::StringRef(path.data(), path.size()), ec,
+                             llvm::sys::fs::OF_Text);
+    if (ec) {
+      module.emitError() << "cannot open '" << path.c_str()
+                         << "': " << ec.message();
+      return failure();
+    }
+    out << contents;
+  }
+  // chmod 0755: owner rwx, group rx, world rx.
+  namespace fs = llvm::sys::fs;
+  ec = fs::setPermissions(
+      llvm::StringRef(path.data(), path.size()),
+      fs::owner_read | fs::owner_write | fs::owner_exe | fs::group_read |
+          fs::group_exe | fs::all_read | fs::all_exe);
+  if (ec) {
+    module.emitError() << "cannot chmod '" << path.c_str()
+                       << "': " << ec.message();
+    return failure();
+  }
+  return success();
+}
+
+/// Map an MLIR element type to a CSL primitive type name.
+static llvm::StringRef cslEltName(Type t) {
+  if (t.isF32()) return "f32";
+  if (t.isF16()) return "f16";
+  if (t.isInteger(32)) return "i32";
+  if (t.isInteger(16)) return "i16";
+  return "f32";
+}
+
+struct ExportInfo {
+  std::string alias;
+  bool isFunc;
+  std::string eltName;  // for var-kind exports: element type ("f32" etc.)
+  bool writable;        // for var-kind exports: true if host h2d allowed
+};
+
+/// Walk csl.program ops to collect the (alias, type, direction) for each
+/// host-visible export (var aliases + function exports).
+static llvm::SmallVector<ExportInfo, 4> collectExports(ModuleOp module) {
+  llvm::SmallVector<ExportInfo, 4> out;
+  // Map var sym-name -> element type (within the first program).
+  llvm::DenseMap<StringRef, Type> varElt;
+  xilinx::csl::ProgramOp prog;
+  module.walk([&](xilinx::csl::ProgramOp p) {
+    if (!prog) prog = p;
+  });
+  if (!prog) return out;
+  prog.walk([&](xilinx::csl::VarOp v) {
+    if (auto memTy = dyn_cast<MemRefType>(v.getResult().getType()))
+      varElt[v.getSymName()] = memTy.getElementType();
+  });
+  prog.walk([&](xilinx::csl::ExportOp e) {
+    ExportInfo info;
+    std::optional<StringRef> kind = e.getKind();
+    info.isFunc = (kind.has_value() && *kind == "func");
+    if (auto alias = e.getAlias())
+      info.alias = alias->str();
+    else
+      info.alias = e.getSym().str();
+
+    if (!info.isFunc) {
+      StringRef dir;
+      if (auto d = e.getDirection())
+        dir = *d;
+      // "in" = host -> device = writable from host.
+      // "out" = device -> host = readable only.
+      info.writable = (dir != "out");
+      Type eltTy;
+      auto it = varElt.find(e.getSym());
+      if (it != varElt.end())
+        eltTy = it->second;
+      info.eltName = eltTy ? cslEltName(eltTy).str() : std::string("f32");
+    }
+    out.push_back(std::move(info));
+  });
+  return out;
+}
+
+/// Build the layout.csl wrapper for a width x height grid that wires
+/// memcpy_params into every tile running `<progName>.csl`, and declares
+/// every host-visible symbol via `@export_name` so cslc --memcpy can wire
+/// them up for the host memcpy subsystem.
+static std::string makeLayoutCsl(ModuleOp module, int64_t width,
+                                 int64_t height,
+                                 const std::string &progName) {
+  std::string out;
+  llvm::raw_string_ostream os(out);
+  os << "// Generated by air-translate --emit-csl\n";
+  os << "// CSL layout wrapper that wires `<memcpy/get_params>` into each PE\n";
+  os << "// and declares host-visible symbols via `@export_name`.\n";
+  os << "// Compile with:\n";
+  os << "//   cslc layout.csl --arch=wse3 --fabric-dims=8,3 --fabric-offsets="
+        "4,1 \\\n";
+  os << "//        -o compiled --memcpy --channels 1\n\n";
+  os << "const memcpy = @import_module(\"<memcpy/get_params>\", .{\n";
+  os << "  .width = " << width << ",\n";
+  os << "  .height = " << height << ",\n";
+  os << "});\n\n";
+  os << "layout {\n";
+  os << "  @set_rectangle(" << width << ", " << height << ");\n";
+  for (int64_t y = 0; y < height; ++y)
+    for (int64_t x = 0; x < width; ++x)
+      os << "  @set_tile_code(" << x << ", " << y << ", \"" << progName
+         << ".csl\", .{ .memcpy_params = memcpy.get_params(" << x << ") });\n";
+  os << "\n";
+
+  // Declare host-visible exports.
+  auto exports = collectExports(module);
+  for (const auto &e : exports) {
+    if (e.isFunc) {
+      os << "  @export_name(\"" << e.alias << "\", fn()void);\n";
+    } else {
+      os << "  @export_name(\"" << e.alias << "\", [*]" << e.eltName << ", "
+         << (e.writable ? "true" : "false") << ");\n";
+    }
+  }
+  os << "}\n";
+  return out;
+}
+
+/// Determine (width, height) for the layout from csl.layout, falling back to
+/// 1x1 if absent. Also grab the program name.
+static void probeLayout(ModuleOp module, std::string &progName, int64_t &width,
+                        int64_t &height) {
+  progName = "program";
+  width = 1;
+  height = 1;
+  module.walk([&](xilinx::csl::ProgramOp p) {
+    if (progName == "program") progName = p.getSymName().str();
+  });
+  module.walk([&](xilinx::csl::LayoutOp layout) {
+    int64_t w = 0, h = 0;
+    if (auto attr = layout->getAttrOfType<IntegerAttr>("width"))
+      w = attr.getInt();
+    if (auto attr = layout->getAttrOfType<IntegerAttr>("height"))
+      h = attr.getInt();
+    if (w > 0) width = w;
+    if (h > 0) height = h;
+  });
+}
+
 static LogicalResult emitAll(ModuleOp module, llvm::raw_ostream &os) {
-  // `os` is only used for a short status line — the three real outputs go
-  // to files under --output-dir.
+  // `os` is only used for a short status line — the real outputs go to
+  // files under --output-dir.
   if (EmitCslOutputDir.empty()) {
     module.emitError() << "--emit-csl requires --output-dir=<path>";
     return failure();
@@ -72,13 +233,9 @@ static LogicalResult emitAll(ModuleOp module, llvm::raw_ostream &os) {
     return failure();
   }
 
-  // Determine program file name from the first csl.program's sym_name.
   std::string progName;
-  module.walk([&](xilinx::csl::ProgramOp p) {
-    if (progName.empty()) progName = p.getSymName().str();
-  });
-  if (progName.empty())
-    progName = "program";
+  int64_t layoutW, layoutH;
+  probeLayout(module, progName, layoutW, layoutH);
 
   auto openOut = [&](const std::string &filename,
                      std::unique_ptr<llvm::raw_fd_ostream> &outPtr)
@@ -96,18 +253,67 @@ static LogicalResult emitAll(ModuleOp module, llvm::raw_ostream &os) {
     return success();
   };
 
-  std::unique_ptr<llvm::raw_fd_ostream> progOs, layoutOs, hostOs;
+  // Emit the three Python/CSL body files first.
+  std::unique_ptr<llvm::raw_fd_ostream> progOs, layoutPyOs, hostOs;
   if (failed(openOut(progName + ".csl", progOs))) return failure();
-  if (failed(openOut("csl_layout.py", layoutOs))) return failure();
+  if (failed(openOut("csl_layout.py", layoutPyOs))) return failure();
   if (failed(openOut("run.py", hostOs))) return failure();
 
   if (failed(runProgramEmitter(module, *progOs))) return failure();
-  if (failed(runLayoutEmitter(module, *layoutOs))) return failure();
+  if (failed(runLayoutEmitter(module, *layoutPyOs))) return failure();
   if (failed(runHostEmitter(module, *hostOs))) return failure();
+  progOs.reset();
+  layoutPyOs.reset();
+  hostOs.reset();
 
-  os << "emitted: " << EmitCslOutputDir << "/" << progName << ".csl, "
-     << EmitCslOutputDir << "/csl_layout.py, " << EmitCslOutputDir
-     << "/run.py\n";
+  // Emit the layout.csl wrapper that wires memcpy_params into each tile.
+  {
+    llvm::SmallString<128> path(EmitCslOutputDir.getValue());
+    llvm::sys::path::append(path, "layout.csl");
+    std::error_code ec;
+    llvm::raw_fd_ostream out(llvm::StringRef(path.data(), path.size()), ec,
+                             llvm::sys::fs::OF_Text);
+    if (ec) {
+      module.emitError() << "cannot open '" << path.c_str()
+                         << "': " << ec.message();
+      return failure();
+    }
+    out << makeLayoutCsl(module, layoutW, layoutH, progName);
+  }
+
+  // Emit commands_wse{3,2}.sh: cslc compile, then cs_python run.py.
+  // Fabric dims cover a 1x1 tile with the mandatory halos; for larger grids
+  // we grow them accordingly. Match the dims known to work in `out/`.
+  int64_t fabricX = layoutW + 7;
+  int64_t fabricY = layoutH + 2;
+  auto mkCmd = [&](const char *archFlag) {
+    std::string s;
+    llvm::raw_string_ostream ss(s);
+    ss << "#!/usr/bin/env bash\n";
+    ss << "# Generated by air-translate --emit-csl\n";
+    ss << "# One-command runner: cslc compile + cs_python host driver.\n";
+    ss << "set -e\n";
+    ss << "DIR=\"$(cd \"$(dirname \"${BASH_SOURCE[0]}\")\" && pwd)\"\n";
+    ss << "cd \"$DIR\"\n";
+    ss << "cslc layout.csl " << archFlag << " \\\n";
+    ss << "     --fabric-dims=" << fabricX << "," << fabricY << " \\\n";
+    ss << "     --fabric-offsets=4,1 \\\n";
+    ss << "     -o compiled --memcpy --channels 1\n";
+    ss << "cs_python run.py --name=compiled\n";
+    return s;
+  };
+
+  std::string cmdWse3 = mkCmd("--arch=wse3");
+  std::string cmdWse2 = mkCmd("--arch=wse2");
+  if (failed(writeExecutable(module, EmitCslOutputDir, "commands_wse3.sh",
+                             cmdWse3)))
+    return failure();
+  if (failed(writeExecutable(module, EmitCslOutputDir, "commands_wse2.sh",
+                             cmdWse2)))
+    return failure();
+
+  os << "emitted: " << EmitCslOutputDir << "/{" << progName
+     << ".csl, layout.csl, csl_layout.py, run.py, commands_wse{2,3}.sh}\n";
   return success();
 }
 
@@ -116,7 +322,8 @@ static LogicalResult emitAll(ModuleOp module, llvm::raw_ostream &os) {
 void registerCSLEmitAllTranslation() {
   static TranslateFromMLIRRegistration reg(
       "emit-csl",
-      "Emit all three CSL files (program, layout, host) into --output-dir",
+      "Emit all CSL files (program, layout, host, commands_wse{2,3}.sh) "
+      "into --output-dir",
       emitAll,
       [](DialectRegistry &registry) {
         registry.insert<xilinx::csl::CSLDialect,
