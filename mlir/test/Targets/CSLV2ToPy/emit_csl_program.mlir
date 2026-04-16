@@ -1,4 +1,4 @@
-// RUN: air-opt -csl-derive-exports %s | air-translate --emit-csl-program | FileCheck %s
+// RUN: air-opt -csl-infer-exports %s | air-translate --emit-csl-program | FileCheck %s
 //
 // Verifies --emit-csl-program output for a 1x1 vecadd program.
 // Key check: @compute with kind="func" MUST appear in comptime block

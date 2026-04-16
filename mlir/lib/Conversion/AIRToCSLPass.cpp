@@ -252,19 +252,8 @@ static LogicalResult lowerFuncToWafer(FuncOp func) {
   }
   xilinx::csl::ReturnOp::create(fb, loc);
 
-  // csl.export @argN {alias = "argN"} + csl.export @compute {kind = "func"}
-  for (unsigned i = 0; i < nArgs; ++i) {
-    xilinx::csl::ExportOp::create(
-        pb, loc, FlatSymbolRefAttr::get(ctx, varNames[i]),
-        /*alias=*/pb.getStringAttr(varNames[i]),
-        /*kind=*/StringAttr{},
-        /*direction=*/StringAttr{});
-  }
-  xilinx::csl::ExportOp::create(
-      pb, loc, FlatSymbolRefAttr::get(ctx, "compute"),
-      /*alias=*/StringAttr{},
-      /*kind=*/pb.getStringAttr("func"),
-      /*direction=*/StringAttr{});
+  // NOTE: csl.export ops are no longer generated here.
+  // Use the -csl-infer-exports pass after -air-to-csl to auto-generate them.
 
   // ---- csl.layout {width = 1, height = 1} @<layoutName> ----
   auto layoutOp = xilinx::csl::LayoutOp::create(
@@ -282,23 +271,8 @@ static LogicalResult lowerFuncToWafer(FuncOp func) {
       lb, loc, FlatSymbolRefAttr::get(ctx, progName),
       lb.getI64IntegerAttr(0), lb.getI64IntegerAttr(0));
 
-  // csl_layout.export "argN" from @<prog>::@argN
-  auto progSymAttr = StringAttr::get(ctx, progName);
-  for (unsigned i = 0; i < nArgs; ++i) {
-    SymbolRefAttr fromRef = SymbolRefAttr::get(
-        progSymAttr, {FlatSymbolRefAttr::get(ctx, varNames[i])});
-    xilinx::csl_layout::ExportOp::create(
-        lb, loc, lb.getStringAttr(varNames[i]), fromRef,
-        /*kind=*/StringAttr{});
-  }
-  // csl_layout.export "compute" from @<prog>::@compute {kind = "func"}
-  {
-    SymbolRefAttr fromRef = SymbolRefAttr::get(
-        progSymAttr, {FlatSymbolRefAttr::get(ctx, "compute")});
-    xilinx::csl_layout::ExportOp::create(
-        lb, loc, lb.getStringAttr("compute"), fromRef,
-        lb.getStringAttr("func"));
-  }
+  // NOTE: csl_layout.export ops are no longer generated here.
+  // Use the -csl-infer-exports pass after -air-to-csl to auto-generate them.
 
   // ---- csl.host @<funcName>(%args...) {layout = @<layoutName>} ----
   auto hostOp = xilinx::csl::HostOp::create(

@@ -1,6 +1,8 @@
 // RUN: air-opt %s -air-to-csl | FileCheck %s
 //
 // Verifies -air-to-csl lowers a 1x1 vecadd air.herd to csl.wafer v2 IR.
+// NOTE: -air-to-csl no longer generates csl.export / csl_layout.export ops.
+// Those are produced by the separate -csl-infer-exports pass.
 
 // CHECK-LABEL: csl.wafer @vecadd
 // CHECK-SAME:  arch = "wse3"
@@ -13,17 +15,11 @@
 // CHECK:               memref.load
 // CHECK:               arith.addf
 // CHECK:               memref.store
-// CHECK:           csl.export @arg0 {alias = "arg0"}
-// CHECK:           csl.export @arg1 {alias = "arg1"}
-// CHECK:           csl.export @arg2 {alias = "arg2"}
-// CHECK:           csl.export @compute {kind = "func"}
+// CHECK-NOT:       csl.export
 // CHECK:         csl.layout
 // CHECK-SAME:    width = 1
 // CHECK:           csl_layout.place @h
-// CHECK:           csl_layout.export "arg0" from @h::@arg0
-// CHECK:           csl_layout.export "arg1" from @h::@arg1
-// CHECK:           csl_layout.export "arg2" from @h::@arg2
-// CHECK:           csl_layout.export "compute" from @h::@compute {kind = "func"}
+// CHECK-NOT:       csl_layout.export
 // CHECK:         csl.host @vecadd
 // CHECK:           csl_host.memcpy_h2d %{{.*}} to @vecadd_layout::@arg0
 // CHECK:           csl_host.memcpy_h2d %{{.*}} to @vecadd_layout::@arg1

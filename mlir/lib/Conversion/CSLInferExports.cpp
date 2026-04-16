@@ -110,12 +110,12 @@ static xilinx::csl::LayoutOp findLayout(xilinx::csl::WaferOp wafer) {
   return layout;
 }
 
-/// Collect existing csl.export aliases in a program (by sym name).
-static llvm::StringSet<>
+/// Collect existing csl.export ops in a program, keyed by sym name.
+static llvm::StringMap<xilinx::csl::ExportOp>
 collectExistingExports(xilinx::csl::ProgramOp prog) {
-  llvm::StringSet<> result;
+  llvm::StringMap<xilinx::csl::ExportOp> result;
   prog.getBody().walk([&](xilinx::csl::ExportOp exp) {
-    result.insert(exp.getSym());
+    result[exp.getSym()] = exp;
   });
   return result;
 }
@@ -153,16 +153,25 @@ static void inferExports(xilinx::csl::WaferOp wafer) {
 
   Location loc = wafer.getLoc();
 
-  // Insert new csl.export ops at the end of the program body.
+  // Insert new csl.export ops or update existing ones with host-derived info.
   {
     OpBuilder pb(ctx);
     pb.setInsertionPointToEnd(&prog.getBody().front());
 
     for (const auto &symLeaf : hostSyms.order) {
-      if (existingProgramExports.contains(symLeaf))
-        continue;
-
       const SymInfo &info = hostSyms.map[symLeaf];
+
+      auto it = existingProgramExports.find(symLeaf);
+      if (it != existingProgramExports.end()) {
+        // Export already exists — update its direction/kind from host info.
+        xilinx::csl::ExportOp existing = it->second;
+        if (info.isFunc && !existing.getKind())
+          existing->setAttr("kind", StringAttr::get(ctx, "func"));
+        if (!info.isFunc && !info.direction.empty() && !existing.getDirection())
+          existing->setAttr("direction",
+                            StringAttr::get(ctx, info.direction));
+        continue;
+      }
 
       if (info.isFunc) {
         // Function export: no alias, kind = "func", direction will be set

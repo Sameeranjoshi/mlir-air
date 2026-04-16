@@ -1,8 +1,8 @@
 // End-to-end pipeline test: AIR vecadd -> csl.wafer v2 -> three emitters.
 //
-// RUN: air-opt %s -air-to-csl -csl-derive-exports | air-translate --emit-csl-program | FileCheck %s --check-prefix=PROG
+// RUN: air-opt %s -air-to-csl -csl-infer-exports | air-translate --emit-csl-program | FileCheck %s --check-prefix=PROG
 // RUN: air-opt %s -air-to-csl | air-translate --emit-csl-layout | FileCheck %s --check-prefix=LAYOUT
-// RUN: air-opt %s -air-to-csl -csl-derive-exports | air-translate --emit-csl-host | FileCheck %s --check-prefix=HOST
+// RUN: air-opt %s -air-to-csl -csl-infer-exports | air-translate --emit-csl-host | FileCheck %s --check-prefix=HOST
 
 // ---- PE program checks ----
 // PROG: param memcpy_params: comptime_struct;
@@ -26,8 +26,8 @@
 // PROG: comptime {
 // PROG:   @export_symbol(arg0_ptr, "arg0");
 // PROG:   @export_symbol(arg1_ptr, "arg1");
-// PROG:   @export_symbol(arg2_ptr, "arg2");
 // PROG:   @export_symbol(compute);
+// PROG:   @export_symbol(arg2_ptr, "arg2");
 // PROG: }
 
 // ---- Layout checks ----

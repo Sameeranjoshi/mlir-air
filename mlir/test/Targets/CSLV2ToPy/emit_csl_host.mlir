@@ -1,4 +1,4 @@
-// RUN: air-opt -csl-derive-exports %s | air-translate --emit-csl-host | FileCheck %s
+// RUN: air-opt -csl-infer-exports %s | air-translate --emit-csl-host | FileCheck %s
 //
 // Verifies --emit-csl-host output for a 1x1 vecadd program.
 // Checks: import lines, def main signature, memcpy calls, launch call.
