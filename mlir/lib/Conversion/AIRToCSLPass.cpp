@@ -54,6 +54,55 @@ static bool isStoreTarget(BlockArgument arg) {
   return false;
 }
 
+/// Return true if the element type is supported by CSL (f32, f16, i32, i16).
+static bool isSupportedElemType(Type ty) {
+  return ty.isF32() || ty.isF16() || ty.isInteger(32) || ty.isInteger(16);
+}
+
+/// Validate that a herd's size operands are both constant 1.
+static LogicalResult validateHerdSize(xilinx::air::HerdOp herd) {
+  OperandRange sizes = herd.getSizeOperands();
+  for (Value sz : sizes) {
+    auto cstOp = sz.getDefiningOp<arith::ConstantIndexOp>();
+    if (!cstOp || cstOp.value() != 1) {
+      return herd->emitOpError("only 1x1 herds supported in this milestone");
+    }
+  }
+  return success();
+}
+
+/// Validate all milestone-scope constraints for the herd body.
+static LogicalResult validateHerdBody(xilinx::air::HerdOp herd) {
+  // Reject dma_memcpy_nd inside herd
+  auto walkResult = herd.walk([](xilinx::air::DmaMemcpyNdOp) {
+    return WalkResult::interrupt();
+  });
+  if (walkResult.wasInterrupted())
+    return herd->emitOpError("dma_memcpy_nd not yet supported in herd bodies");
+
+  // Reject async operations (air.execute)
+  walkResult = herd.walk([](xilinx::air::ExecuteOp) {
+    return WalkResult::interrupt();
+  });
+  if (walkResult.wasInterrupted())
+    return herd->emitOpError("async operations not supported in herd bodies");
+
+  // Validate kernel arguments: static shapes, supported elem types
+  for (BlockArgument arg : herd.getKernelArguments()) {
+    auto memTy = dyn_cast<MemRefType>(arg.getType());
+    if (!memTy)
+      continue;
+    for (int64_t dim : memTy.getShape()) {
+      if (ShapedType::isDynamic(dim))
+        return herd->emitOpError("kernel memrefs must be statically shaped");
+    }
+    if (!isSupportedElemType(memTy.getElementType()))
+      return herd->emitOpError("unsupported element type");
+  }
+
+  return success();
+}
+
 /// Lower a func.func containing air.launch > air.herd to a top-level
 /// csl.wafer. The original func.func is erased on success.
 static LogicalResult lowerFuncToWafer(FuncOp func) {
@@ -68,6 +117,22 @@ static LogicalResult lowerFuncToWafer(FuncOp func) {
     return failure();
   }
 
+  // Reject channel ops anywhere in the func.
+  auto channelWalk = func.walk([](xilinx::air::ChannelPutOp) {
+    return WalkResult::interrupt();
+  });
+  if (channelWalk.wasInterrupted()) {
+    func->emitOpError("inter-PE channels not yet supported");
+    return failure();
+  }
+  channelWalk = func.walk([](xilinx::air::ChannelGetOp) {
+    return WalkResult::interrupt();
+  });
+  if (channelWalk.wasInterrupted()) {
+    func->emitOpError("inter-PE channels not yet supported");
+    return failure();
+  }
+
   MLIRContext *ctx = func.getContext();
   OpBuilder moduleBuilder(ctx);
   moduleBuilder.setInsertionPointAfter(func);
@@ -75,11 +140,26 @@ static LogicalResult lowerFuncToWafer(FuncOp func) {
   // V1: handle a single launch per func.
   auto launch = launches.front();
 
+  // Check for multiple herds under this launch.
+  SmallVector<xilinx::air::HerdOp> herds;
+  launch.walk([&](xilinx::air::HerdOp h) { herds.push_back(h); });
+  if (herds.size() > 1) {
+    launch->emitOpError("multiple herds not yet supported");
+    return failure();
+  }
+
   // Find the (single) herd under this launch.
   xilinx::air::HerdOp herd;
-  launch.walk([&](xilinx::air::HerdOp h) { herd = h; });
+  if (!herds.empty())
+    herd = herds.front();
   if (!herd)
     return success();
+
+  // Validate herd size and body.
+  if (failed(validateHerdSize(herd)))
+    return failure();
+  if (failed(validateHerdBody(herd)))
+    return failure();
 
   Location loc = herd.getLoc();
   ArrayRef<BlockArgument> kArgs = herd.getKernelArguments();
