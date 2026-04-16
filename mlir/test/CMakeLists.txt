@@ -39,7 +39,7 @@ add_custom_target(check-csl-dialect
   COMMENT "Running CSL dialect tests")
 set_target_properties(check-csl-dialect PROPERTIES FOLDER "Tests/CSL")
 
-# 2. AIR → CSL conversion tests (-air-to-csl, -csl-derive-exports, e2e pipeline)
+# 2. AIR → CSL conversion tests (-air-to-csl, -csl-infer-exports, e2e pipeline)
 add_custom_target(check-csl-conversion
   COMMAND ${CSL_LIT_COMMAND} ${CMAKE_CURRENT_BINARY_DIR}/Conversion/AIRToCSL
   DEPENDS ${TEST_DEPENDS}

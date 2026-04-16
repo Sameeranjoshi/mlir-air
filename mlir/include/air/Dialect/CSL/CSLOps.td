@@ -349,12 +349,12 @@ def CSL_ExportOp : CSL_Op<"export", [
   let summary = "Mark a PE symbol as host-visible";
   let description = [{
     Marks a csl.var or csl.func as accessible from the host runtime.
-    The `direction` attribute (in/out) is added by -csl-derive-exports.
+    The `direction` attribute (in/out) is added by -csl-infer-exports.
 
     ```mlir
     csl.export @a { alias = "a" }           // var with host-facing alias
     csl.export @compute { kind = "func" }   // function export
-    // After -csl-derive-exports:
+    // After -csl-infer-exports:
     csl.export @a { alias = "a", direction = "in" }
     ```
   }];

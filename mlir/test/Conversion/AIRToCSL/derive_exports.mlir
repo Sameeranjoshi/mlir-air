@@ -1,6 +1,6 @@
-// RUN: air-opt -csl-derive-exports %s | FileCheck %s
+// RUN: air-opt -csl-infer-exports %s | FileCheck %s
 //
-// Tests for -csl-derive-exports pass.
+// Tests for -csl-infer-exports pass (successor to -csl-derive-exports).
 // The pass scans csl.host bodies for memcpy_h2d/memcpy_d2h/launch ops
 // and annotates csl.export ops with direction = "in" / "out" / "internal".
 

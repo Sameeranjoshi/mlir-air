@@ -15,7 +15,6 @@
 #include "air/Conversion/AIRToAIEPass.h"
 #include "air/Conversion/AIRToAsyncPass.h"
 #include "air/Conversion/AIRToCSLPass.h"
-#include "air/Conversion/CSLDeriveExportsPass.h"
 #include "air/Conversion/CSLInferExportsPass.h"
 #include "air/Conversion/AIRToROCDLPass.h"
 #include "air/Conversion/ConvertToAIRPass.h"
