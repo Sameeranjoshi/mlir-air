@@ -7,6 +7,7 @@ set(CONVERSION_SOURCES
   AIRToAsyncPass.cpp
   AIRToCSLPass.cpp
   CSLDeriveExports.cpp
+  CSLInferExports.cpp
   Passes.cpp
 )
 
