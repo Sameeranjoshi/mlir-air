@@ -5,9 +5,14 @@
 // RUN: air-opt %s -air-to-csl -csl-derive-exports | air-translate --emit-csl-host | FileCheck %s --check-prefix=HOST
 
 // ---- PE program checks ----
+// PROG: param memcpy_params: comptime_struct;
+// PROG: const sys_mod = @import_module("<memcpy/memcpy>", memcpy_params);
 // PROG: var arg0: [256]f32;
 // PROG: var arg1: [256]f32;
 // PROG: var arg2: [256]f32;
+// PROG: var arg0_ptr: [*]f32 = &arg0;
+// PROG: var arg1_ptr: [*]f32 = &arg1;
+// PROG: const arg2_ptr: [*]f32 = &arg2;
 // PROG: fn compute() void {
 // PROG:   var {{.*}}: u16 = 0;
 // PROG:   while ({{.*}} < 256) : ({{.*}} += 1) {
@@ -16,12 +21,13 @@
 // PROG:     var {{.*}}: f32 = {{.*}} + {{.*}};
 // PROG:     arg2[{{.*}}] = {{.*}};
 // PROG:   }
+// PROG:   sys_mod.unblock_cmd_stream();
 // PROG: }
 // PROG: comptime {
-// PROG:   @export_symbol(&arg0, "arg0");
-// PROG:   @export_symbol(&arg1, "arg1");
-// PROG:   @export_symbol(&arg2, "arg2");
-// PROG:   @export_symbol(&compute, "compute");
+// PROG:   @export_symbol(arg0_ptr, "arg0");
+// PROG:   @export_symbol(arg1_ptr, "arg1");
+// PROG:   @export_symbol(arg2_ptr, "arg2");
+// PROG:   @export_symbol(compute);
 // PROG: }
 
 // ---- Layout checks ----
