@@ -4,8 +4,9 @@
 //===----------------------------------------------------------------------===//
 //
 // Implements the -air-to-csl pass. Lowers a func.func containing
-// air.launch > air.segment > air.herd (1x1 only) into a top-level
-// csl.wafer with csl.program, csl.layout, csl.host siblings.
+// air.launch > air.segment > air.herd into a top-level csl.wafer with
+// csl.program, csl.layout, csl.host siblings. Supports 1x1 point
+// placements as well as 1-D and 2-D subgrid range placements.
 //
 //===----------------------------------------------------------------------===//
 
@@ -59,15 +60,25 @@ static bool isSupportedElemType(Type ty) {
   return ty.isF32() || ty.isF16() || ty.isInteger(32) || ty.isInteger(16);
 }
 
-/// Validate that a herd's size operands are both constant 1.
-static LogicalResult validateHerdSize(xilinx::air::HerdOp herd) {
+/// Extract a herd's size operands as positive static constants. Returns
+/// `failure()` (with a diagnostic) if any dimension is non-constant or < 1.
+static LogicalResult getStaticHerdSize(xilinx::air::HerdOp herd,
+                                       int64_t &sizeX, int64_t &sizeY) {
   OperandRange sizes = herd.getSizeOperands();
+  if (sizes.size() != 2)
+    return herd->emitOpError("expected herd with 2-D size");
+  SmallVector<int64_t, 2> vals;
   for (Value sz : sizes) {
     auto cstOp = sz.getDefiningOp<arith::ConstantIndexOp>();
-    if (!cstOp || cstOp.value() != 1) {
-      return herd->emitOpError("only 1x1 herds supported in this milestone");
-    }
+    if (!cstOp)
+      return herd->emitOpError("herd size must be a constant index");
+    int64_t v = cstOp.value();
+    if (v < 1)
+      return herd->emitOpError("herd size must be positive");
+    vals.push_back(v);
   }
+  sizeX = vals[0];
+  sizeY = vals[1];
   return success();
 }
 
@@ -156,7 +167,8 @@ static LogicalResult lowerFuncToWafer(FuncOp func) {
     return success();
 
   // Validate herd size and body.
-  if (failed(validateHerdSize(herd)))
+  int64_t sizeX = 1, sizeY = 1;
+  if (failed(getStaticHerdSize(herd, sizeX, sizeY)))
     return failure();
   if (failed(validateHerdBody(herd)))
     return failure();
@@ -256,22 +268,40 @@ static LogicalResult lowerFuncToWafer(FuncOp func) {
   // NOTE: csl.export ops are no longer generated here.
   // Use the -csl-infer-exports pass after -air-to-csl to auto-generate them.
 
-  // ---- csl.layout {width = 1, height = 1} @<layoutName> ----
+  // ---- csl.layout {width = sizeX, height = sizeY} @<layoutName> ----
   auto layoutOp = xilinx::csl::LayoutOp::create(
       wb, loc, wb.getStringAttr(layoutName),
-      /*width=*/wb.getI64IntegerAttr(1),
-      /*height=*/wb.getI64IntegerAttr(1));
+      /*width=*/wb.getI64IntegerAttr(sizeX),
+      /*height=*/wb.getI64IntegerAttr(sizeY));
   if (layoutOp.getBody().empty())
     layoutOp.getBody().emplaceBlock();
   Block *layoutBlock = &layoutOp.getBody().front();
   OpBuilder lb(ctx);
   lb.setInsertionPointToEnd(layoutBlock);
 
-  // csl_layout.place @<prog> at (0, 0)
+  // Build `csl_layout.place` for the herd extent:
+  //   [1, 1]     -> point form `at (0, 0)`
+  //   [N, 1]     -> range form `over [0:N, 0]`
+  //   [1, M]     -> range form `over [0, 0:M]`
+  //   [N, M]     -> range form `over [0:N, 0:M]`
+  //
+  // Singleton axes are encoded as `[0, 1, 1]`; the printer renders them as
+  // a bare `0`.
+  IntegerAttr pxAttr, pyAttr;
+  ArrayAttr xRange, yRange;
+  if (sizeX == 1 && sizeY == 1) {
+    pxAttr = lb.getI64IntegerAttr(0);
+    pyAttr = lb.getI64IntegerAttr(0);
+  } else {
+    xRange = (sizeX > 1) ? lb.getI64ArrayAttr({0, sizeX, 1})
+                         : lb.getI64ArrayAttr({0, 1, 1});
+    yRange = (sizeY > 1) ? lb.getI64ArrayAttr({0, sizeY, 1})
+                         : lb.getI64ArrayAttr({0, 1, 1});
+  }
   xilinx::csl_layout::PlaceOp::create(
       lb, loc, FlatSymbolRefAttr::get(ctx, progName),
-      /*px=*/lb.getI64IntegerAttr(0), /*py=*/lb.getI64IntegerAttr(0),
-      /*x_range=*/ArrayAttr{}, /*y_range=*/ArrayAttr{},
+      /*px=*/pxAttr, /*py=*/pyAttr,
+      /*x_range=*/xRange, /*y_range=*/yRange,
       /*iv_names=*/ArrayAttr{}, /*params=*/DictionaryAttr{});
 
   // NOTE: csl_layout.export ops are no longer generated here.
@@ -301,8 +331,8 @@ static LogicalResult lowerFuncToWafer(FuncOp func) {
     xilinx::csl_host::MemcpyH2DOp::create(
         hb, loc, hostBlock->getArgument(i), sym,
         /*px=*/hb.getI64IntegerAttr(0), /*py=*/hb.getI64IntegerAttr(0),
-        /*width=*/hb.getI64IntegerAttr(1),
-        /*height=*/hb.getI64IntegerAttr(1));
+        /*width=*/hb.getI64IntegerAttr(sizeX),
+        /*height=*/hb.getI64IntegerAttr(sizeY));
   }
   // csl_host.launch @<layout>::@compute
   {
@@ -319,8 +349,8 @@ static LogicalResult lowerFuncToWafer(FuncOp func) {
     xilinx::csl_host::MemcpyD2HOp::create(
         hb, loc, sym, hostBlock->getArgument(i),
         /*px=*/hb.getI64IntegerAttr(0), /*py=*/hb.getI64IntegerAttr(0),
-        /*width=*/hb.getI64IntegerAttr(1),
-        /*height=*/hb.getI64IntegerAttr(1));
+        /*width=*/hb.getI64IntegerAttr(sizeX),
+        /*height=*/hb.getI64IntegerAttr(sizeY));
   }
 
   // Erase the original func.func (no longer needed).
@@ -335,7 +365,7 @@ struct AIRToCSLPass
 
   StringRef getArgument() const override { return "air-to-csl"; }
   StringRef getDescription() const override {
-    return "Lower AIR dialect (1x1 herds) to CSL v2 wafer IR";
+    return "Lower AIR dialect herds to CSL v2 wafer IR";
   }
 
   void getDependentDialects(DialectRegistry &registry) const override {
