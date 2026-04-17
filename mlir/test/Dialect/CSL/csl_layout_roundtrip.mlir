@@ -1,12 +1,14 @@
 // RUN: air-opt --verify-roundtrip %s | FileCheck %s
 //
 // csl_layout dialect round-trip tests.
-// Covers: csl_layout.place, csl_layout.place_grid, csl_layout.export
+// Covers: csl_layout.place (point form), csl_layout.export.
+// Subgrid/range-form `csl_layout.place` round-trips live in
+// mlir/test/Targets/CSLEmit/e2e/layouts.mlir.
 
 // ---- csl_layout.place (no params) ----
 
 // CHECK-LABEL: csl.wafer @w_place_no_params
-// CHECK:   csl_layout.place @vecadd_pe at(0, 0)
+// CHECK:   csl_layout.place @vecadd_pe at (0, 0)
 module {
   csl.wafer @w_place_no_params {arch = "wse3"} {
     csl.program @vecadd_pe {
@@ -20,27 +22,13 @@ module {
 // ---- csl_layout.place with params ----
 
 // CHECK-LABEL: csl.wafer @w_place_with_params
-// CHECK:   csl_layout.place @gemv_pe at(1, 0) {col = 1 : i16, width = 4 : i16}
+// CHECK:   csl_layout.place @gemv_pe at (1, 0) {col = 1 : i16, width = 4 : i16}
 module {
   csl.wafer @w_place_with_params {arch = "wse3"} {
     csl.program @gemv_pe(%M: !csl.comptime<i16>) {
     }
     csl.layout {width = 4 : i64, height = 1 : i64} @gemv_layout {
       csl_layout.place @gemv_pe at (1, 0) {col = 1 : i16, width = 4 : i16}
-    }
-  }
-}
-
-// ---- csl_layout.place_grid ----
-
-// CHECK-LABEL: csl.wafer @w_place_grid
-// CHECK:   csl_layout.place_grid @gemv_pe from(0, 0) to(3, 0) {M = 4 : i16, N = 6 : i16}
-module {
-  csl.wafer @w_place_grid {arch = "wse3"} {
-    csl.program @gemv_pe(%col: !csl.comptime<i16>) {
-    }
-    csl.layout {width = 4 : i64, height = 1 : i64} @grid_layout {
-      csl_layout.place_grid @gemv_pe from (0, 0) to (3, 0) {M = 4 : i16, N = 6 : i16}
     }
   }
 }
@@ -82,7 +70,7 @@ module {
 // ---- full vecadd layout ----
 
 // CHECK-LABEL: csl.wafer @full_layout
-// CHECK:   csl_layout.place @vecadd_pe at(0, 0)
+// CHECK:   csl_layout.place @vecadd_pe at (0, 0)
 // CHECK:   csl_layout.export "a" from @vecadd_pe::@a
 // CHECK:   csl_layout.export "b" from @vecadd_pe::@b
 // CHECK:   csl_layout.export "c" from @vecadd_pe::@c

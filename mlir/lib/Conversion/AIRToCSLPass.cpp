@@ -270,7 +270,9 @@ static LogicalResult lowerFuncToWafer(FuncOp func) {
   // csl_layout.place @<prog> at (0, 0)
   xilinx::csl_layout::PlaceOp::create(
       lb, loc, FlatSymbolRefAttr::get(ctx, progName),
-      lb.getI64IntegerAttr(0), lb.getI64IntegerAttr(0));
+      /*px=*/lb.getI64IntegerAttr(0), /*py=*/lb.getI64IntegerAttr(0),
+      /*x_range=*/ArrayAttr{}, /*y_range=*/ArrayAttr{},
+      /*iv_names=*/ArrayAttr{}, /*params=*/DictionaryAttr{});
 
   // NOTE: csl_layout.export ops are no longer generated here.
   // Use the -csl-infer-exports pass after -air-to-csl to auto-generate them.

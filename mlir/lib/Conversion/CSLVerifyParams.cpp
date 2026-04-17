@@ -76,22 +76,40 @@ struct CSLVerifyParamsPass
       }
 
       // Check every extra attribute on `place` is a declared parameter.
-      for (NamedAttribute attr : place->getAttrs()) {
-        StringRef name = attr.getName();
-        // Skip the operation's own positional arguments.
-        if (name == "prog" || name == "px" || name == "py")
-          continue;
+      // Range-form placements bind params via the `params` dictionary; the
+      // point form binds them as top-level attrs.  Walk both.
+      auto reportExtra = [&](StringRef name) {
         if (!declaredParams.contains(name)) {
           place.emitOpError("passes parameter '")
               << name << "' but @" << progName
               << " has no matching block argument";
           anyFailure = true;
         }
+      };
+      for (NamedAttribute attr : place->getAttrs()) {
+        StringRef name = attr.getName();
+        // Skip the operation's own positional arguments.
+        if (name == "prog" || name == "px" || name == "py" ||
+            name == "x_range" || name == "y_range" || name == "iv_names" ||
+            name == "params")
+          continue;
+        reportExtra(name);
+      }
+      if (auto paramsDict = place.getParams()) {
+        for (NamedAttribute entry : *paramsDict)
+          reportExtra(entry.getName());
       }
 
       // Check every declared parameter is bound by the place op.
+      auto hasParamBinding = [&](StringRef n) {
+        if (place->hasAttr(n))
+          return true;
+        if (auto paramsDict = place.getParams())
+          return paramsDict->contains(n);
+        return false;
+      };
       for (StringRef declared : declaredParams) {
-        if (!place->hasAttr(declared)) {
+        if (!hasParamBinding(declared)) {
           place.emitOpError("missing parameter '")
               << declared << "' required by @" << progName;
           anyFailure = true;

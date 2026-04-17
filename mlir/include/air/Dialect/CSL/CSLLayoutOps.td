@@ -38,70 +38,57 @@ class CSLLayout_Op<string mnemonic, list<Trait> traits = []>
     : Op<CSLLayout_Dialect, mnemonic, traits>;
 
 //===----------------------------------------------------------------------===//
-// csl_layout.place — bind a program template to a single PE grid cell
+// csl_layout.place — bind a program template to a PE or a subgrid
 //
-// Format: csl_layout.place @prog at (px, py) attr-dict
-//
-// The attr-dict carries the concrete comptime parameter bindings
-// that are passed to @set_tile_code / region.set_param().
+// Two forms:
+//   Point form:  csl_layout.place @prog at (px, py) attr-dict
+//   Range form:  csl_layout.place @prog over [lo:hi:stride, lo:hi:stride]
+//                                  vars (%i : i32, %j : i32)
+//                                  params { name = %i : i16, ... } attr-dict
 //===----------------------------------------------------------------------===//
 
 def CSLLayout_PlaceOp : CSLLayout_Op<"place"> {
-  let summary = "Bind a csl.program template to a single PE at (px, py)";
+  let summary = "Place a csl.program at a tile or over a subgrid";
   let description = [{
-    Places a single instance of the referenced `csl.program` at PE grid
-    coordinate (`px`, `py`).  Comptime parameter bindings are carried as
-    extra attributes in the attr-dict.
+    Places a csl.program template at either a single PE (point form) or over
+    a rectangular subgrid of PEs (range form).
 
+    Point form:
     ```mlir
     csl_layout.place @vecadd_pe at (0, 0)
     csl_layout.place @gemv_pe at (1, 0) {col = 1 : i16, width = 4 : i16}
     ```
 
-    Emits to:
-    ```python
-    region.place(px, py)
-    region.set_param(IntVector(px, py), "col", 1)
-    ```
-  }];
-
-  let arguments = (ins
-    FlatSymbolRefAttr:$prog,
-    I64Attr:$px,
-    I64Attr:$py
-  );
-
-  let assemblyFormat = "$prog `at` `(` $px `,` $py `)` attr-dict";
-}
-
-//===----------------------------------------------------------------------===//
-// csl_layout.place_grid — bind a program template to a PE rectangle (SPMD)
-//
-// Format: csl_layout.place_grid @prog from (x0, y0) to (x1, y1) attr-dict
-//
-// Expanded to N `csl_layout.place` ops by -csl-elaborate-grid pass.
-// Per-PE placeholder params use $col/$row syntax in attr-dict (future).
-//===----------------------------------------------------------------------===//
-
-def CSLLayout_PlaceGridOp : CSLLayout_Op<"place_grid"> {
-  let summary = "Bind a csl.program template to a PE rectangle (SPMD)";
-  let description = [{
-    V1 stub — accepted by the parser but not yet lowered by any pass.
-    Lowers to N `csl_layout.place` ops via `-csl-elaborate-grid`.
-
+    Range form (SPADA-style half-open `lo:hi[:stride]`):
     ```mlir
-    csl_layout.place_grid @gemv_pe from (0, 0) to (3, 0) {M = 4 : i16, N = 6 : i16}
+    csl_layout.place @pe over [0:8, 0]
+    csl_layout.place @pe over [0:4, 0:4]
+    csl_layout.place @pe over [0:8, 0] vars (%i : i32) params {pid = %i : i16}
     ```
+
+    Exactly one of `at (x, y)` or `over [...]` must be used.  The
+    `vars (...)` and `params {...}` clauses are only legal with the range
+    form.  The induction-variable names in `vars` are purely syntactic —
+    stored as string attributes (no SSA values); each `params` entry binds a
+    comptime-parameter name to one of those induction-variable names.
   }];
 
   let arguments = (ins
     FlatSymbolRefAttr:$prog,
-    I64Attr:$x0, I64Attr:$y0,
-    I64Attr:$x1, I64Attr:$y1
+    // Point form
+    OptionalAttr<I64Attr>:$px,
+    OptionalAttr<I64Attr>:$py,
+    // Range form: each array is [lo, hi, stride]
+    OptionalAttr<I64ArrayAttr>:$x_range,
+    OptionalAttr<I64ArrayAttr>:$y_range,
+    // Induction-variable names (strings), e.g. ["i", "j"]
+    OptionalAttr<StrArrayAttr>:$iv_names,
+    // Parameter bindings; each value is a StringAttr referencing an iv_name
+    OptionalAttr<DictionaryAttr>:$params
   );
 
-  let assemblyFormat =
-    "$prog `from` `(` $x0 `,` $y0 `)` `to` `(` $x1 `,` $y1 `)` attr-dict";
+  let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//

@@ -82,15 +82,23 @@ LogicalResult LayoutEmitter::emit(xilinx::csl::WaferOp wafer) {
   llvm::SmallVector<ParamBinding, 4> params;
 
   layout.getBody().walk([&](layoutns::PlaceOp placeOp) {
-    int64_t px = placeOp.getPx();
-    int64_t py = placeOp.getPy();
+    // Task 5 note: this emitter still only supports the point form of
+    // csl_layout.place.  Range (`over [...]`) placement is handled in
+    // Task 6.  Skip any range-form placements for now so existing tests
+    // continue to work.
+    if (!placeOp.getPx().has_value() || !placeOp.getPy().has_value())
+      return;
+    int64_t px = *placeOp.getPx();
+    int64_t py = *placeOp.getPy();
     if (px > maxX) maxX = px;
     if (py > maxY) maxY = py;
     hasPlace = true;
 
     for (NamedAttribute attr : placeOp->getAttrs()) {
       StringRef name = attr.getName().getValue();
-      if (name == "prog" || name == "px" || name == "py")
+      if (name == "prog" || name == "px" || name == "py" ||
+          name == "x_range" || name == "y_range" || name == "iv_names" ||
+          name == "params")
         continue;
       if (auto intAttr = dyn_cast<IntegerAttr>(attr.getValue()))
         params.push_back({name.str(), intAttr.getInt()});
