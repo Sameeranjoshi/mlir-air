@@ -53,10 +53,10 @@
 // HOST: runner = SdkRuntime(args.name, cmaddr=args.cmaddr)
 // HOST: runner.load()
 // HOST: runner.run()
-// HOST: runner.memcpy_h2d(runner.get_id("arg0"), arg0, 0, 0, 1, 1, N,
-// HOST: runner.memcpy_h2d(runner.get_id("arg1"), arg1, 0, 0, 1, 1, N,
+// HOST: runner.memcpy_h2d(runner.get_id("arg0"), arg0, 0, 0, 1, 1, 256,
+// HOST: runner.memcpy_h2d(runner.get_id("arg1"), arg1, 0, 0, 1, 1, 256,
 // HOST: runner.launch("compute", nonblock=False)
-// HOST: runner.memcpy_d2h(arg2, runner.get_id("arg2"), 0, 0, 1, 1, N,
+// HOST: runner.memcpy_d2h(arg2, runner.get_id("arg2"), 0, 0, 1, 1, 256,
 // HOST: runner.stop()
 // HOST: print("SUCCESS!")
 

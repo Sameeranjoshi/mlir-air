@@ -39,7 +39,9 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/raw_ostream.h"
 
+#include <cassert>
 #include <string>
+#include <tuple>
 
 using namespace mlir;
 
@@ -74,8 +76,88 @@ struct MemcpyEntry {
   bool isH2d;
   unsigned argIdx;
   std::string leafSym;
-  int64_t px, py, width, height;
+  // Lower-left corner of the source/destination PE rectangle (== place origin).
+  int64_t px, py;
+  // PE grid extent of the placement (NOT the memref shape).
+  int64_t w, h;
+  // Per-PE element count (total_elems / (w * h)).
+  int64_t l;
 };
+
+/// Derive the SdkRuntime memcpy extents `(w, h, l)` from a PlaceOp that
+/// describes the placement of the program owning the referenced var, and
+/// the memref type of the host-side buffer.
+///
+/// Mapping:
+///   at (x, y)           -> (1, 1),        l = total
+///   over [lo:hi, Y]     -> (hi-lo, 1),    l = total / (hi-lo)
+///   over [lo:hi, lo:hi] -> (hi-lo, yext), l = total / ((hi-lo) * yext)
+///
+/// `total` is the product of all memref shape dims. Unequal sharding is
+/// asserted; -csl-verify-params (Task 9) will reject it up front.
+static std::tuple<int64_t, int64_t, int64_t>
+deriveMemcpyExtent(xilinx::csl_layout::PlaceOp place, MemRefType memTy) {
+  int64_t total = 1;
+  for (int64_t d : memTy.getShape())
+    total *= d;
+  int64_t w = 1, h = 1;
+  if (place) {
+    if (place.getPx().has_value()) {
+      // Point form: (1, 1).
+    } else if (auto xr = place.getXRange()) {
+      int64_t xlo = cast<IntegerAttr>((*xr)[0]).getInt();
+      int64_t xhi = cast<IntegerAttr>((*xr)[1]).getInt();
+      w = xhi - xlo;
+      if (auto yr = place.getYRange()) {
+        int64_t ylo = cast<IntegerAttr>((*yr)[0]).getInt();
+        int64_t yhi = cast<IntegerAttr>((*yr)[1]).getInt();
+        h = yhi - ylo;
+      }
+    }
+  }
+  assert(w * h > 0 && "placement extent must be positive");
+  assert(total % (w * h) == 0 &&
+         "csl-verify-params should reject unequal sharding");
+  return {w, h, total / (w * h)};
+}
+
+/// Lookup the PlaceOp that binds the program named `progSym` onto the grid,
+/// by scanning `csl_layout.place` ops inside the wafer's `csl.layout`. If
+/// `progSym` is empty, returns the first PlaceOp (single-program fallback).
+static xilinx::csl_layout::PlaceOp
+findPlaceForProgram(xilinx::csl::WaferOp wafer, StringRef progSym) {
+  xilinx::csl_layout::PlaceOp match;
+  wafer.walk([&](xilinx::csl_layout::PlaceOp p) {
+    if (match)
+      return;
+    if (progSym.empty() || p.getProg() == progSym)
+      match = p;
+  });
+  return match;
+}
+
+/// Resolve the program that contains the var named `leaf` (e.g. `@a`), by
+/// scanning every `csl.program` in the wafer for a matching `csl.var` or
+/// `csl.func`. Returns the empty StringRef if no match (single-program case).
+static StringRef findProgramForLeaf(xilinx::csl::WaferOp wafer, StringRef leaf) {
+  StringRef found;
+  wafer.walk([&](xilinx::csl::ProgramOp prog) {
+    if (!found.empty())
+      return;
+    prog.getBody().walk([&](Operation *op) {
+      if (!found.empty())
+        return;
+      if (auto v = dyn_cast<xilinx::csl::VarOp>(op)) {
+        if (v.getSymName() == leaf)
+          found = prog.getSymName();
+      } else if (auto f = dyn_cast<xilinx::csl::FuncOp>(op)) {
+        if (f.getSymName() == leaf)
+          found = prog.getSymName();
+      }
+    });
+  });
+  return found;
+}
 
 class HostEmitter {
 public:
@@ -107,11 +189,11 @@ void HostEmitter::emitMemcpy(const MemcpyEntry &e,
   if (e.isH2d) {
     os << "runner.memcpy_h2d(runner.get_id(\"" << e.leafSym << "\"), "
        << argNames[e.argIdx] << ", " << e.px << ", " << e.py << ", "
-       << e.width << ", " << e.height << ", N,\n";
+       << e.w << ", " << e.h << ", " << e.l << ",\n";
   } else {
     os << "runner.memcpy_d2h(" << argNames[e.argIdx]
        << ", runner.get_id(\"" << e.leafSym << "\"), " << e.px << ", "
-       << e.py << ", " << e.width << ", " << e.height << ", N,\n";
+       << e.py << ", " << e.w << ", " << e.h << ", " << e.l << ",\n";
   }
   os << "                  streaming=False,\n";
   os << "                  order=MemcpyOrder.ROW_MAJOR,\n";
@@ -146,17 +228,35 @@ LogicalResult HostEmitter::emit(xilinx::csl::WaferOp wafer) {
     }
   }
 
-  // Determine N from the first memref arg.
+  // Determine N (total host-buffer element count) from the first memref arg,
+  // as the product of all shape dims. The buffer length is always
+  //   w * h * l == total elements,
+  // regardless of how the memref is sharded across the PE grid.
   int64_t N = -1;
   for (Type t : argTypes) {
     if (auto memTy = dyn_cast<MemRefType>(t)) {
-      if (memTy.getRank() >= 1 && memTy.getDimSize(0) > 0) {
-        N = memTy.getDimSize(0);
+      int64_t n = 1;
+      for (int64_t d : memTy.getShape())
+        n *= d;
+      if (n > 0) {
+        N = n;
         break;
       }
     }
   }
   std::string nStr = (N > 0) ? std::to_string(N) : std::string("256");
+
+  // Helper: for a memcpy referencing sym `@layout::@leaf`, find the
+  // csl_layout.place that owns the program containing `@leaf`, and use it
+  // together with the host-buffer memref type to derive (w, h, l).
+  auto fillExtents = [&](StringRef leaf, MemRefType memTy, MemcpyEntry &e) {
+    StringRef prog = findProgramForLeaf(wafer, leaf);
+    xilinx::csl_layout::PlaceOp place = findPlaceForProgram(wafer, prog);
+    auto [w, h, l] = deriveMemcpyExtent(place, memTy);
+    e.w = w;
+    e.h = h;
+    e.l = l;
+  };
 
   // Classify each arg as h2d/d2h/unused and record the memcpy + launch
   // sequence. We emit h2d first, then launch, then d2h (SdkRuntime standard
@@ -179,9 +279,12 @@ LogicalResult HostEmitter::emit(xilinx::csl::WaferOp wafer) {
           idx = barg.getArgNumber();
         if (idx < argDir.size())
           argDir[idx] = Dir::H2D;
-        memcpys.push_back({true, idx, leafSym.str(), h2dOp.getPx(),
-                           h2dOp.getPy(), h2dOp.getWidth(),
-                           h2dOp.getHeight()});
+        MemcpyEntry e{true, idx, leafSym.str(), h2dOp.getPx(), h2dOp.getPy(),
+                      /*w=*/1, /*h=*/1, /*l=*/0};
+        auto memTy = dyn_cast<MemRefType>(h2dOp.getSrc().getType());
+        if (memTy)
+          fillExtents(leafSym, memTy, e);
+        memcpys.push_back(e);
         continue;
       }
       if (auto d2hOp = dyn_cast<hostns::MemcpyD2HOp>(&op)) {
@@ -195,9 +298,12 @@ LogicalResult HostEmitter::emit(xilinx::csl::WaferOp wafer) {
           idx = barg.getArgNumber();
         if (idx < argDir.size())
           argDir[idx] = Dir::D2H;
-        memcpys.push_back({false, idx, leafSym.str(), d2hOp.getPx(),
-                           d2hOp.getPy(), d2hOp.getWidth(),
-                           d2hOp.getHeight()});
+        MemcpyEntry e{false, idx, leafSym.str(), d2hOp.getPx(), d2hOp.getPy(),
+                      /*w=*/1, /*h=*/1, /*l=*/0};
+        auto memTy = dyn_cast<MemRefType>(d2hOp.getDst().getType());
+        if (memTy)
+          fillExtents(leafSym, memTy, e);
+        memcpys.push_back(e);
         continue;
       }
       if (auto launchOp = dyn_cast<hostns::LaunchOp>(&op)) {

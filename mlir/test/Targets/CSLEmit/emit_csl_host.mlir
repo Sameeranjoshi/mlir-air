@@ -25,11 +25,11 @@
 // CHECK: runner = SdkRuntime(args.name, cmaddr=args.cmaddr)
 // CHECK: runner.load()
 // CHECK: runner.run()
-// CHECK: runner.memcpy_h2d(runner.get_id("a"), arg0, 0, 0, 1, 1, N,
+// CHECK: runner.memcpy_h2d(runner.get_id("a"), arg0, 0, 0, 1, 1, 256,
 // CHECK:                   data_type=MemcpyDataType.MEMCPY_32BIT,
-// CHECK: runner.memcpy_h2d(runner.get_id("b"), arg1, 0, 0, 1, 1, N,
+// CHECK: runner.memcpy_h2d(runner.get_id("b"), arg1, 0, 0, 1, 1, 256,
 // CHECK: runner.launch("compute", nonblock=False)
-// CHECK: runner.memcpy_d2h(arg2, runner.get_id("c"), 0, 0, 1, 1, N,
+// CHECK: runner.memcpy_d2h(arg2, runner.get_id("c"), 0, 0, 1, 1, 256,
 // CHECK: runner.stop()
 // CHECK: print("SUCCESS!")
 
