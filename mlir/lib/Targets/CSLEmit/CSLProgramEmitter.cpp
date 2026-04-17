@@ -41,22 +41,14 @@ namespace {
 class ProgramEmitter {
 public:
   explicit ProgramEmitter(llvm::raw_ostream &os) : os(os) {}
-  LogicalResult emit(ModuleOp module);
+  LogicalResult emit(xilinx::csl::WaferOp wafer);
 
 private:
   llvm::raw_ostream &os;
 };
 
-LogicalResult ProgramEmitter::emit(ModuleOp module) {
+LogicalResult ProgramEmitter::emit(xilinx::csl::WaferOp wafer) {
   namespace cslns = xilinx::csl;
-
-  // Find csl.wafer
-  cslns::WaferOp wafer;
-  module.walk([&](cslns::WaferOp w) { wafer = w; });
-  if (!wafer) {
-    os << "// No csl.wafer found in module.\n";
-    return success();
-  }
 
   // Find the first csl.program
   cslns::ProgramOp prog;
@@ -228,10 +220,27 @@ LogicalResult ProgramEmitter::emit(ModuleOp module) {
 
 } // namespace
 
-// Free-function entry point used by CSLEmitAll.cpp.
-LogicalResult runProgramEmitter(ModuleOp module, llvm::raw_ostream &os) {
+// Wafer-scoped entry point used by CSLEmitAll.cpp.
+LogicalResult runProgramEmitter(xilinx::csl::WaferOp wafer,
+                                llvm::raw_ostream &os) {
   ProgramEmitter emitter(os);
-  return emitter.emit(module);
+  return emitter.emit(wafer);
+}
+
+// Module-scoped entry point for backward compatibility (--emit-csl-program).
+LogicalResult runProgramEmitter(ModuleOp module, llvm::raw_ostream &os) {
+  namespace cslns = xilinx::csl;
+  // Collect all wafers so we can emit a note if there are multiple.
+  llvm::SmallVector<cslns::WaferOp, 4> wafers;
+  module.walk([&](cslns::WaferOp w) { wafers.push_back(w); });
+  if (wafers.empty()) {
+    os << "// No csl.wafer found in module.\n";
+    return success();
+  }
+  if (wafers.size() > 1)
+    os << "// note: " << wafers.size()
+       << " wafers in module; emitting " << wafers[0].getSymName() << "\n";
+  return runProgramEmitter(wafers[0], os);
 }
 
 void registerCSLProgramTranslation() {

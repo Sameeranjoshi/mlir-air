@@ -48,9 +48,17 @@ namespace xilinx {
 namespace csl {
 
 // Free-function entry points provided by the per-emitter TUs.
+// Module-scoped variants (used by --emit-csl-program/layout/host registrations).
 LogicalResult runProgramEmitter(ModuleOp module, llvm::raw_ostream &os);
 LogicalResult runLayoutEmitter(ModuleOp module, llvm::raw_ostream &os);
 LogicalResult runHostEmitter(ModuleOp module, llvm::raw_ostream &os);
+// Wafer-scoped variants used by emitAll below.
+LogicalResult runProgramEmitter(xilinx::csl::WaferOp wafer,
+                                llvm::raw_ostream &os);
+LogicalResult runLayoutEmitter(xilinx::csl::WaferOp wafer,
+                               llvm::raw_ostream &os);
+LogicalResult runHostEmitter(xilinx::csl::WaferOp wafer,
+                             llvm::raw_ostream &os);
 
 // Forward-declare the individual registration entry points.
 void registerCSLProgramTranslation();
@@ -113,12 +121,13 @@ struct ExportInfo {
 
 /// Walk csl.program ops to collect the (alias, type, direction) for each
 /// host-visible export (var aliases + function exports).
-static llvm::SmallVector<ExportInfo, 4> collectExports(ModuleOp module) {
+static llvm::SmallVector<ExportInfo, 4>
+collectExports(xilinx::csl::WaferOp wafer) {
   llvm::SmallVector<ExportInfo, 4> out;
   // Map var sym-name -> element type (within the first program).
   llvm::DenseMap<StringRef, Type> varElt;
   xilinx::csl::ProgramOp prog;
-  module.walk([&](xilinx::csl::ProgramOp p) {
+  wafer.walk([&](xilinx::csl::ProgramOp p) {
     if (!prog) prog = p;
   });
   if (!prog) return out;
@@ -157,7 +166,7 @@ static llvm::SmallVector<ExportInfo, 4> collectExports(ModuleOp module) {
 /// memcpy_params into every tile running `<progName>.csl`, and declares
 /// every host-visible symbol via `@export_name` so cslc --memcpy can wire
 /// them up for the host memcpy subsystem.
-static std::string makeLayoutCsl(ModuleOp module, int64_t width,
+static std::string makeLayoutCsl(xilinx::csl::WaferOp wafer, int64_t width,
                                  int64_t height,
                                  const std::string &progName) {
   std::string out;
@@ -182,7 +191,7 @@ static std::string makeLayoutCsl(ModuleOp module, int64_t width,
   os << "\n";
 
   // Declare host-visible exports.
-  auto exports = collectExports(module);
+  auto exports = collectExports(wafer);
   for (const auto &e : exports) {
     if (e.isFunc) {
       os << "  @export_name(\"" << e.alias << "\", fn()void);\n";
@@ -197,15 +206,15 @@ static std::string makeLayoutCsl(ModuleOp module, int64_t width,
 
 /// Determine (width, height) for the layout from csl.layout, falling back to
 /// 1x1 if absent. Also grab the program name.
-static void probeLayout(ModuleOp module, std::string &progName, int64_t &width,
-                        int64_t &height) {
+static void probeLayout(xilinx::csl::WaferOp wafer, std::string &progName,
+                        int64_t &width, int64_t &height) {
   progName = "program";
   width = 1;
   height = 1;
-  module.walk([&](xilinx::csl::ProgramOp p) {
+  wafer.walk([&](xilinx::csl::ProgramOp p) {
     if (progName == "program") progName = p.getSymName().str();
   });
-  module.walk([&](xilinx::csl::LayoutOp layout) {
+  wafer.walk([&](xilinx::csl::LayoutOp layout) {
     int64_t w = 0, h = 0;
     if (auto attr = layout->getAttrOfType<IntegerAttr>("width"))
       w = attr.getInt();
@@ -216,73 +225,75 @@ static void probeLayout(ModuleOp module, std::string &progName, int64_t &width,
   });
 }
 
-static LogicalResult emitAll(ModuleOp module, llvm::raw_ostream &os) {
-  // `os` is only used for a short status line — the real outputs go to
-  // files under --output-dir.
-  if (EmitCslOutputDir.empty()) {
-    module.emitError() << "--emit-csl requires --output-dir=<path>";
-    return failure();
-  }
+/// Emit all five files for a single wafer into `<parentDir>/<waferName>/`.
+static LogicalResult emitOneWafer(ModuleOp module,
+                                  xilinx::csl::WaferOp wafer,
+                                  llvm::StringRef parentDir,
+                                  llvm::raw_ostream &statusOs) {
+  std::string waferName = wafer.getSymName().str();
 
-  std::error_code ec =
-      llvm::sys::fs::create_directories(EmitCslOutputDir.getValue());
+  // Create <parentDir>/<waferName>/
+  llvm::SmallString<128> waferDir(parentDir);
+  llvm::sys::path::append(waferDir, waferName);
+  std::error_code ec = llvm::sys::fs::create_directories(
+      llvm::StringRef(waferDir.data(), waferDir.size()));
   if (ec) {
-    module.emitError() << "cannot create output-dir '" << EmitCslOutputDir
+    module.emitError() << "cannot create wafer dir '" << waferDir.c_str()
                        << "': " << ec.message();
     return failure();
   }
 
   std::string progName;
   int64_t layoutW, layoutH;
-  probeLayout(module, progName, layoutW, layoutH);
+  probeLayout(wafer, progName, layoutW, layoutH);
 
+  // Helper: open a file inside the wafer subdirectory.
   auto openOut = [&](const std::string &filename,
                      std::unique_ptr<llvm::raw_fd_ostream> &outPtr)
       -> LogicalResult {
-    llvm::SmallString<128> path(EmitCslOutputDir.getValue());
+    llvm::SmallString<128> path(waferDir);
     llvm::sys::path::append(path, filename);
-    std::error_code ec;
+    std::error_code fec;
     outPtr = std::make_unique<llvm::raw_fd_ostream>(
-        llvm::StringRef(path.data(), path.size()), ec, llvm::sys::fs::OF_Text);
-    if (ec) {
+        llvm::StringRef(path.data(), path.size()), fec,
+        llvm::sys::fs::OF_Text);
+    if (fec) {
       module.emitError() << "cannot open '" << path.c_str()
-                         << "': " << ec.message();
+                         << "': " << fec.message();
       return failure();
     }
     return success();
   };
 
-  // Emit the three Python/CSL body files first.
+  // Emit the three Python/CSL body files.
   std::unique_ptr<llvm::raw_fd_ostream> progOs, layoutPyOs, hostOs;
   if (failed(openOut(progName + ".csl", progOs))) return failure();
   if (failed(openOut("csl_layout.py", layoutPyOs))) return failure();
   if (failed(openOut("run.py", hostOs))) return failure();
 
-  if (failed(runProgramEmitter(module, *progOs))) return failure();
-  if (failed(runLayoutEmitter(module, *layoutPyOs))) return failure();
-  if (failed(runHostEmitter(module, *hostOs))) return failure();
+  if (failed(runProgramEmitter(wafer, *progOs))) return failure();
+  if (failed(runLayoutEmitter(wafer, *layoutPyOs))) return failure();
+  if (failed(runHostEmitter(wafer, *hostOs))) return failure();
   progOs.reset();
   layoutPyOs.reset();
   hostOs.reset();
 
-  // Emit the layout.csl wrapper that wires memcpy_params into each tile.
+  // Emit layout.csl wrapper.
   {
-    llvm::SmallString<128> path(EmitCslOutputDir.getValue());
+    llvm::SmallString<128> path(waferDir);
     llvm::sys::path::append(path, "layout.csl");
-    std::error_code ec;
-    llvm::raw_fd_ostream out(llvm::StringRef(path.data(), path.size()), ec,
+    std::error_code fec;
+    llvm::raw_fd_ostream out(llvm::StringRef(path.data(), path.size()), fec,
                              llvm::sys::fs::OF_Text);
-    if (ec) {
+    if (fec) {
       module.emitError() << "cannot open '" << path.c_str()
-                         << "': " << ec.message();
+                         << "': " << fec.message();
       return failure();
     }
-    out << makeLayoutCsl(module, layoutW, layoutH, progName);
+    out << makeLayoutCsl(wafer, layoutW, layoutH, progName);
   }
 
-  // Emit commands_wse3.sh: cslc compile, then cs_python run.py.
-  // Fabric dims cover a 1x1 tile with the mandatory halos; for larger grids
-  // we grow them accordingly. Match the dims known to work in `out/`.
+  // Emit commands_wse3.sh.
   int64_t fabricX = layoutW + 7;
   int64_t fabricY = layoutH + 2;
   std::string cmdWse3;
@@ -300,12 +311,46 @@ static LogicalResult emitAll(ModuleOp module, llvm::raw_ostream &os) {
     ss << "     -o compiled --memcpy --channels 1\n";
     ss << "cs_python run.py --name=compiled\n";
   }
-  if (failed(writeExecutable(module, EmitCslOutputDir, "commands_wse3.sh",
-                             cmdWse3)))
+  if (failed(writeExecutable(module, llvm::StringRef(waferDir.data(),
+                                                     waferDir.size()),
+                             "commands_wse3.sh", cmdWse3)))
     return failure();
 
-  os << "emitted: " << EmitCslOutputDir << "/{" << progName
-     << ".csl, layout.csl, csl_layout.py, run.py, commands_wse3.sh}\n";
+  statusOs << "  " << llvm::StringRef(waferDir.data(), waferDir.size())
+           << "/{" << progName
+           << ".csl, layout.csl, csl_layout.py, run.py, commands_wse3.sh}\n";
+  return success();
+}
+
+static LogicalResult emitAll(ModuleOp module, llvm::raw_ostream &os) {
+  // `os` is only used for a short status block — the real outputs go to
+  // files under --output-dir/<wafer-name>/.
+  if (EmitCslOutputDir.empty()) {
+    module.emitError() << "--emit-csl requires --output-dir=<path>";
+    return failure();
+  }
+
+  std::error_code ec =
+      llvm::sys::fs::create_directories(EmitCslOutputDir.getValue());
+  if (ec) {
+    module.emitError() << "cannot create output-dir '" << EmitCslOutputDir
+                       << "': " << ec.message();
+    return failure();
+  }
+
+  // Collect all wafers in source order.
+  llvm::SmallVector<xilinx::csl::WaferOp, 4> wafers;
+  module.walk([&](xilinx::csl::WaferOp w) { wafers.push_back(w); });
+  if (wafers.empty()) {
+    module.emitError() << "--emit-csl: no csl.wafer found in module";
+    return failure();
+  }
+
+  os << "emitted:\n";
+  for (auto wafer : wafers) {
+    if (failed(emitOneWafer(module, wafer, EmitCslOutputDir.getValue(), os)))
+      return failure();
+  }
   return success();
 }
 

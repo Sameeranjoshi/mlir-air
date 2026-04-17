@@ -80,7 +80,7 @@ struct MemcpyEntry {
 class HostEmitter {
 public:
   explicit HostEmitter(llvm::raw_ostream &os) : os(os) {}
-  LogicalResult emit(ModuleOp module);
+  LogicalResult emit(xilinx::csl::WaferOp wafer);
 
 private:
   llvm::raw_ostream &os;
@@ -119,16 +119,9 @@ void HostEmitter::emitMemcpy(const MemcpyEntry &e,
   os << "                  nonblock=False)\n";
 }
 
-LogicalResult HostEmitter::emit(ModuleOp module) {
+LogicalResult HostEmitter::emit(xilinx::csl::WaferOp wafer) {
   namespace cslns = xilinx::csl;
   namespace hostns = xilinx::csl_host;
-
-  cslns::WaferOp wafer;
-  module.walk([&](cslns::WaferOp w) { wafer = w; });
-  if (!wafer) {
-    os << "# No csl.wafer found in module.\n";
-    return success();
-  }
 
   cslns::HostOp host;
   for (Operation &op : wafer.getBody().front()) {
@@ -338,9 +331,26 @@ LogicalResult HostEmitter::emit(ModuleOp module) {
 
 } // namespace
 
-LogicalResult runHostEmitter(ModuleOp module, llvm::raw_ostream &os) {
+// Wafer-scoped entry point used by CSLEmitAll.cpp.
+LogicalResult runHostEmitter(xilinx::csl::WaferOp wafer,
+                             llvm::raw_ostream &os) {
   HostEmitter emitter(os);
-  return emitter.emit(module);
+  return emitter.emit(wafer);
+}
+
+// Module-scoped entry point for backward compatibility (--emit-csl-host).
+LogicalResult runHostEmitter(ModuleOp module, llvm::raw_ostream &os) {
+  namespace cslns = xilinx::csl;
+  llvm::SmallVector<cslns::WaferOp, 4> wafers;
+  module.walk([&](cslns::WaferOp w) { wafers.push_back(w); });
+  if (wafers.empty()) {
+    os << "# No csl.wafer found in module.\n";
+    return success();
+  }
+  if (wafers.size() > 1)
+    os << "# note: " << wafers.size()
+       << " wafers in module; emitting " << wafers[0].getSymName() << "\n";
+  return runHostEmitter(wafers[0], os);
 }
 
 void registerCSLHostTranslation() {

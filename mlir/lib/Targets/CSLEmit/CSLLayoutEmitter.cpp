@@ -39,23 +39,15 @@ namespace {
 class LayoutEmitter {
 public:
   explicit LayoutEmitter(llvm::raw_ostream &os) : os(os) {}
-  LogicalResult emit(ModuleOp module);
+  LogicalResult emit(xilinx::csl::WaferOp wafer);
 
 private:
   llvm::raw_ostream &os;
 };
 
-LogicalResult LayoutEmitter::emit(ModuleOp module) {
+LogicalResult LayoutEmitter::emit(xilinx::csl::WaferOp wafer) {
   namespace cslns = xilinx::csl;
   namespace layoutns = xilinx::csl_layout;
-
-  // Find csl.wafer
-  cslns::WaferOp wafer;
-  module.walk([&](cslns::WaferOp w) { wafer = w; });
-  if (!wafer) {
-    os << "# No csl.wafer found in module.\n";
-    return success();
-  }
 
   // Find csl.layout
   cslns::LayoutOp layout;
@@ -126,9 +118,26 @@ LogicalResult LayoutEmitter::emit(ModuleOp module) {
 
 } // namespace
 
-LogicalResult runLayoutEmitter(ModuleOp module, llvm::raw_ostream &os) {
+// Wafer-scoped entry point used by CSLEmitAll.cpp.
+LogicalResult runLayoutEmitter(xilinx::csl::WaferOp wafer,
+                               llvm::raw_ostream &os) {
   LayoutEmitter emitter(os);
-  return emitter.emit(module);
+  return emitter.emit(wafer);
+}
+
+// Module-scoped entry point for backward compatibility (--emit-csl-layout).
+LogicalResult runLayoutEmitter(ModuleOp module, llvm::raw_ostream &os) {
+  namespace cslns = xilinx::csl;
+  llvm::SmallVector<cslns::WaferOp, 4> wafers;
+  module.walk([&](cslns::WaferOp w) { wafers.push_back(w); });
+  if (wafers.empty()) {
+    os << "# No csl.wafer found in module.\n";
+    return success();
+  }
+  if (wafers.size() > 1)
+    os << "# note: " << wafers.size()
+       << " wafers in module; emitting " << wafers[0].getSymName() << "\n";
+  return runLayoutEmitter(wafers[0], os);
 }
 
 void registerCSLLayoutTranslation() {
