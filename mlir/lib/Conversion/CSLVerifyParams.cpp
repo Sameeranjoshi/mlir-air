@@ -9,12 +9,13 @@
 //
 // Algorithm (per csl.wafer):
 //   For each csl_layout.place op in the wafer, look up the referenced
-//   csl.program and compare:
-//     - every attribute on the place op (other than the positional args
-//       `prog`, `px`, `py`) must match a declared `param_names` entry on
-//       the program;
-//     - every declared param on the program must be bound by the place op.
-//   Any mismatch is reported as an op error.
+//   csl.program and collect its parameter bindings from two sources:
+//     - top-level attributes on the place op (point-form bindings); and
+//     - entries in the `params` dict attribute (range-form bindings).
+//   Six reserved names are skipped when scanning top-level attrs:
+//   `prog`, `px`, `py`, `x_range`, `y_range`, `iv_names`, `params`.
+//   The collected binding names must match the program's declared
+//   `param_names` exactly; any mismatch is reported as an op error.
 //
 //===----------------------------------------------------------------------===//
 

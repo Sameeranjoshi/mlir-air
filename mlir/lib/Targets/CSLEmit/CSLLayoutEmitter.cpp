@@ -82,10 +82,7 @@ LogicalResult LayoutEmitter::emit(xilinx::csl::WaferOp wafer) {
   llvm::SmallVector<ParamBinding, 4> params;
 
   layout.getBody().walk([&](layoutns::PlaceOp placeOp) {
-    // Task 5 note: this emitter still only supports the point form of
-    // csl_layout.place.  Range (`over [...]`) placement is handled in
-    // Task 6.  Skip any range-form placements for now so existing tests
-    // continue to work.
+    // Range-form placements are not yet emitted; skip.
     if (!placeOp.getPx().has_value() || !placeOp.getPy().has_value())
       return;
     int64_t px = *placeOp.getPx();

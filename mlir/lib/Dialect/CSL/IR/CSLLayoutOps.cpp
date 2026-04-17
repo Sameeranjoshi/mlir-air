@@ -127,14 +127,20 @@ mlir::ParseResult xilinx::csl_layout::PlaceOp::parse(
         if (p.parseOperand(opnd))
           return failure();
         StringRef sref = opnd.name;
-        if (sref.starts_with("%"))
-          sref = sref.drop_front();
-        // Consume `: iTYPE` — we don't care about the type; it's syntactic.
+        bool consumed = sref.consume_front("%");
+        assert(consumed &&
+               "OpAsmParser::UnresolvedOperand::name must start with '%'");
+        (void)consumed;
+        // Require `: i32` — enforced for roundtrip fidelity.
         if (p.parseColon())
           return failure();
+        llvm::SMLoc typeLoc = p.getCurrentLocation();
         Type ty;
         if (p.parseType(ty))
           return failure();
+        if (!ty.isInteger(32))
+          return p.emitError(typeLoc,
+                             "expected 'i32' for induction variable type");
         names.push_back(b.getStringAttr(sref));
       } while (succeeded(p.parseOptionalComma()));
       if (p.parseRParen())
@@ -158,13 +164,19 @@ mlir::ParseResult xilinx::csl_layout::PlaceOp::parse(
           if (p.parseOperand(opnd))
             return failure();
           StringRef ivRef = opnd.name;
-          if (ivRef.starts_with("%"))
-            ivRef = ivRef.drop_front();
+          bool consumed = ivRef.consume_front("%");
+          assert(consumed &&
+                 "OpAsmParser::UnresolvedOperand::name must start with '%'");
+          (void)consumed;
           if (p.parseColon())
             return failure();
+          llvm::SMLoc typeLoc = p.getCurrentLocation();
           Type ty;
           if (p.parseType(ty))
             return failure();
+          if (!ty.isInteger(16))
+            return p.emitError(typeLoc,
+                               "expected 'i16' for params value type");
           entries.push_back(
               b.getNamedAttr(key, b.getStringAttr(ivRef)));
         } while (succeeded(p.parseOptionalComma()));
