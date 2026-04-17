@@ -111,6 +111,52 @@ emitFuncBody(mlir::Region &bodyRegion, llvm::raw_ostream &os,
         continue;
       }
 
+      // Helper lambdas for new binary arith ops.
+      // Emit: `var tN: <csl-ty> = lhs OP rhs;`
+      auto emitBinary = [&](Operation *bop, StringRef opSym) {
+        std::string l = resolve(nameMap, bop->getOperand(0));
+        std::string r = resolve(nameMap, bop->getOperand(1));
+        std::string tname = "t" + std::to_string(tempCount++);
+        indent(os, indentLevel);
+        os << "var " << tname << ": "
+           << cslTypeName(bop->getResult(0).getType()) << " = " << l << " "
+           << opSym << " " << r << ";\n";
+        nameMap[bop->getResult(0)] = tname;
+      };
+      // Emit: `var tN: <csl-ty> = @fn(lhs, rhs);`
+      auto emitBuiltin = [&](Operation *bop, StringRef fn) {
+        std::string l = resolve(nameMap, bop->getOperand(0));
+        std::string r = resolve(nameMap, bop->getOperand(1));
+        std::string tname = "t" + std::to_string(tempCount++);
+        indent(os, indentLevel);
+        os << "var " << tname << ": "
+           << cslTypeName(bop->getResult(0).getType()) << " = " << fn << "("
+           << l << ", " << r << ");\n";
+        nameMap[bop->getResult(0)] = tname;
+      };
+
+      // Float binary ops
+      if (dyn_cast<arith::SubFOp>(&op)) { emitBinary(&op, "-"); continue; }
+      if (dyn_cast<arith::MulFOp>(&op)) { emitBinary(&op, "*"); continue; }
+      if (dyn_cast<arith::DivFOp>(&op)) { emitBinary(&op, "/"); continue; }
+      if (dyn_cast<arith::MaximumFOp>(&op)) { emitBuiltin(&op, "@max"); continue; }
+      if (dyn_cast<arith::MinimumFOp>(&op)) { emitBuiltin(&op, "@min"); continue; }
+
+      // Integer binary ops
+      if (dyn_cast<arith::SubIOp>(&op)) { emitBinary(&op, "-"); continue; }
+      if (dyn_cast<arith::MulIOp>(&op)) { emitBinary(&op, "*"); continue; }
+
+      // Unary float negation
+      if (auto negOp = dyn_cast<arith::NegFOp>(&op)) {
+        std::string a = resolve(nameMap, negOp.getOperand());
+        std::string tname = "t" + std::to_string(tempCount++);
+        indent(os, indentLevel);
+        os << "var " << tname << ": " << cslTypeName(negOp.getResult().getType())
+           << " = -" << a << ";\n";
+        nameMap[negOp.getResult()] = tname;
+        continue;
+      }
+
       // memref.load
       if (auto loadOp = dyn_cast<memref::LoadOp>(&op)) {
         Value memref = loadOp.getMemref();
