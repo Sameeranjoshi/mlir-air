@@ -4,7 +4,7 @@
 
 **Goal:** Widen CSL dialect coverage so we can emit multi-operator, multi-function, N-PE SIMD programs from a grouped `.mlir` E2E corpus.
 
-**Architecture:** Reuse upstream MLIR (`func.func`, `arith.*`) wherever possible. Extend the existing `csl_layout.place` op with a subgrid range form (no new op). Emitter iterates all `csl.wafer` symbols in the module, writing one subdir per wafer. Test corpus is pure `.mlir` under `mlir/test/CSLEmit/e2e/`.
+**Architecture:** Reuse upstream MLIR (`func.func`, `arith.*`) wherever possible. Extend the existing `csl_layout.place` op with a subgrid range form (no new op). Emitter iterates all `csl.wafer` symbols in the module, writing one subdir per wafer. Test corpus is pure `.mlir` under `mlir/test/Targets/CSLEmit/e2e/`.
 
 **Tech Stack:** MLIR 22 C++, TableGen, FileCheck + lit, `air-opt` / `air-translate`, Cerebras SDK 1.4 (`cslc`, `cs_python`).
 
@@ -99,11 +99,11 @@ Add `subf / mulf / divf / maxf / minf / negf / subi / muli` cases to `emitFuncBo
 
 **Files:**
 - Modify: `mlir/lib/Targets/CSLEmit/CSLEmitCommon.h` (the `emitFuncBody` function starting at line 67)
-- Test: `mlir/test/CSLEmit/e2e/elementwise.mlir` (new)
+- Test: `mlir/test/Targets/CSLEmit/e2e/elementwise.mlir` (new)
 
 - [ ] **Step 1: Write the failing FileCheck test first**
 
-Create `mlir/test/CSLEmit/e2e/elementwise.mlir`:
+Create `mlir/test/Targets/CSLEmit/e2e/elementwise.mlir`:
 
 ```mlir
 // RUN: rm -rf %t && mkdir -p %t
@@ -165,7 +165,7 @@ Expand the truncated wafers by copy-pasting the `@vecmul_f32` body and changing 
 
 ```bash
 cd build && ninja install
-lit ../mlir/test/CSLEmit/e2e/elementwise.mlir -v
+lit ../mlir/test/Targets/CSLEmit/e2e/elementwise.mlir -v
 ```
 
 Expected: fails because (a) the emitter doesn't iterate multiple wafers yet (Task 4 fixes that — test will still fail on every wafer but `vecmul_f32` even after Step 3; add a `REQUIRES` guard or narrow to one wafer here and add more after Task 4), and (b) `mulf` / `subf` / `divf` / `maxf` aren't recognized.
@@ -238,7 +238,7 @@ if (auto o = dyn_cast<arith::NegFOp>(&op)) {
 
 ```bash
 cd build && ninja install
-lit ../mlir/test/CSLEmit/e2e/elementwise.mlir -v
+lit ../mlir/test/Targets/CSLEmit/e2e/elementwise.mlir -v
 ```
 
 Expected: PASS for the single `@vecmul_f32` wafer. (Widening to all five wafers happens after Task 4.)
@@ -246,7 +246,7 @@ Expected: PASS for the single `@vecmul_f32` wafer. (Widening to all five wafers 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add mlir/lib/Targets/CSLEmit/CSLEmitCommon.h mlir/test/CSLEmit/e2e/elementwise.mlir
+git add mlir/lib/Targets/CSLEmit/CSLEmitCommon.h mlir/test/Targets/CSLEmit/e2e/elementwise.mlir
 git commit -m "feat(csl-emit): support sub/mul/div/max/min/neg arith ops"
 ```
 
@@ -259,11 +259,11 @@ Let users declare internal helpers via upstream `func` dialect; call and return 
 **Files:**
 - Modify: `mlir/lib/Targets/CSLEmit/CSLEmitCommon.h` (`emitFuncBody`)
 - Modify: `mlir/lib/Targets/CSLEmit/CSLProgramEmitter.cpp` (walk `func.func` before `csl.func`)
-- Test: `mlir/test/CSLEmit/e2e/multifunc.mlir` (new)
+- Test: `mlir/test/Targets/CSLEmit/e2e/multifunc.mlir` (new)
 
 - [ ] **Step 1: Write the failing test**
 
-Create `mlir/test/CSLEmit/e2e/multifunc.mlir`:
+Create `mlir/test/Targets/CSLEmit/e2e/multifunc.mlir`:
 
 ```mlir
 // RUN: rm -rf %t && mkdir -p %t
@@ -326,7 +326,7 @@ csl.wafer @helper_add {arch = "wse3"} {
 
 ```bash
 cd build && ninja install
-lit ../mlir/test/CSLEmit/e2e/multifunc.mlir -v
+lit ../mlir/test/Targets/CSLEmit/e2e/multifunc.mlir -v
 ```
 
 Expected: fails at `func.func` / `func.call` / `func.return` — "unsupported op in function body".
@@ -405,7 +405,7 @@ if (auto retOp = dyn_cast<func::ReturnOp>(&op)) {
 
 ```bash
 cd build && ninja install
-lit ../mlir/test/CSLEmit/e2e/multifunc.mlir -v
+lit ../mlir/test/Targets/CSLEmit/e2e/multifunc.mlir -v
 ```
 
 Expected: PASS.
@@ -459,7 +459,7 @@ Extend the top RUN block with one more FileCheck:
 ```bash
 git add mlir/lib/Targets/CSLEmit/CSLEmitCommon.h \
         mlir/lib/Targets/CSLEmit/CSLProgramEmitter.cpp \
-        mlir/test/CSLEmit/e2e/multifunc.mlir
+        mlir/test/Targets/CSLEmit/e2e/multifunc.mlir
 git commit -m "feat(csl-emit): support func.func/call/return + auto-import <layout>"
 ```
 
@@ -474,11 +474,11 @@ Emitter walks every `csl.wafer` in the module and writes one subdir per wafer un
 - Modify: `mlir/lib/Targets/CSLEmit/CSLProgramEmitter.cpp` (accept a wafer arg so it emits one program)
 - Modify: `mlir/lib/Targets/CSLEmit/CSLLayoutEmitter.cpp` (same)
 - Modify: `mlir/lib/Targets/CSLEmit/CSLHostEmitter.cpp` (same)
-- Test: `mlir/test/CSLEmit/e2e/elementwise.mlir` (widen to multi-wafer)
+- Test: `mlir/test/Targets/CSLEmit/e2e/elementwise.mlir` (widen to multi-wafer)
 
 - [ ] **Step 1: Write the failing multi-wafer test**
 
-Widen `mlir/test/CSLEmit/e2e/elementwise.mlir` to contain 4 wafers (`vecmul`, `vecsub`, `vecdiv`, `vecmax` — all f32, size 256), plus 4 `FileCheck --check-prefix` RUN lines reading per-wafer subdirs (`%t/vecmul_f32/program.csl`, etc.).
+Widen `mlir/test/Targets/CSLEmit/e2e/elementwise.mlir` to contain 4 wafers (`vecmul`, `vecsub`, `vecdiv`, `vecmax` — all f32, size 256), plus 4 `FileCheck --check-prefix` RUN lines reading per-wafer subdirs (`%t/vecmul_f32/program.csl`, etc.).
 
 - [ ] **Step 2: Run, verify failure**
 
@@ -596,11 +596,11 @@ Unified op. `at (x, y)` stays for the 1-PE case; `over [lo:hi:stride]` is the ne
 **Files:**
 - Modify: `mlir/include/air/Dialect/CSL/CSLLayoutOps.td` (extend `CSL_Layout_PlaceOp`)
 - Modify: `mlir/lib/Dialect/CSL/IR/CSLOps.cpp` (custom parser/printer)
-- Test: `mlir/test/CSLEmit/e2e/layouts.mlir` (new)
+- Test: `mlir/test/Targets/CSLEmit/e2e/layouts.mlir` (new)
 
 - [ ] **Step 1: Write the failing roundtrip test**
 
-Create `mlir/test/CSLEmit/e2e/layouts.mlir` with several wafers:
+Create `mlir/test/Targets/CSLEmit/e2e/layouts.mlir` with several wafers:
 
 ```mlir
 // RUN: air-opt %s | air-opt | FileCheck %s
@@ -712,13 +712,13 @@ LogicalResult PlaceOp::verify() {
 
 ```bash
 cd build && ninja install
-lit ../mlir/test/CSLEmit/e2e/layouts.mlir -v
+lit ../mlir/test/Targets/CSLEmit/e2e/layouts.mlir -v
 ```
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add mlir/include/air/Dialect/CSL mlir/lib/Dialect/CSL mlir/test/CSLEmit/e2e/layouts.mlir
+git add mlir/include/air/Dialect/CSL mlir/lib/Dialect/CSL mlir/test/Targets/CSLEmit/e2e/layouts.mlir
 git commit -m "feat(csl-layout): extend place op with subgrid range form"
 ```
 
@@ -733,7 +733,7 @@ When `csl_layout.place` is in `over` form, emit a `for` loop over the range inst
 
 - [ ] **Step 1: Widen the test — add CHECK lines for `layout.csl`**
 
-In `mlir/test/CSLEmit/e2e/layouts.mlir`, after the existing roundtrip RUN line, add four variants: point, 1-D row, 2-D subgrid, and a `params`-bearing row (the `params` example uses a non-coord name like `shard_offset` because coords themselves come from the `<layout>` library — see Task 3b):
+In `mlir/test/Targets/CSLEmit/e2e/layouts.mlir`, after the existing roundtrip RUN line, add four variants: point, 1-D row, 2-D subgrid, and a `params`-bearing row (the `params` example uses a non-coord name like `shard_offset` because coords themselves come from the `<layout>` library — see Task 3b):
 
 ```mlir
 // RUN: rm -rf %t && mkdir -p %t
@@ -837,7 +837,7 @@ static void emitTileCodeBody(raw_ostream &os, StringRef progName,
 - [ ] **Step 4: Run, confirm PASS**
 
 ```bash
-cd build && ninja install && lit ../mlir/test/CSLEmit/e2e/layouts.mlir -v
+cd build && ninja install && lit ../mlir/test/Targets/CSLEmit/e2e/layouts.mlir -v
 ```
 
 - [ ] **Step 5: Commit**
@@ -935,7 +935,7 @@ os << "  runner.memcpy_h2d(runner.get_id(\"" << alias << "\"), "
 - [ ] **Step 5: Commit**
 
 ```bash
-git add mlir/lib/Targets/CSLEmit/CSLHostEmitter.cpp mlir/test/CSLEmit/e2e/layouts.mlir
+git add mlir/lib/Targets/CSLEmit/CSLHostEmitter.cpp mlir/test/Targets/CSLEmit/e2e/layouts.mlir
 git commit -m "feat(csl-emit): derive host memcpy (w,h,l) from subgrid extent + equal sharding"
 ```
 
@@ -1161,7 +1161,7 @@ git commit -m "feat(csl-verify-params): validate func.call callees + range-form 
 
 ## Task 10: Build out the rest of the E2E corpus
 
-Fill in the remaining files under `mlir/test/CSLEmit/e2e/`:
+Fill in the remaining files under `mlir/test/Targets/CSLEmit/e2e/`:
 
 - [ ] **Step 1: `sizes.mlir`** — `vecadd` wafers at sizes 64, 256, 1024; plus one rank-2 `memref<16x16xf32>` wafer with a nested loop.
 - [ ] **Step 2: `kernels.mlir`** — `dot`, `reduce`, `saxpy`, `relu` wafers (each a csl.wafer with appropriate `csl.func @compute`). Use ops added in Task 2.
@@ -1179,7 +1179,7 @@ cd build && ninja install && ninja check-csl
 - [ ] **Step 6: Commit**
 
 ```bash
-git add mlir/test/CSLEmit/e2e/
+git add mlir/test/Targets/CSLEmit/e2e/
 git commit -m "test(csl-emit): add grouped E2E corpus (sizes/kernels/control_flow/roundtrip)"
 ```
 
@@ -1255,7 +1255,7 @@ Estimated effort: 1–2 days each for Tasks 1/2/3/11; 1–2 days each for Tasks 
 
 ## Definition of done (from spec §11)
 
-- Every `.mlir` file under `mlir/test/CSLEmit/e2e/` passes `ninja check-csl`.
+- Every `.mlir` file under `mlir/test/Targets/CSLEmit/e2e/` passes `ninja check-csl`.
 - `air-translate --emit-csl --output-dir=%t` on a multi-wafer file creates one subdir per wafer.
 - `utils/run_csl_sdk.sh` prints `SUCCESS!` for every 1-PE wafer and for the N-PE SIMD vecadd wafer on the CS-3 simulator.
 - `func.func private @helper` emits as a CSL `fn helper(...)` before the `csl.func @compute` entry.

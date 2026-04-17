@@ -266,7 +266,7 @@ utils/run_csl_sdk.sh <DIR>
 ### 8.1 Layout
 
 ```
-mlir/test/CSLEmit/e2e/
+mlir/test/Targets/CSLEmit/e2e/
 ├── elementwise.mlir    # add/sub/mul/div/max/min × {f32,f16} and add/sub/mul × {i32,i16}
 ├── sizes.mlir          # vecadd @ 64 / 256 / 1024; rank-2 16×16
 ├── kernels.mlir        # dot, reduce, saxpy, relu (one csl.wafer each)
@@ -307,13 +307,13 @@ Not part of `ninja check-csl` (lit). After a successful lit pass, developer runs
 ## 9. Files changed
 
 ### New
-- `mlir/test/CSLEmit/e2e/elementwise.mlir`
-- `mlir/test/CSLEmit/e2e/sizes.mlir`
-- `mlir/test/CSLEmit/e2e/kernels.mlir`
-- `mlir/test/CSLEmit/e2e/multifunc.mlir`
-- `mlir/test/CSLEmit/e2e/layouts.mlir`
-- `mlir/test/CSLEmit/e2e/control_flow.mlir`
-- `mlir/test/CSLEmit/e2e/roundtrip.mlir`
+- `mlir/test/Targets/CSLEmit/e2e/elementwise.mlir`
+- `mlir/test/Targets/CSLEmit/e2e/sizes.mlir`
+- `mlir/test/Targets/CSLEmit/e2e/kernels.mlir`
+- `mlir/test/Targets/CSLEmit/e2e/multifunc.mlir`
+- `mlir/test/Targets/CSLEmit/e2e/layouts.mlir`
+- `mlir/test/Targets/CSLEmit/e2e/control_flow.mlir`
+- `mlir/test/Targets/CSLEmit/e2e/roundtrip.mlir`
 - `utils/run_csl_sdk.sh`
 
 ### Modified
@@ -347,7 +347,7 @@ Not part of `ninja check-csl` (lit). After a successful lit pass, developer runs
 
 ## 11. Definition of done
 
-- Every `.mlir` file under `mlir/test/CSLEmit/e2e/` passes `ninja check-csl`.
+- Every `.mlir` file under `mlir/test/Targets/CSLEmit/e2e/` passes `ninja check-csl`.
 - `air-translate --emit-csl --output-dir=%t` on a multi-wafer file creates one subdir per wafer.
 - `utils/run_csl_sdk.sh` on the per-wafer output dirs prints `SUCCESS!` for every 1-PE wafer and for the N-PE SIMD vecadd wafer on the CS-3 simulator.
 - `direction = "in"/"out"` on `csl.export` is preserved (kept explicit).
