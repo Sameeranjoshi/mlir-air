@@ -17,6 +17,7 @@ set(CONVERSION_LINK_LIBS
   CSLDialect
   AIRUtil
   MLIRIR
+  MLIRFuncDialect
   MLIRLinalgUtils
   MLIRLinalgTransforms
   MLIRSupport
