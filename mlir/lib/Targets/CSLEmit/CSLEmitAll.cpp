@@ -314,8 +314,8 @@ static LogicalResult emitAll(ModuleOp module, llvm::raw_ostream &os) {
 void registerCSLEmitAllTranslation() {
   static TranslateFromMLIRRegistration reg(
       "emit-csl",
-      "Emit all CSL files (program, layout, host, commands_wse{2,3}.sh) "
-      "into --output-dir",
+      "Emit all CSL files (program, layout, host, commands_wse3.sh) "
+      "into --output-dir. Writes one subdirectory per csl.wafer.",
       emitAll,
       [](DialectRegistry &registry) {
         registry.insert<xilinx::csl::CSLDialect,

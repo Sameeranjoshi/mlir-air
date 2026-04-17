@@ -25,7 +25,7 @@ add_lit_testsuites(AIRMLIR ${CMAKE_CURRENT_SOURCE_DIR} DEPENDS ${TEST_DEPENDS})
 #   ninja check-csl              — all CSL tests
 #   ninja check-csl-dialect      — Dialect/CSL/         (op round-trip, diagnostics)
 #   ninja check-csl-conversion   — Conversion/AIRToCSL/ (-air-to-csl, derive-exports, e2e)
-#   ninja check-csl-emitters     — Targets/CSLV2ToPy/   (--emit-csl-program/layout/host)
+#   ninja check-csl-emitters     — Targets/CSLEmit/      (--emit-csl-program/layout/host)
 #===----------------------------------------------------------------------===//
 
 # Locate the lit runner — use LLVM_EXTERNAL_LIT (set by LLVM build) with -v for
@@ -48,7 +48,7 @@ set_target_properties(check-csl-conversion PROPERTIES FOLDER "Tests/CSL")
 
 # 3. CSL emitter tests (--emit-csl-program, --emit-csl-layout, --emit-csl-host)
 add_custom_target(check-csl-emitters
-  COMMAND ${CSL_LIT_COMMAND} ${CMAKE_CURRENT_BINARY_DIR}/Targets/CSLV2ToPy
+  COMMAND ${CSL_LIT_COMMAND} ${CMAKE_CURRENT_BINARY_DIR}/Targets/CSLEmit
   DEPENDS ${TEST_DEPENDS}
   COMMENT "Running CSL emitter tests")
 set_target_properties(check-csl-emitters PROPERTIES FOLDER "Tests/CSL")
@@ -58,7 +58,7 @@ add_custom_target(check-csl
   COMMAND ${CSL_LIT_COMMAND}
     ${CMAKE_CURRENT_BINARY_DIR}/Dialect/CSL
     ${CMAKE_CURRENT_BINARY_DIR}/Conversion/AIRToCSL
-    ${CMAKE_CURRENT_BINARY_DIR}/Targets/CSLV2ToPy
+    ${CMAKE_CURRENT_BINARY_DIR}/Targets/CSLEmit
   DEPENDS ${TEST_DEPENDS}
   COMMENT "Running all CSL tests")
 set_target_properties(check-csl PROPERTIES FOLDER "Tests/CSL")

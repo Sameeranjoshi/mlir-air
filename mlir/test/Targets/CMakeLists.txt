@@ -3,4 +3,4 @@
 
 # CSL emitter tests (--emit-csl-program, --emit-csl-layout, --emit-csl-host)
 
-add_subdirectory(CSLV2ToPy)
+add_subdirectory(CSLEmit)
