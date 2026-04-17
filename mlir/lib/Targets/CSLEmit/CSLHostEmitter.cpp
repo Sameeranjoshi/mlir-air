@@ -37,6 +37,9 @@
 #include "mlir/IR/Operation.h"
 #include "mlir/Tools/mlir-translate/Translation.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringMap.h"
+#include "llvm/ADT/Twine.h"
+#include "llvm/Support/Format.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <cassert>
@@ -157,6 +160,247 @@ static StringRef findProgramForLeaf(xilinx::csl::WaferOp wafer, StringRef leaf) 
     });
   });
   return found;
+}
+
+//===----------------------------------------------------------------------===//
+// Reference-compute walker: translates a csl.func body to numpy code.
+//===----------------------------------------------------------------------===//
+
+/// Emitter state for the numpy reference walker. One instance per run.py
+/// (per wafer). Keeps the SSA value -> python-expression map, a counter for
+/// fresh temp names, and a failure flag that triggers the sanity fallback.
+struct RefEmitState {
+  llvm::DenseMap<mlir::Value, std::string> nameMap;
+  unsigned tempCount = 0;
+  bool ok = true;
+  std::string reason; // why we bailed out (for the fallback comment)
+};
+
+static std::string rnpDtype(mlir::Type eltTy) {
+  if (eltTy.isF32())
+    return "np.float32";
+  if (eltTy.isF16())
+    return "np.float16";
+  if (eltTy.isInteger(32))
+    return "np.int32";
+  if (eltTy.isInteger(16))
+    return "np.int16";
+  return "np.float32";
+}
+
+static std::string rfreshTemp(RefEmitState &s, StringRef prefix = "t") {
+  return (prefix + llvm::Twine(s.tempCount++)).str();
+}
+
+static std::string rresolve(const RefEmitState &s, mlir::Value v) {
+  auto it = s.nameMap.find(v);
+  if (it != s.nameMap.end())
+    return it->second;
+  return "None";
+}
+
+// Forward declaration.
+static void emitRefBody(mlir::Region &region, llvm::raw_ostream &os,
+                        unsigned indentLevel, RefEmitState &s);
+
+/// Emit the translation of one body op into numpy.
+static void emitRefOp(mlir::Operation &op, llvm::raw_ostream &os,
+                      unsigned indentLevel, RefEmitState &s) {
+  using namespace mlir;
+
+  auto ind = [&]() {
+    for (unsigned i = 0; i < indentLevel; ++i)
+      os << "    ";
+  };
+
+  // Terminators: skipped.
+  if (isa<xilinx::csl::ReturnOp>(&op) || isa<scf::YieldOp>(&op))
+    return;
+
+  // arith.constant
+  if (auto constOp = dyn_cast<arith::ConstantOp>(&op)) {
+    std::string t = rfreshTemp(s);
+    if (auto intAttr = dyn_cast<IntegerAttr>(constOp.getValue())) {
+      // Integer constants become Python ints (used as loop bounds / indices).
+      s.nameMap[constOp.getResult()] = std::to_string(intAttr.getInt());
+      return;
+    }
+    if (auto floatAttr = dyn_cast<FloatAttr>(constOp.getValue())) {
+      std::string dtype = rnpDtype(constOp.getType());
+      ind();
+      os << t << " = " << dtype << "("
+         << llvm::format("%.17g", floatAttr.getValueAsDouble()) << ")\n";
+      s.nameMap[constOp.getResult()] = t;
+      return;
+    }
+    s.ok = false;
+    s.reason = "non-int/float arith.constant";
+    return;
+  }
+
+  // Binary arith ops.
+  auto emitBin = [&](Operation *bop, StringRef pyOp) {
+    std::string l = rresolve(s, bop->getOperand(0));
+    std::string r = rresolve(s, bop->getOperand(1));
+    std::string t = rfreshTemp(s);
+    ind();
+    os << t << " = " << l << " " << pyOp << " " << r << "\n";
+    s.nameMap[bop->getResult(0)] = t;
+  };
+  auto emitCall = [&](Operation *bop, StringRef pyFn) {
+    std::string l = rresolve(s, bop->getOperand(0));
+    std::string r = rresolve(s, bop->getOperand(1));
+    std::string t = rfreshTemp(s);
+    ind();
+    os << t << " = " << pyFn << "(" << l << ", " << r << ")\n";
+    s.nameMap[bop->getResult(0)] = t;
+  };
+
+  if (isa<arith::AddFOp>(&op) || isa<arith::AddIOp>(&op)) {
+    emitBin(&op, "+");
+    return;
+  }
+  if (isa<arith::SubFOp>(&op) || isa<arith::SubIOp>(&op)) {
+    emitBin(&op, "-");
+    return;
+  }
+  if (isa<arith::MulFOp>(&op) || isa<arith::MulIOp>(&op)) {
+    emitBin(&op, "*");
+    return;
+  }
+  if (isa<arith::DivFOp>(&op)) {
+    emitBin(&op, "/");
+    return;
+  }
+  if (isa<arith::MaximumFOp>(&op)) {
+    emitCall(&op, "np.maximum");
+    return;
+  }
+  if (isa<arith::MinimumFOp>(&op)) {
+    emitCall(&op, "np.minimum");
+    return;
+  }
+  if (auto negOp = dyn_cast<arith::NegFOp>(&op)) {
+    std::string a = rresolve(s, negOp.getOperand());
+    std::string t = rfreshTemp(s);
+    ind();
+    os << t << " = -" << a << "\n";
+    s.nameMap[negOp.getResult()] = t;
+    return;
+  }
+
+  // memref.load
+  if (auto loadOp = dyn_cast<memref::LoadOp>(&op)) {
+    std::string buf = rresolve(s, loadOp.getMemref());
+    std::string idx;
+    if (!loadOp.getIndices().empty())
+      idx = rresolve(s, loadOp.getIndices()[0]);
+    else
+      idx = "0";
+    std::string t = rfreshTemp(s);
+    ind();
+    os << t << " = " << buf << "[" << idx << "]\n";
+    s.nameMap[loadOp.getResult()] = t;
+    return;
+  }
+
+  // memref.store
+  if (auto storeOp = dyn_cast<memref::StoreOp>(&op)) {
+    std::string buf = rresolve(s, storeOp.getMemref());
+    std::string idx;
+    if (!storeOp.getIndices().empty())
+      idx = rresolve(s, storeOp.getIndices()[0]);
+    else
+      idx = "0";
+    std::string val = rresolve(s, storeOp.getValue());
+    ind();
+    os << buf << "[" << idx << "] = " << val << "\n";
+    return;
+  }
+
+  // scf.for
+  if (auto forOp = dyn_cast<scf::ForOp>(&op)) {
+    std::string lo = rresolve(s, forOp.getLowerBound());
+    std::string hi = rresolve(s, forOp.getUpperBound());
+    std::string st = rresolve(s, forOp.getStep());
+    std::string iv = rfreshTemp(s, "i");
+    s.nameMap[forOp.getInductionVar()] = iv;
+    ind();
+    os << "for " << iv << " in range(" << lo << ", " << hi << ", " << st
+       << "):\n";
+    emitRefBody(forOp.getBodyRegion(), os, indentLevel + 1, s);
+    return;
+  }
+
+  // func.call — inline the helper by walking its body with operand mapping.
+  if (auto callOp = dyn_cast<func::CallOp>(&op)) {
+    StringRef callee = callOp.getCallee();
+    // Find the callee func.func in the enclosing csl.program.
+    Operation *p = op.getParentOp();
+    while (p && !isa<xilinx::csl::ProgramOp>(p))
+      p = p->getParentOp();
+    func::FuncOp calleeFn;
+    if (p) {
+      p->walk([&](func::FuncOp f) {
+        if (f.getSymName() == callee)
+          calleeFn = f;
+      });
+    }
+    if (!calleeFn || calleeFn.getBody().empty()) {
+      s.ok = false;
+      s.reason = "helper not found or external";
+      return;
+    }
+
+    // Map the callee's block args to the call's operand names.
+    Block &entry = calleeFn.getBody().front();
+    for (auto it : llvm::enumerate(entry.getArguments())) {
+      Value operand = callOp.getOperand(it.index());
+      s.nameMap[it.value()] = rresolve(s, operand);
+    }
+    // Walk the callee body, capturing any returned value.
+    // func.return is handled specially below.
+    std::string retName;
+    for (Block &blk : calleeFn.getBody()) {
+      for (Operation &sub : blk) {
+        if (!s.ok)
+          return;
+        if (auto ret = dyn_cast<func::ReturnOp>(&sub)) {
+          if (ret.getNumOperands() > 0)
+            retName = rresolve(s, ret.getOperand(0));
+          continue;
+        }
+        emitRefOp(sub, os, indentLevel, s);
+      }
+    }
+    if (callOp.getNumResults() > 0) {
+      if (retName.empty()) {
+        s.ok = false;
+        s.reason = "helper returned no value";
+        return;
+      }
+      s.nameMap[callOp.getResult(0)] = retName;
+    }
+    return;
+  }
+
+  // func.return — only reachable at top level, ignored (we're in main body).
+  if (isa<func::ReturnOp>(&op))
+    return;
+
+  s.ok = false;
+  s.reason = ("unsupported op: " + op.getName().getStringRef()).str();
+}
+
+static void emitRefBody(mlir::Region &region, llvm::raw_ostream &os,
+                        unsigned indentLevel, RefEmitState &s) {
+  for (mlir::Block &blk : region) {
+    for (mlir::Operation &op : blk) {
+      if (!s.ok)
+        return;
+      emitRefOp(op, os, indentLevel, s);
+    }
+  }
 }
 
 class HostEmitter {
@@ -404,30 +648,203 @@ LogicalResult HostEmitter::emit(xilinx::csl::WaferOp wafer) {
 
   os << "runner.stop()\n\n";
 
-  // Output sanity check: skip reference verification (the emitter has no
-  // reference model). Just dump first elements and warn if outputs are all
-  // zero (implying the kernel didn't run).
-  os << "# Output sanity checks (no reference model is known to the emitter).\n";
-  if (anyFloatOutput) {
-    os << "def _sanity(name, buf):\n";
-    os << "    head = buf[:min(8, len(buf))]\n";
-    os << "    print(f\"  {name}[:{len(head)}] = {list(head)}\")\n";
-    os << "    return bool(np.any(buf != 0))\n\n";
-    os << "print(\"Output buffers:\")\n";
-    os << "any_nonzero = False\n";
-    for (unsigned i = 0; i < argNames.size(); ++i) {
-      if (argDir[i] == Dir::D2H)
-        os << "any_nonzero = _sanity(\"" << argNames[i] << "\", "
-           << argNames[i] << ") or any_nonzero\n";
+  // -- Reference computation + correctness check. --
+  //
+  // Strategy: interpret the `csl.func @compute` body in numpy. For each
+  // csl.var touched by a memcpy, materialize a device-side numpy view seeded
+  // from the host buffer (H2D) or zeros (D2H). Walk the body emitting numpy
+  // code, then compare the expected host buffer against the actual.
+  //
+  // If any op in the body is unsupported by the walker, we bail out and
+  // fall back to the legacy sanity check.
+  bool refOk = false;
+  std::string refBlock;
+  llvm::SmallVector<unsigned, 4> refD2HArgs; // arg indices verified by refBlock
+  {
+    // Find the program containing the launch target.
+    StringRef progSym =
+        launchFn.empty() ? StringRef() : findProgramForLeaf(wafer, launchFn);
+    xilinx::csl::ProgramOp program;
+    wafer.walk([&](xilinx::csl::ProgramOp p) {
+      if (program)
+        return;
+      if (progSym.empty() || p.getSymName() == progSym)
+        program = p;
+    });
+
+    // Locate the compute csl.func in the program.
+    xilinx::csl::FuncOp computeFn;
+    if (program) {
+      program.getBody().walk([&](xilinx::csl::FuncOp f) {
+        if (computeFn)
+          return;
+        if (launchFn.empty() || f.getSymName() == launchFn)
+          computeFn = f;
+      });
     }
-    os << "if not any_nonzero:\n";
-    os << "    print(\"WARNING: all output buffers are zero - kernel may not "
-          "have run.\", file=sys.stderr)\n";
+
+    // Map per-var info: var symbol -> (arg index, device memref type, direction).
+    // The device memref type is the one declared on `csl.var` (the per-PE
+    // buffer shape), NOT the host-side memref (which may be the full sharded
+    // buffer).
+    struct VarBinding {
+      unsigned argIdx;
+      MemRefType memTy; // the PE-local csl.var's memref type
+      Dir dir;
+      std::string refBufName; // e.g. "_a_ref"
+    };
+    llvm::StringMap<VarBinding> varBindings;
+    for (const MemcpyEntry &e : memcpys) {
+      if (e.argIdx >= argTypes.size())
+        continue;
+      // Look up the csl.var declaration for `e.leafSym` inside the program.
+      MemRefType deviceTy;
+      if (program) {
+        program.getBody().walk([&](xilinx::csl::VarOp vop) {
+          if (deviceTy)
+            return;
+          if (vop.getSymName() == e.leafSym)
+            if (auto mt = dyn_cast<MemRefType>(vop.getResult().getType()))
+              deviceTy = mt;
+        });
+      }
+      if (!deviceTy)
+        continue;
+      VarBinding vb;
+      vb.argIdx = e.argIdx;
+      vb.memTy = deviceTy;
+      vb.dir = e.isH2d ? Dir::H2D : Dir::D2H;
+      vb.refBufName = "_" + e.leafSym + "_ref";
+      varBindings[e.leafSym] = vb;
+    }
+
+    // Collect D2H output leaf syms (for the assertion section).
+    llvm::SmallVector<std::string, 4> d2hLeaves;
+    for (const MemcpyEntry &e : memcpys) {
+      if (!e.isH2d)
+        d2hLeaves.push_back(e.leafSym);
+    }
+
+    if (computeFn && !d2hLeaves.empty() && !computeFn.getBody().empty()) {
+      std::string buf;
+      llvm::raw_string_ostream refOs(buf);
+      RefEmitState state;
+
+      // Per-var device-side shape length inside the kernel (the memref shape
+      // as declared at csl.var — may differ from the host buffer size).
+      auto varLen = [](MemRefType mt) -> int64_t {
+        int64_t n = 1;
+        for (int64_t d : mt.getShape())
+          n *= d;
+        return n;
+      };
+
+      // Seed the SSA-name map: each csl.var's result -> local numpy array.
+      // We also emit the allocation/seeding statements.
+      refOs << "# Reference computation (numpy, interpreted from csl.func @"
+            << computeFn.getSymName() << " body).\n";
+      program.getBody().walk([&](xilinx::csl::VarOp vop) {
+        auto mt = dyn_cast<MemRefType>(vop.getResult().getType());
+        if (!mt)
+          return;
+        auto it = varBindings.find(vop.getSymName());
+        if (it == varBindings.end()) {
+          // Var is not touched by any memcpy — allocate as zeros of declared
+          // shape so loads/stores to it still work.
+          std::string name = ("_" + vop.getSymName() + "_ref").str();
+          refOs << name << " = np.zeros(" << varLen(mt)
+                << ", dtype=" << rnpDtype(mt.getElementType()) << ")\n";
+          state.nameMap[vop.getResult()] = name;
+          return;
+        }
+        const VarBinding &vb = it->second;
+        int64_t vlen = varLen(vb.memTy);
+        std::string dtype = rnpDtype(vb.memTy.getElementType());
+        if (vb.dir == Dir::H2D) {
+          // H2D: device buffer holds the first `vlen` elements of the host
+          // h2d input (per ROW_MAJOR memcpy).
+          refOs << vb.refBufName << " = " << argNames[vb.argIdx] << "[:"
+                << vlen << "].astype(" << dtype << ").copy()\n";
+        } else {
+          refOs << vb.refBufName << " = np.zeros(" << vlen << ", dtype="
+                << dtype << ")\n";
+        }
+        state.nameMap[vop.getResult()] = vb.refBufName;
+      });
+
+      // Walk the body.
+      emitRefBody(computeFn.getBody(), refOs, 0, state);
+
+      if (state.ok) {
+        // Build the verification section.
+        refOs << "\n# Verification: compare each D2H output against its "
+                 "reference.\n";
+        refOs << "_mismatch = False\n";
+        for (const std::string &leaf : d2hLeaves) {
+          auto it = varBindings.find(leaf);
+          if (it == varBindings.end())
+            continue;
+          const VarBinding &vb = it->second;
+          int64_t vlen = varLen(vb.memTy);
+          std::string argName = argNames[vb.argIdx];
+          std::string dtype = rnpDtype(vb.memTy.getElementType());
+          refOs << "_expected_" << argName << " = np.zeros_like(" << argName
+                << ")\n";
+          refOs << "_expected_" << argName << "[:" << vlen << "] = "
+                << vb.refBufName << "\n";
+          refOs << "if not np.allclose(" << argName << ", _expected_"
+                << argName << ", atol=1e-5, rtol=1e-5):\n";
+          refOs << "    print(\"MISMATCH in " << argName << " (var @" << leaf
+                << "):\", file=sys.stderr)\n";
+          refOs << "    print(f\"  expected[:8] = {_expected_" << argName
+                << "[:min(8, len(_expected_" << argName << "))]}\", "
+                   "file=sys.stderr)\n";
+          refOs << "    print(f\"  got[:8]      = {" << argName
+                << "[:min(8, len(" << argName << "))]}\", file=sys.stderr)\n";
+          refOs << "    _mismatch = True\n";
+          refOs << "else:\n";
+          refOs << "    print(f\"  " << argName << "[:8] = {" << argName
+                << "[:min(8, len(" << argName
+                << "))]} (matches reference)\")\n";
+          refD2HArgs.push_back(vb.argIdx);
+        }
+        refOs << "if _mismatch:\n";
+        refOs << "    sys.exit(1)\n";
+        refOs.flush();
+        refBlock = buf;
+        refOk = true;
+      } else {
+        os << "# Reference-compute skipped: " << state.reason << "\n";
+      }
+    }
+  }
+
+  if (refOk) {
+    os << refBlock;
   } else {
-    for (unsigned i = 0; i < argNames.size(); ++i) {
-      if (argDir[i] == Dir::D2H)
-        os << "print(\"" << argNames[i] << "[:8] =\", " << argNames[i]
-           << "[:min(8, len(" << argNames[i] << "))])\n";
+    // Fallback: legacy sanity check (no reference model available for this
+    // kernel — e.g. empty compute or unsupported op in body).
+    os << "# Output sanity checks (no reference model available).\n";
+    if (anyFloatOutput) {
+      os << "def _sanity(name, buf):\n";
+      os << "    head = buf[:min(8, len(buf))]\n";
+      os << "    print(f\"  {name}[:{len(head)}] = {list(head)}\")\n";
+      os << "    return bool(np.any(buf != 0))\n\n";
+      os << "print(\"Output buffers:\")\n";
+      os << "any_nonzero = False\n";
+      for (unsigned i = 0; i < argNames.size(); ++i) {
+        if (argDir[i] == Dir::D2H)
+          os << "any_nonzero = _sanity(\"" << argNames[i] << "\", "
+             << argNames[i] << ") or any_nonzero\n";
+      }
+      os << "# Note: all-zero output is OK if the kernel has no stores (e.g. "
+            "empty compute).\n";
+    } else {
+      for (unsigned i = 0; i < argNames.size(); ++i) {
+        if (argDir[i] == Dir::D2H)
+          os << "print(\"" << argNames[i] << "[:8] =\", " << argNames[i]
+             << "[:min(8, len(" << argNames[i] << "))])\n";
+      }
     }
   }
   os << "print(\"SUCCESS!\")\n";
