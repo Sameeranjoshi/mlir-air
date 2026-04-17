@@ -211,6 +211,34 @@ emitFuncBody(mlir::Region &bodyRegion, llvm::raw_ostream &os,
         continue;
       }
 
+      // func.call → var tN: T = callee(args);  (or plain callee(args); if void)
+      if (auto callOp = dyn_cast<func::CallOp>(&op)) {
+        indent(os, indentLevel);
+        std::string tname;
+        if (callOp.getNumResults() > 0) {
+          tname = "t" + std::to_string(tempCount++);
+          os << "var " << tname << ": "
+             << cslTypeName(callOp.getResult(0).getType()) << " = ";
+          nameMap[callOp.getResult(0)] = tname;
+        }
+        os << callOp.getCallee() << "(";
+        for (auto it : llvm::enumerate(callOp.getOperands())) {
+          if (it.index()) os << ", ";
+          os << resolve(nameMap, it.value());
+        }
+        os << ");\n";
+        continue;
+      }
+      // func.return → return [val];
+      if (auto retOp = dyn_cast<func::ReturnOp>(&op)) {
+        indent(os, indentLevel);
+        if (retOp.getNumOperands() > 0)
+          os << "return " << resolve(nameMap, retOp.getOperand(0)) << ";\n";
+        else
+          os << "return;\n";
+        continue;
+      }
+
       // Unknown op
       op.emitOpError("CSLEmit: unsupported op in function body: ");
       return failure();

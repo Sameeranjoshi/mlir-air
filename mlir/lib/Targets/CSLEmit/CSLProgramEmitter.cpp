@@ -74,6 +74,9 @@ LogicalResult ProgramEmitter::emit(ModuleOp module) {
   os << "param memcpy_params: comptime_struct;\n";
   os << "const sys_mod = @import_module(\"<memcpy/memcpy>\", memcpy_params);\n\n";
 
+  // Layout library for runtime PE coord access (get_x_coord / get_y_coord).
+  os << "const layout_mod = @import_module(\"<layout>\");\n\n";
+
   // 1. Emit param declarations from block args with !csl.comptime<T> type.
   Region &progBody = prog.getBody();
   if (!progBody.empty()) {
@@ -147,6 +150,32 @@ LogicalResult ProgramEmitter::emit(ModuleOp module) {
   }
   if (hasPointers)
     os << "\n";
+
+  // 2.5 Emit func.func private helpers before csl.func.
+  for (Operation &op : prog.getBody().front()) {
+    auto fOp = dyn_cast<func::FuncOp>(&op);
+    if (!fOp || !fOp.isPrivate()) continue;
+
+    os << "fn " << fOp.getSymName() << "(";
+    llvm::DenseMap<Value, std::string> helperMap = outerMap;
+    for (auto it : llvm::enumerate(fOp.getArguments())) {
+      if (it.index()) os << ", ";
+      std::string argName = "a" + std::to_string(it.index());
+      helperMap[it.value()] = argName;
+      os << argName << ": " << cslTypeName(it.value().getType());
+    }
+    os << ") ";
+    if (fOp.getNumResults() > 0)
+      os << cslTypeName(fOp.getResultTypes()[0]) << " ";
+    else
+      os << "void ";
+    os << "{\n";
+    unsigned helperTemp = 0;
+    if (failed(emitFuncBody(fOp.getBody(), os, /*indentLevel=*/1,
+                            outerMap, helperMap, helperTemp)))
+      return failure();
+    os << "}\n\n";
+  }
 
   // 3. Emit function definitions
   for (Operation &op : prog.getBody().front()) {
