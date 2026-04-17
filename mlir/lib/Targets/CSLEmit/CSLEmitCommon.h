@@ -123,15 +123,17 @@ emitFuncBody(mlir::Region &bodyRegion, llvm::raw_ostream &os,
            << opSym << " " << r << ";\n";
         nameMap[bop->getResult(0)] = tname;
       };
-      // Emit: `var tN: <csl-ty> = @fn(lhs, rhs);`
-      auto emitBuiltin = [&](Operation *bop, StringRef fn) {
+      // Emit a scalar min/max as a CSL if-expression:
+      //   var tN: <csl-ty> = if (lhs CMP rhs) lhs else rhs;
+      // CSL has no scalar @max/@min builtin (@fmaxs/@fmaxh operate on DSDs).
+      auto emitMinMax = [&](Operation *bop, StringRef cmp) {
         std::string l = resolve(nameMap, bop->getOperand(0));
         std::string r = resolve(nameMap, bop->getOperand(1));
         std::string tname = "t" + std::to_string(tempCount++);
         indent(os, indentLevel);
         os << "var " << tname << ": "
-           << cslTypeName(bop->getResult(0).getType()) << " = " << fn << "("
-           << l << ", " << r << ");\n";
+           << cslTypeName(bop->getResult(0).getType()) << " = if (" << l
+           << " " << cmp << " " << r << ") " << l << " else " << r << ";\n";
         nameMap[bop->getResult(0)] = tname;
       };
 
@@ -139,8 +141,8 @@ emitFuncBody(mlir::Region &bodyRegion, llvm::raw_ostream &os,
       if (dyn_cast<arith::SubFOp>(&op)) { emitBinary(&op, "-"); continue; }
       if (dyn_cast<arith::MulFOp>(&op)) { emitBinary(&op, "*"); continue; }
       if (dyn_cast<arith::DivFOp>(&op)) { emitBinary(&op, "/"); continue; }
-      if (dyn_cast<arith::MaximumFOp>(&op)) { emitBuiltin(&op, "@max"); continue; }
-      if (dyn_cast<arith::MinimumFOp>(&op)) { emitBuiltin(&op, "@min"); continue; }
+      if (dyn_cast<arith::MaximumFOp>(&op)) { emitMinMax(&op, ">"); continue; }
+      if (dyn_cast<arith::MinimumFOp>(&op)) { emitMinMax(&op, "<"); continue; }
 
       // Integer binary ops
       if (dyn_cast<arith::SubIOp>(&op)) { emitBinary(&op, "-"); continue; }

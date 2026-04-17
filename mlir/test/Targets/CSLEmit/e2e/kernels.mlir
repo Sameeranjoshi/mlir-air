@@ -30,7 +30,7 @@
 
 // RELU-LABEL: fn compute() void
 // RELU: while ({{i[0-9]+}} < 128)
-// RELU: var {{t[0-9]+}}: f32 = @max({{t[0-9]+}}, 0.{{0+}});
+// RELU: var {{t[0-9]+}}: f32 = if ({{t[0-9]+}} > 0.{{0+}}) {{t[0-9]+}} else 0.{{0+}};
 
 module {
   // dot: out[0] = sum(a[i] * b[i]); we accumulate via load/store on out[0].

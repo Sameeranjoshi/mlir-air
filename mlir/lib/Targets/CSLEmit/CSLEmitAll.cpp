@@ -261,21 +261,27 @@ static std::string makeLayoutCsl(xilinx::csl::WaferOp wafer, int64_t width,
          cast<IntegerAttr>((*yr)[2]).getInt() == 1);
 
     if (yIsSingleton) {
-      // `for (i: i16, xLo..xHi) { ... }` with y = literal.
+      // CSL while loop: var i: i16 = xLo; while (i < xHi) : (i += 1) { ... }
       std::string yStr = "0";
       if (yr.has_value())
         yStr = std::to_string(cast<IntegerAttr>((*yr)[0]).getInt());
-      os << "  for (" << iName << ": i16, " << xLo << ".." << xHi << ") {\n";
+      os << "  var " << iName << ": i16 = " << xLo << ";\n";
+      os << "  while (" << iName << " < " << xHi << ") : (" << iName
+         << " += 1) {\n";
       emitTileCodeBody(os, progName, iName, yStr, p, /*indent=*/4);
       os << "  }\n";
       return;
     }
 
-    // 2-D: nested loops.
+    // 2-D: nested while loops (outer j, inner i).
     int64_t yLo = cast<IntegerAttr>((*yr)[0]).getInt();
     int64_t yHi = cast<IntegerAttr>((*yr)[1]).getInt();
-    os << "  for (" << jName << ": i16, " << yLo << ".." << yHi << ") {\n";
-    os << "    for (" << iName << ": i16, " << xLo << ".." << xHi << ") {\n";
+    os << "  var " << jName << ": i16 = " << yLo << ";\n";
+    os << "  while (" << jName << " < " << yHi << ") : (" << jName
+       << " += 1) {\n";
+    os << "    var " << iName << ": i16 = " << xLo << ";\n";
+    os << "    while (" << iName << " < " << xHi << ") : (" << iName
+       << " += 1) {\n";
     emitTileCodeBody(os, progName, iName, jName, p, /*indent=*/6);
     os << "    }\n";
     os << "  }\n";

@@ -16,15 +16,19 @@
 // POINT-LAYOUT: @set_tile_code(0, 0, "pe.csl"
 
 // ROW-LAYOUT: @set_rectangle(8, 1);
-// ROW-LAYOUT: for (i: i16, 0..8) {
+// ROW-LAYOUT: var i: i16 = 0;
+// ROW-LAYOUT: while (i < 8) : (i += 1) {
 // ROW-LAYOUT:   @set_tile_code(i, 0, "pe.csl"
 
 // GRID-LAYOUT: @set_rectangle(4, 4);
-// GRID-LAYOUT: for (j: i16, 0..4) {
-// GRID-LAYOUT:   for (i: i16, 0..4) {
+// GRID-LAYOUT: var j: i16 = 0;
+// GRID-LAYOUT: while (j < 4) : (j += 1) {
+// GRID-LAYOUT:   var i: i16 = 0;
+// GRID-LAYOUT:   while (i < 4) : (i += 1) {
 // GRID-LAYOUT:     @set_tile_code(i, j, "pe.csl"
 
-// PARAMS-LAYOUT: for (i: i16, 0..8) {
+// PARAMS-LAYOUT: var i: i16 = 0;
+// PARAMS-LAYOUT: while (i < 8) : (i += 1) {
 // PARAMS-LAYOUT:   @set_tile_code(i, 0, "pe.csl", .{
 // PARAMS-LAYOUT:     .memcpy_params = memcpy.get_params(i),
 // PARAMS-LAYOUT:     .pid = i,
