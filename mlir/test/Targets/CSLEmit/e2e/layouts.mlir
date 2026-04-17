@@ -1,9 +1,33 @@
 // RUN: air-opt %s | air-opt | FileCheck %s
+// RUN: rm -rf %t && mkdir -p %t
+// RUN: air-opt %s -csl-infer-exports | air-translate --emit-csl --output-dir=%t
+// RUN: FileCheck --check-prefix=POINT-LAYOUT  %s < %t/place_point/layout.csl
+// RUN: FileCheck --check-prefix=ROW-LAYOUT    %s < %t/place_row/layout.csl
+// RUN: FileCheck --check-prefix=GRID-LAYOUT   %s < %t/place_subgrid/layout.csl
+// RUN: FileCheck --check-prefix=PARAMS-LAYOUT %s < %t/place_row_vars/layout.csl
 //
 // Round-trip test for the two forms of csl_layout.place.  Covers:
 //   * point form:   `at (x, y)`
 //   * range forms:  `over [lo:hi, Y]`, `over [lo:hi, lo:hi]`
 //   * range form with `vars (...) params {...}`
+// Also checks the layout.csl emission for each form.
+
+// POINT-LAYOUT: @set_rectangle(1, 1);
+// POINT-LAYOUT: @set_tile_code(0, 0, "pe.csl"
+
+// ROW-LAYOUT: @set_rectangle(8, 1);
+// ROW-LAYOUT: for (i: i16, 0..8) {
+// ROW-LAYOUT:   @set_tile_code(i, 0, "pe.csl"
+
+// GRID-LAYOUT: @set_rectangle(4, 4);
+// GRID-LAYOUT: for (j: i16, 0..4) {
+// GRID-LAYOUT:   for (i: i16, 0..4) {
+// GRID-LAYOUT:     @set_tile_code(i, j, "pe.csl"
+
+// PARAMS-LAYOUT: for (i: i16, 0..8) {
+// PARAMS-LAYOUT:   @set_tile_code(i, 0, "pe.csl", .{
+// PARAMS-LAYOUT:     .memcpy_params = memcpy.get_params(i),
+// PARAMS-LAYOUT:     .pid = i,
 
 // CHECK-LABEL: csl.wafer @place_point
 csl.wafer @place_point {arch = "wse3"} {

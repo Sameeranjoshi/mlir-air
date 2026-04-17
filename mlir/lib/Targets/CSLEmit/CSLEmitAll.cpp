@@ -162,10 +162,51 @@ collectExports(xilinx::csl::WaferOp wafer) {
   return out;
 }
 
+/// Emit the `@set_tile_code(xE, yE, "<prog>.csl", .{ ... });` body for one
+/// PlaceOp. `xExpr`/`yExpr` are either literal integers or iv names.
+static void emitTileCodeBody(llvm::raw_ostream &os, llvm::StringRef progName,
+                             llvm::StringRef xExpr, llvm::StringRef yExpr,
+                             xilinx::csl_layout::PlaceOp p, int indent) {
+  std::string ind(indent, ' ');
+  auto params = p.getParams();
+  if (!params || params->empty()) {
+    os << ind << "@set_tile_code(" << xExpr << ", " << yExpr << ", \""
+       << progName << ".csl\", .{ .memcpy_params = memcpy.get_params(" << xExpr
+       << ") });\n";
+    return;
+  }
+  os << ind << "@set_tile_code(" << xExpr << ", " << yExpr << ", \"" << progName
+     << ".csl\", .{\n";
+  os << ind << "  .memcpy_params = memcpy.get_params(" << xExpr << "),\n";
+  // Resolve each params entry: the value is a StringAttr naming one of the
+  // declared iv_names. Verifier (Task 5) ensures this.
+  for (NamedAttribute e : *params) {
+    llvm::StringRef key = e.getName().getValue();
+    llvm::StringRef ivRef;
+    if (auto s = dyn_cast<StringAttr>(e.getValue()))
+      ivRef = s.getValue();
+    os << ind << "  ." << key << " = " << ivRef << ",\n";
+  }
+  os << ind << "});\n";
+}
+
+/// Extract the low/high bounds of an `x_range`/`y_range` ArrayAttr
+/// [lo, hi, stride]. Returns hi - lo.
+static int64_t axisExtent(ArrayAttr r) {
+  int64_t lo = cast<IntegerAttr>(r[0]).getInt();
+  int64_t hi = cast<IntegerAttr>(r[1]).getInt();
+  return hi - lo;
+}
+
 /// Build the layout.csl wrapper for a width x height grid that wires
 /// memcpy_params into every tile running `<progName>.csl`, and declares
 /// every host-visible symbol via `@export_name` so cslc --memcpy can wire
 /// them up for the host memcpy subsystem.
+///
+/// Emits one `@set_tile_code(...)` for point-form placements, a single
+/// `for (i: i16, lo..hi) { ... }` for 1-D range placements, and nested loops
+/// for 2-D range placements. `params` entries are threaded into the tile-code
+/// struct using the `vars` induction-variable names.
 static std::string makeLayoutCsl(xilinx::csl::WaferOp wafer, int64_t width,
                                  int64_t height,
                                  const std::string &progName) {
@@ -184,10 +225,61 @@ static std::string makeLayoutCsl(xilinx::csl::WaferOp wafer, int64_t width,
   os << "});\n\n";
   os << "layout {\n";
   os << "  @set_rectangle(" << width << ", " << height << ");\n";
-  for (int64_t y = 0; y < height; ++y)
-    for (int64_t x = 0; x < width; ++x)
-      os << "  @set_tile_code(" << x << ", " << y << ", \"" << progName
-         << ".csl\", .{ .memcpy_params = memcpy.get_params(" << x << ") });\n";
+
+  // Walk PlaceOps inside the wafer's csl.layout region and emit a
+  // @set_tile_code form for each.
+  wafer.walk([&](xilinx::csl_layout::PlaceOp p) {
+    // Point form: `at (x, y)`.
+    if (p.getPx().has_value() || p.getPy().has_value()) {
+      std::string xStr = std::to_string(p.getPx().value_or(0));
+      std::string yStr = std::to_string(p.getPy().value_or(0));
+      emitTileCodeBody(os, progName, xStr, yStr, p, /*indent=*/2);
+      return;
+    }
+
+    // Range form.
+    auto xr = p.getXRange();
+    if (!xr.has_value())
+      return;
+    int64_t xLo = cast<IntegerAttr>((*xr)[0]).getInt();
+    int64_t xHi = cast<IntegerAttr>((*xr)[1]).getInt();
+    auto yr = p.getYRange();
+
+    // Resolve iv names (defaults: "i" for x, "j" for y).
+    std::string iName = "i", jName = "j";
+    if (auto ivs = p.getIvNames()) {
+      if (ivs->size() >= 1)
+        iName = cast<StringAttr>((*ivs)[0]).getValue().str();
+      if (ivs->size() >= 2)
+        jName = cast<StringAttr>((*ivs)[1]).getValue().str();
+    }
+
+    // 1-D if y_range missing, or if y_range is a singleton axis.
+    bool yIsSingleton =
+        !yr.has_value() ||
+        (axisExtent(*yr) == 1 &&
+         cast<IntegerAttr>((*yr)[2]).getInt() == 1);
+
+    if (yIsSingleton) {
+      // `for (i: i16, xLo..xHi) { ... }` with y = literal.
+      std::string yStr = "0";
+      if (yr.has_value())
+        yStr = std::to_string(cast<IntegerAttr>((*yr)[0]).getInt());
+      os << "  for (" << iName << ": i16, " << xLo << ".." << xHi << ") {\n";
+      emitTileCodeBody(os, progName, iName, yStr, p, /*indent=*/4);
+      os << "  }\n";
+      return;
+    }
+
+    // 2-D: nested loops.
+    int64_t yLo = cast<IntegerAttr>((*yr)[0]).getInt();
+    int64_t yHi = cast<IntegerAttr>((*yr)[1]).getInt();
+    os << "  for (" << jName << ": i16, " << yLo << ".." << yHi << ") {\n";
+    os << "    for (" << iName << ": i16, " << xLo << ".." << xHi << ") {\n";
+    emitTileCodeBody(os, progName, iName, jName, p, /*indent=*/6);
+    os << "    }\n";
+    os << "  }\n";
+  });
   os << "\n";
 
   // Declare host-visible exports.
