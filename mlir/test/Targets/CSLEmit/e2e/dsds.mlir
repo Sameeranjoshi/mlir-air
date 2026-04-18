@@ -2,16 +2,16 @@
 // RUN: air-opt %s -csl-infer-exports | air-translate --emit-csl --output-dir=%t
 // RUN: FileCheck %s < %t/saxpy_dsd/pe.csl
 //
-// v5 Task 3 — emit csl.get_mem_dsd → @get_dsd(mem1d_dsd, ...)
+// v5 Tasks 3 + 4 — emit csl.get_mem_dsd and csl.builtin_call.
 //
-// One-PE kernel declares two buffers (A, y), creates a mem1d DSD over each
-// via csl.get_mem_dsd, and performs a no-op csl.return. The emitter should
-// produce two `const … = @get_dsd(mem1d_dsd, .{ .base_address = &X, .extent = 128 });`
-// lines inside the function body.
+// Saxpy via DSDs: y = a*x + y   (expressed as `@fmacs(y, y, A, alpha);`
+// where alpha is a scalar broadcast operand).
 
 // CHECK-LABEL: fn compute() void
 // CHECK: const {{.*}} = @get_dsd(mem1d_dsd, .{ .base_address = &A, .extent = 128 });
 // CHECK: const {{.*}} = @get_dsd(mem1d_dsd, .{ .base_address = &y, .extent = 128 });
+// CHECK: @fmacs(
+// CHECK: @fadds(
 
 module {
   csl.wafer @saxpy_dsd {arch = "wse3"} {
@@ -19,9 +19,16 @@ module {
       %A = csl.var @A : memref<128xf32>
       %y = csl.var @y : memref<128xf32>
       csl.func @compute {
-        %n  = arith.constant 128 : index
-        %Ad = csl.get_mem_dsd %A, %n : memref<128xf32>, index -> !csl.dsd
-        %yd = csl.get_mem_dsd %y, %n : memref<128xf32>, index -> !csl.dsd
+        %n    = arith.constant 128 : index
+        %scal = arith.constant 2.0 : f32
+        %Ad   = csl.get_mem_dsd %A, %n : memref<128xf32>, index -> !csl.dsd
+        %yd   = csl.get_mem_dsd %y, %n : memref<128xf32>, index -> !csl.dsd
+        // y = a*A + y
+        csl.builtin_call "fmacs"(%yd, %yd, %Ad, %scal)
+            : (!csl.dsd, !csl.dsd, !csl.dsd, f32) -> ()
+        // y = y + A
+        csl.builtin_call "fadds"(%yd, %yd, %Ad)
+            : (!csl.dsd, !csl.dsd, !csl.dsd) -> ()
         csl.return
       }
       csl.export @A {alias = "A"}

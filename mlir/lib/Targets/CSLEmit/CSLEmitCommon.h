@@ -213,6 +213,37 @@ emitFuncBody(mlir::Region &bodyRegion, llvm::raw_ostream &os,
         continue;
       }
 
+      // csl.builtin_call [in %mod] "name"(args) → `@name(args);` or `mod.name(args);`.
+      // Zero results → bare stmt; one result → `const rN = …;`.
+      if (auto bc = dyn_cast<xilinx::csl::BuiltinCallOp>(&op)) {
+        if (bc.getNumResults() > 1) {
+          op.emitError("csl.builtin_call: multi-result not supported in v5");
+          return failure();
+        }
+        indent(os, indentLevel);
+        std::string rname;
+        if (bc.getNumResults() == 1) {
+          rname = "r" + std::to_string(tempCount++);
+          os << "const " << rname << " = ";
+          nameMap[bc.getResult(0)] = rname;
+        }
+        if (Value modVal = bc.getModule()) {
+          std::string modName = resolve(outerMap, modVal);
+          if (modName == "?")
+            modName = resolve(nameMap, modVal);
+          os << modName << "." << bc.getCallee();
+        } else {
+          os << "@" << bc.getCallee();
+        }
+        os << "(";
+        for (auto it : llvm::enumerate(bc.getArgs())) {
+          if (it.index()) os << ", ";
+          os << resolve(nameMap, it.value());
+        }
+        os << ");\n";
+        continue;
+      }
+
       // csl.get_mem_dsd → const dN = @get_dsd(mem1d_dsd, .{ .base_address = &buf, .extent = N });
       if (auto dsdOp = dyn_cast<xilinx::csl::GetMemDsdOp>(&op)) {
         Value buffer = dsdOp.getBuffer();
