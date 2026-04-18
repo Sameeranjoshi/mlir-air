@@ -69,6 +69,48 @@ LogicalResult ProgramEmitter::emit(xilinx::csl::WaferOp wafer) {
   // Layout library for runtime PE coord access (get_x_coord / get_y_coord).
   os << "const layout_mod = @import_module(\"<layout>\");\n\n";
 
+  // Build outer map early — user-level csl.import_module results go here so
+  // that csl.builtin_call "name" in %mod (...) can resolve the module name.
+  llvm::DenseMap<Value, std::string> outerMap;
+
+  // 0.5 Emit user-level csl.import_module ops at program scope, in IR order.
+  //     Path may be anything (e.g. "<math>", "<memcpy/get_params>"). An
+  //     optional params dict emits as a CSL anonymous struct literal.
+  {
+    unsigned modCount = 0;
+    for (Operation &op : prog.getBody().front()) {
+      auto imp = dyn_cast<cslns::ImportModuleOp>(&op);
+      if (!imp) continue;
+      std::string name = "mod" + std::to_string(modCount++);
+      outerMap[imp.getResult()] = name;
+      os << "const " << name << " = @import_module(\""
+         << imp.getModuleName() << "\"";
+      if (auto params = imp.getParamsAttr()) {
+        os << ", .{ ";
+        bool first = true;
+        for (NamedAttribute kv : params) {
+          if (!first) os << ", ";
+          first = false;
+          os << "." << kv.getName().getValue() << " = ";
+          // Support integer and string values for now; scalar/dict nesting
+          // can be added later when a kernel needs it.
+          if (auto ia = dyn_cast<IntegerAttr>(kv.getValue())) {
+            os << ia.getInt();
+          } else if (auto sa = dyn_cast<StringAttr>(kv.getValue())) {
+            os << "\"" << sa.getValue() << "\"";
+          } else {
+            // Fall back to MLIR's attribute printer.
+            kv.getValue().print(os);
+          }
+        }
+        os << " }";
+      }
+      os << ");\n";
+    }
+    if (modCount > 0)
+      os << "\n";
+  }
+
   // 1. Emit param declarations from block args with !csl.comptime<T> type.
   Region &progBody = prog.getBody();
   if (!progBody.empty()) {
@@ -83,9 +125,6 @@ LogicalResult ProgramEmitter::emit(xilinx::csl::WaferOp wafer) {
     }
     os << "\n";
   }
-
-  // Build outer map: csl.var SSA results → sym_name
-  llvm::DenseMap<Value, std::string> outerMap;
 
   // 2. Emit var declarations
   bool hasVars = false;
