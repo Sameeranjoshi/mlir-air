@@ -89,6 +89,12 @@ def CSL_RouteType : DialectType<
   "CSL route handle">,
   BuildableType<"xilinx::csl::RouteType::get($_builder.getContext())">;
 
+def CSL_ViewType : DialectType<
+  CSL_Dialect,
+  CPred<"llvm::isa<xilinx::csl::ViewType>($_self)">,
+  "CSL strided-access view handle">,
+  BuildableType<"xilinx::csl::ViewType::get($_builder.getContext())">;
+
 //===----------------------------------------------------------------------===//
 // CSL Enums
 //===----------------------------------------------------------------------===//

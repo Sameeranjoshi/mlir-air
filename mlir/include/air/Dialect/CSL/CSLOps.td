@@ -241,28 +241,70 @@ def CSL_ImportModuleOp : CSL_Op<"import_module", []> {
 // csl.get_mem_dsd — 1-D memory-backed Data Structure Descriptor
 //===----------------------------------------------------------------------===//
 
-def CSL_GetMemDsdOp : CSL_Op<"get_mem_dsd", []> {
-  let summary = "Create a mem1d DSD over a contiguous PE-local buffer";
+def CSL_ViewStridedOp : CSL_Op<"view.strided", []> {
+  let summary = "Build a reusable strided-access view (extent, stride, offset)";
   let description = [{
-    Creates a DSD referencing a contiguous 1-D slice of PE-local memory.
-    Maps to `@get_dsd(mem1d_dsd, .{ .base_address = &a, .extent = N })` in CSL.
+    Defines a 1-D access pattern that can be applied to a buffer by
+    `csl.get_mem_dsd` to produce a strided DSD. The three operands are SSA
+    `index` values — typically `arith.constant`s but can be dynamic (e.g.
+    derived from a PE coord). Emitter behaviour: no emission for the view
+    itself; a consuming `csl.get_mem_dsd` pulls the three values and bakes
+    them into the `@get_dsd(mem1d_dsd, .{ ... })` struct.
 
-    v5 supports only `mem1d_dsd`. `mem2d_dsd`, `fabin_dsd`, `fabout_dsd` are
-    deferred — the CSL fabric DSDs require colors/routes/tasks which are
-    intentionally excluded from SIMD-only execution.
+    ```mlir
+    %ext = arith.constant 64 : index
+    %str = arith.constant  2 : index
+    %off = arith.constant  0 : index
+    %v   = csl.view.strided %ext, %str, %off : !csl.view
+    ```
+  }];
 
+  let arguments = (ins Index:$extent, Index:$stride, Index:$offset);
+  let results   = (outs CSL_ViewType:$result);
+
+  let assemblyFormat = [{
+    $extent `,` $stride `,` $offset `:` type($result) attr-dict
+  }];
+}
+
+def CSL_GetMemDsdOp : CSL_Op<"get_mem_dsd", []> {
+  let summary = "Create a mem1d DSD over a contiguous or strided PE-local buffer";
+  let description = [{
+    Creates a DSD referencing a 1-D slice of PE-local memory. Maps to
+    `@get_dsd(mem1d_dsd, .{ .base_address = &buf [+ offset], .extent = N [, .stride = S] })`
+    in CSL.
+
+    Contiguous form (no view operand):
     ```mlir
     %a = csl.var @a : memref<128xf32>
     %n = arith.constant 128 : index
     %d = csl.get_mem_dsd %a, %n : memref<128xf32>, index -> !csl.dsd
     ```
+
+    Strided form (with reusable view):
+    ```mlir
+    %ext = arith.constant 64 : index
+    %str = arith.constant  2 : index
+    %off = arith.constant  0 : index
+    %v   = csl.view.strided %ext, %str, %off : !csl.view
+    %d   = csl.get_mem_dsd %a, %n view %v
+             : memref<128xf32>, index, !csl.view -> !csl.dsd
+    ```
+
+    When a view is present, its `extent` drives the emitted `.extent` and its
+    `offset` is added to the base address. `$length` is retained so the IR
+    stays uniform with the contiguous form; the view's extent wins at
+    emission. v5 supports only `mem1d_dsd`.
   }];
 
-  let arguments = (ins AnyMemRef:$buffer, Index:$length);
+  let arguments = (ins AnyMemRef:$buffer, Index:$length,
+                       Optional<CSL_ViewType>:$view);
   let results   = (outs CSL_DsdType:$result);
 
   let assemblyFormat = [{
-    $buffer `,` $length `:` type($buffer) `,` type($length) `->` type($result) attr-dict
+    $buffer `,` $length (`view` $view^)?
+      `:` type($buffer) `,` type($length) (`,` type($view)^)? `->` type($result)
+      attr-dict
   }];
 }
 

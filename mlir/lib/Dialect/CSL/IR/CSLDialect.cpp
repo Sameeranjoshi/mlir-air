@@ -15,7 +15,7 @@ using namespace mlir;
 namespace xilinx::csl {
 
 void CSLDialect::initialize() {
-  addTypes<ColorType, DsdType, ImportedModuleType, RouteType,
+  addTypes<ColorType, DsdType, ImportedModuleType, RouteType, ViewType,
            ComptimeType>();
   addOperations<
 #define GET_OP_LIST
@@ -37,6 +37,8 @@ Type CSLDialect::parseType(DialectAsmParser &parser) const {
     return ImportedModuleType::get(context);
   if (keyword == "route")
     return RouteType::get(context);
+  if (keyword == "view")
+    return ViewType::get(context);
   if (keyword == "comptime") {
     if (parser.parseLess())
       return Type();
@@ -58,6 +60,7 @@ void CSLDialect::printType(Type type, DialectAsmPrinter &os) const {
       .Case<DsdType>([&](Type) { os << "dsd"; })
       .Case<ImportedModuleType>([&](Type) { os << "imported_module"; })
       .Case<RouteType>([&](Type) { os << "route"; })
+      .Case<ViewType>([&](Type) { os << "view"; })
       .Case<ComptimeType>([&](ComptimeType t) {
         os << "comptime<";
         os.printType(t.getInnerType());

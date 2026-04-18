@@ -336,18 +336,43 @@ emitFuncBody(mlir::Region &bodyRegion, llvm::raw_ostream &os,
         continue;
       }
 
-      // csl.get_mem_dsd → const dN = @get_dsd(mem1d_dsd, .{ .base_address = &buf, .extent = N });
+      // csl.view.strided — no direct emission; a consuming csl.get_mem_dsd
+      // reads the three operands via getDefiningOp at its own site.
+      if (isa<xilinx::csl::ViewStridedOp>(&op))
+        continue;
+
+      // csl.get_mem_dsd [view %v] →
+      //   const dN = @get_dsd(mem1d_dsd, .{ .base_address = &buf [+ offset],
+      //                                     .extent = N [, .stride = S] });
       if (auto dsdOp = dyn_cast<xilinx::csl::GetMemDsdOp>(&op)) {
         Value buffer = dsdOp.getBuffer();
         std::string bufName = resolve(outerMap, buffer);
         if (bufName == "?")
           bufName = resolve(nameMap, buffer);
-        std::string lenName = resolve(nameMap, dsdOp.getLength());
+        std::string extentStr = resolve(nameMap, dsdOp.getLength());
+        std::string strideStr, offsetStr;
+        if (Value viewVal = dsdOp.getView()) {
+          auto viewOp =
+              viewVal.getDefiningOp<xilinx::csl::ViewStridedOp>();
+          if (!viewOp) {
+            op.emitError("csl.get_mem_dsd: view operand must be produced "
+                         "by csl.view.strided in v5");
+            return failure();
+          }
+          extentStr = resolve(nameMap, viewOp.getExtent());
+          strideStr = resolve(nameMap, viewOp.getStride());
+          offsetStr = resolve(nameMap, viewOp.getOffset());
+        }
         std::string dname = "d" + std::to_string(tempCount++);
         indent(os, indentLevel);
         os << "const " << dname << " = @get_dsd(mem1d_dsd, .{ "
-           << ".base_address = &" << bufName
-           << ", .extent = " << lenName << " });\n";
+           << ".base_address = &" << bufName;
+        if (!offsetStr.empty() && offsetStr != "0")
+          os << " + " << offsetStr;
+        os << ", .extent = " << extentStr;
+        if (!strideStr.empty() && strideStr != "1")
+          os << ", .stride = " << strideStr;
+        os << " });\n";
         nameMap[dsdOp.getResult()] = dname;
         continue;
       }
