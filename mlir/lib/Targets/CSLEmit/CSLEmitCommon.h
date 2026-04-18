@@ -148,6 +148,92 @@ emitFuncBody(mlir::Region &bodyRegion, llvm::raw_ostream &os,
       if (dyn_cast<arith::SubIOp>(&op)) { emitBinary(&op, "-"); continue; }
       if (dyn_cast<arith::MulIOp>(&op)) { emitBinary(&op, "*"); continue; }
 
+      // arith.cmpf — translate predicate → CSL operator; reject unordered forms.
+      if (auto cmp = dyn_cast<arith::CmpFOp>(&op)) {
+        using P = arith::CmpFPredicate;
+        const char *sym = nullptr;
+        switch (cmp.getPredicate()) {
+        case P::OEQ: sym = "=="; break;
+        case P::OLT: sym = "<";  break;
+        case P::OLE: sym = "<="; break;
+        case P::OGT: sym = ">";  break;
+        case P::OGE: sym = ">="; break;
+        case P::ONE: sym = "!="; break;
+        default:
+          op.emitError("arith.cmpf unordered predicates unsupported in v5");
+          return failure();
+        }
+        std::string l = resolve(nameMap, cmp.getLhs());
+        std::string r = resolve(nameMap, cmp.getRhs());
+        std::string tname = "b" + std::to_string(tempCount++);
+        indent(os, indentLevel);
+        os << "const " << tname << " = " << l << " " << sym << " " << r
+           << ";\n";
+        nameMap[cmp.getResult()] = tname;
+        continue;
+      }
+
+      // arith.cmpi — same mapping as cmpf; signed and unsigned collapse.
+      if (auto cmp = dyn_cast<arith::CmpIOp>(&op)) {
+        using P = arith::CmpIPredicate;
+        const char *sym = nullptr;
+        switch (cmp.getPredicate()) {
+        case P::eq:  sym = "==";  break;
+        case P::ne:  sym = "!=";  break;
+        case P::slt: case P::ult: sym = "<";  break;
+        case P::sle: case P::ule: sym = "<="; break;
+        case P::sgt: case P::ugt: sym = ">";  break;
+        case P::sge: case P::uge: sym = ">="; break;
+        }
+        std::string l = resolve(nameMap, cmp.getLhs());
+        std::string r = resolve(nameMap, cmp.getRhs());
+        std::string tname = "b" + std::to_string(tempCount++);
+        indent(os, indentLevel);
+        os << "const " << tname << " = " << l << " " << sym << " " << r
+           << ";\n";
+        nameMap[cmp.getResult()] = tname;
+        continue;
+      }
+
+      // arith.index_cast / arith.index_castui — emit @as(<T>, v)
+      if (auto cast = dyn_cast<arith::IndexCastOp>(&op)) {
+        std::string a = resolve(nameMap, cast.getIn());
+        std::string tname = "t" + std::to_string(tempCount++);
+        std::string ty = cslTypeName(cast.getResult().getType());
+        indent(os, indentLevel);
+        os << "const " << tname << ": " << ty << " = @as(" << ty << ", " << a
+           << ");\n";
+        nameMap[cast.getResult()] = tname;
+        continue;
+      }
+
+      // scf.if (no yielded values).
+      if (auto ifOp = dyn_cast<scf::IfOp>(&op)) {
+        if (ifOp.getNumResults() != 0) {
+          op.emitError("scf.if with yielded values is unsupported in v5");
+          return failure();
+        }
+        std::string cond = resolve(nameMap, ifOp.getCondition());
+        indent(os, indentLevel);
+        os << "if (" << cond << ") {\n";
+        if (failed(emitFuncBody(ifOp.getThenRegion(), os, indentLevel + 1,
+                                outerMap, nameMap, tempCount)))
+          return failure();
+        indent(os, indentLevel);
+        os << "}";
+        if (!ifOp.getElseRegion().empty() &&
+            !ifOp.getElseRegion().front().empty()) {
+          os << " else {\n";
+          if (failed(emitFuncBody(ifOp.getElseRegion(), os, indentLevel + 1,
+                                  outerMap, nameMap, tempCount)))
+            return failure();
+          indent(os, indentLevel);
+          os << "}";
+        }
+        os << "\n";
+        continue;
+      }
+
       // Unary float negation
       if (auto negOp = dyn_cast<arith::NegFOp>(&op)) {
         std::string a = resolve(nameMap, negOp.getOperand());
