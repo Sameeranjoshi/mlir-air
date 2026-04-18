@@ -80,3 +80,83 @@ module {
     }
   }
 }
+
+// ---- Broadcast via stride = 0 ----
+
+// CHECK-LABEL: csl.wafer @view_bcast
+// CHECK: csl.view.strided %{{.*}}, %[[Z:.*]], %[[Z]]
+module {
+  csl.wafer @view_bcast {arch = "wse3"} {
+    csl.program @pe {
+      %a = csl.var @a : memref<128xf32>
+      csl.func @compute {
+        %n    = arith.constant 128 : index
+        %ext  = arith.constant  64 : index
+        %zero = arith.constant   0 : index
+        %v    = csl.view.strided %ext, %zero, %zero : !csl.view
+        %d    = csl.get_mem_dsd %a, %n view %v
+                  : memref<128xf32>, index, !csl.view -> !csl.dsd
+        csl.return
+      }
+    }
+  }
+}
+
+// ---- View over i32 memref ----
+
+// CHECK-LABEL: csl.wafer @view_i32
+// CHECK: csl.view.strided
+// CHECK: csl.get_mem_dsd
+// CHECK-SAME: memref<64xi32>
+// CHECK-SAME: !csl.view
+// CHECK-SAME: !csl.dsd
+module {
+  csl.wafer @view_i32 {arch = "wse3"} {
+    csl.program @pe {
+      %a = csl.var @a : memref<64xi32>
+      csl.func @compute {
+        %n   = arith.constant 64 : index
+        %ext = arith.constant 32 : index
+        %str = arith.constant  2 : index
+        %off = arith.constant  0 : index
+        %v   = csl.view.strided %ext, %str, %off : !csl.view
+        %d   = csl.get_mem_dsd %a, %n view %v
+                 : memref<64xi32>, index, !csl.view -> !csl.dsd
+        csl.return
+      }
+    }
+  }
+}
+
+// ---- Three distinct views in one function ----
+
+// CHECK-LABEL: csl.wafer @view_many
+// CHECK-COUNT-3: csl.view.strided
+// CHECK-COUNT-3: csl.get_mem_dsd
+module {
+  csl.wafer @view_many {arch = "wse3"} {
+    csl.program @pe {
+      %a = csl.var @a : memref<128xf32>
+      csl.func @compute {
+        %n    = arith.constant 128 : index
+        %ext1 = arith.constant  64 : index
+        %ext2 = arith.constant  32 : index
+        %ext3 = arith.constant  16 : index
+        %s1   = arith.constant   1 : index
+        %s2   = arith.constant   2 : index
+        %s3   = arith.constant   4 : index
+        %zero = arith.constant   0 : index
+        %v1 = csl.view.strided %ext1, %s1, %zero : !csl.view
+        %v2 = csl.view.strided %ext2, %s2, %zero : !csl.view
+        %v3 = csl.view.strided %ext3, %s3, %zero : !csl.view
+        %d1 = csl.get_mem_dsd %a, %n view %v1
+                : memref<128xf32>, index, !csl.view -> !csl.dsd
+        %d2 = csl.get_mem_dsd %a, %n view %v2
+                : memref<128xf32>, index, !csl.view -> !csl.dsd
+        %d3 = csl.get_mem_dsd %a, %n view %v3
+                : memref<128xf32>, index, !csl.view -> !csl.dsd
+        csl.return
+      }
+    }
+  }
+}
