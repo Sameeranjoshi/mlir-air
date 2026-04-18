@@ -266,6 +266,48 @@ def CSL_GetMemDsdOp : CSL_Op<"get_mem_dsd", []> {
   }];
 }
 
+//===----------------------------------------------------------------------===//
+// csl.builtin_call — generic CSL builtin / imported-module member call
+//===----------------------------------------------------------------------===//
+
+def CSL_BuiltinCallOp : CSL_Op<"builtin_call", [AttrSizedOperandSegments]> {
+  let summary = "Call a CSL language builtin or imported-module member";
+  let description = [{
+    Generic, untyped call to either:
+
+    - A bare CSL language builtin (e.g. `@fmacs`, `@fadds`, `@fmovs`, `@fabs`,
+      `@iadds`). Emitted as `@<callee>(arg0, arg1, ...);`.
+
+    - A member of a module imported via `csl.import_module`. The module operand
+      is the SSA value of type `!csl.imported_module`. Emitted as
+      `<mod>.<callee>(arg0, arg1, ...);`.
+
+    Operand and result typing is intentionally permissive — the CSL compiler
+    owns semantic validation. One op covers every DSD builtin and every
+    imported-module member call, keeping the dialect size constant.
+
+    ```mlir
+    // bare-builtin form
+    csl.builtin_call "fmacs"(%y, %y, %A, %xi)
+        : (!csl.dsd, !csl.dsd, !csl.dsd, f32) -> ()
+
+    // module-member form (emits as `<mod>.<callee>(...)` in CSL)
+    %r = csl.builtin_call "sqrt" in %math (%x) : (f32) -> f32
+    ```
+  }];
+
+  let arguments = (ins
+    StrAttr:$callee,
+    Optional<CSL_ImportedModuleType>:$module,
+    Variadic<AnyType>:$args);
+  let results   = (outs Variadic<AnyType>:$results);
+
+  let assemblyFormat = [{
+    $callee (`in` $module^)? `(` $args `)` attr-dict
+      `:` functional-type($args, $results)
+  }];
+}
+
 
 //===----------------------------------------------------------------------===//
 // CSL Dialect v2 — Structural + Kernel Ops
