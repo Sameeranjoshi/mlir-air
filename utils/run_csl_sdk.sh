@@ -6,6 +6,13 @@
 # `air-translate --emit-csl --output-dir=<dir>`, which contains one
 # subdirectory per csl.wafer.
 #
+# Exercises every lit-emittable wafer, including (v5):
+#   - e2e/dsds/                       @get_dsd(mem1d_dsd, ...) + @fmacs/@fadds
+#   - e2e/control_flow_if/            scf.if + arith.cmpf/cmpi
+#   - e2e/imports/                    generic csl.import_module (<math>, etc.)
+#   - e2e/scientific/                 saxpy, dot, stencil_1d, norm_sq
+#   - e2e/simd_dsd/                   N-PE SIMD DSD kernel on 4x2 subgrid
+#
 # Requires: cslc, cs_python on PATH.
 #
 # Exit status: 0 if every wafer ran to "SUCCESS!", 1 otherwise.
