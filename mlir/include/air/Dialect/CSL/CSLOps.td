@@ -227,45 +227,44 @@ def CSL_ImportModuleOp : CSL_Op<"import_module", []> {
 }
 
 //===----------------------------------------------------------------------===//
-// Data movement ops (deferred — commented out)
+// Data movement ops
 //===----------------------------------------------------------------------===//
-// TODO: Data movement ops are deferred. Uncomment when CSL DSD lowering is ready.
 //
-// def CSL_GetMemDsdOp : CSL_Op<"get_mem_dsd", []> {
-//   let summary = "Create a memory-backed Data Structure Descriptor";
-//   let description = [{
-//     Creates a DSD referencing a contiguous region of PE-local memory.
-//     Corresponds to `@get_dsd(mem1d_dsd, ...)` in CSL.
-//   }];
-//   let arguments = (ins AnyMemRef:$buffer, Index:$length);
-//   let results = (outs CSL_DsdType:$result);
-//   let assemblyFormat = [{
-//     $buffer `,` $length `:` type($buffer) `,` type($length) `->` type($result) attr-dict
-//   }];
-// }
+// v5 scope: csl.get_mem_dsd (mem1d only).
 //
-// def CSL_GetFabDsdOp : CSL_Op<"get_fab_dsd", []> {
-//   let summary = "Create a fabric-backed Data Structure Descriptor";
-//   let description = [{
-//     Creates a DSD backed by the on-chip fabric (network). Used for
-//     streaming data to/from neighboring PEs via colors.
-//   }];
-//   let arguments = (ins CSL_DsdKindEnum:$kind, CSL_ColorType:$color, Index:$length);
-//   let results = (outs CSL_DsdType:$result);
-//   let assemblyFormat = [{
-//     $kind $color `,` $length `:` type($color) `,` type($length) `->` type($result) attr-dict
-//   }];
-// }
+// Deferred: csl.get_fab_dsd, csl.mov — fabric DSDs require colors/routes/tasks
+// which are intentionally excluded from SIMD-only execution. Will be added
+// when inter-PE communication lands.
 //
-// def CSL_MovOp : CSL_Op<"mov", []> {
-//   let summary = "Bulk DSD-to-DSD data move";
-//   let description = [{
-//     Performs a hardware-accelerated bulk data move between two DSDs.
-//     Corresponds to `@mov32` or `@mov16` builtins in CSL.
-//   }];
-//   let arguments = (ins CSL_DsdType:$dst, CSL_DsdType:$src);
-//   let assemblyFormat = "$dst `,` $src `:` type($dst) `,` type($src) attr-dict";
-// }
+
+//===----------------------------------------------------------------------===//
+// csl.get_mem_dsd — 1-D memory-backed Data Structure Descriptor
+//===----------------------------------------------------------------------===//
+
+def CSL_GetMemDsdOp : CSL_Op<"get_mem_dsd", []> {
+  let summary = "Create a mem1d DSD over a contiguous PE-local buffer";
+  let description = [{
+    Creates a DSD referencing a contiguous 1-D slice of PE-local memory.
+    Maps to `@get_dsd(mem1d_dsd, .{ .base_address = &a, .extent = N })` in CSL.
+
+    v5 supports only `mem1d_dsd`. `mem2d_dsd`, `fabin_dsd`, `fabout_dsd` are
+    deferred — the CSL fabric DSDs require colors/routes/tasks which are
+    intentionally excluded from SIMD-only execution.
+
+    ```mlir
+    %a = csl.var @a : memref<128xf32>
+    %n = arith.constant 128 : index
+    %d = csl.get_mem_dsd %a, %n : memref<128xf32>, index -> !csl.dsd
+    ```
+  }];
+
+  let arguments = (ins AnyMemRef:$buffer, Index:$length);
+  let results   = (outs CSL_DsdType:$result);
+
+  let assemblyFormat = [{
+    $buffer `,` $length `:` type($buffer) `,` type($length) `->` type($result) attr-dict
+  }];
+}
 
 
 //===----------------------------------------------------------------------===//

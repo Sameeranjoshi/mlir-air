@@ -5,19 +5,74 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// DEFERRED: Data movement ops (csl.get_mem_dsd, csl.get_fab_dsd, csl.mov) are
-// not yet implemented. These tests are disabled pending DSD/DSL implementation.
-// See MEMORY.md for deferral rationale.
+// Round-trip tests for CSL data movement ops.
+//
+// v5 scope: csl.get_mem_dsd (mem1d only).
+// Deferred: csl.get_fab_dsd, csl.mov (fabric DSDs require colors/routes which
+// are intentionally excluded from SIMD-only execution).
 //
 //===----------------------------------------------------------------------===//
 
-// NOTE: This file is for documentation only. Tests are disabled because
-// the data movement ops are deferred (commented out in CSLOps.td).
-// To re-enable: uncomment ops in CSLOps.td and add RUN directive below.
-//
-// RUN: echo "DEFERRED - data movement ops not yet implemented"
-//
-// Reference implementations (commented out for deferred implementation):
-//   csl.get_mem_dsd - Create DSD for memory
-//   csl.get_fab_dsd - Create DSD for fabric (input/output)
-//   csl.mov - Data movement operation between DSDs
+// RUN: air-opt --verify-roundtrip %s | FileCheck %s
+
+// ---- csl.get_mem_dsd — mem1d over f32 memref ----
+
+// CHECK-LABEL: csl.wafer @dsd_f32
+// CHECK:   csl.program @pe
+// CHECK:     csl.var @a
+// CHECK:     csl.func @compute
+// CHECK:       csl.get_mem_dsd
+// CHECK-SAME:  memref<128xf32>
+// CHECK-SAME:  index
+// CHECK-SAME:  !csl.dsd
+module {
+  csl.wafer @dsd_f32 {arch = "wse3"} {
+    csl.program @pe {
+      %a = csl.var @a : memref<128xf32>
+      csl.func @compute {
+        %len = arith.constant 128 : index
+        %d = csl.get_mem_dsd %a, %len : memref<128xf32>, index -> !csl.dsd
+        csl.return
+      }
+    }
+  }
+}
+
+// ---- csl.get_mem_dsd — mem1d over i32 memref ----
+
+// CHECK-LABEL: csl.wafer @dsd_i32
+// CHECK:       csl.get_mem_dsd
+// CHECK-SAME:  memref<64xi32>
+// CHECK-SAME:  !csl.dsd
+module {
+  csl.wafer @dsd_i32 {arch = "wse3"} {
+    csl.program @pe {
+      %a = csl.var @a : memref<64xi32>
+      csl.func @compute {
+        %len = arith.constant 64 : index
+        %d = csl.get_mem_dsd %a, %len : memref<64xi32>, index -> !csl.dsd
+        csl.return
+      }
+    }
+  }
+}
+
+// ---- csl.get_mem_dsd — dynamic length (SSA index) ----
+
+// CHECK-LABEL: csl.wafer @dsd_dynamic_len
+// CHECK:       csl.get_mem_dsd
+// CHECK-SAME:  memref<?xf32>
+// CHECK-SAME:  index
+// CHECK-SAME:  !csl.dsd
+module {
+  csl.wafer @dsd_dynamic_len {arch = "wse3"} {
+    csl.program @pe(%n: !csl.comptime<index>) {
+      %a = csl.var @a : memref<?xf32>
+      csl.func @compute {
+        %len = arith.constant 32 : index
+        %d = csl.get_mem_dsd %a, %len : memref<?xf32>, index -> !csl.dsd
+        csl.return
+      }
+    }
+  }
+}
