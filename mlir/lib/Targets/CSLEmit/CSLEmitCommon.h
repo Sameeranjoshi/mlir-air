@@ -148,6 +148,12 @@ emitFuncBody(mlir::Region &bodyRegion, llvm::raw_ostream &os,
       if (dyn_cast<arith::SubIOp>(&op)) { emitBinary(&op, "-"); continue; }
       if (dyn_cast<arith::MulIOp>(&op)) { emitBinary(&op, "*"); continue; }
 
+      // Bitwise / logical ops. For i1 these act as logical and/or/xor; for
+      // wider integers they're bitwise. CSL accepts `|`/`&`/`^` in both cases.
+      if (dyn_cast<arith::OrIOp>(&op))  { emitBinary(&op, "|"); continue; }
+      if (dyn_cast<arith::AndIOp>(&op)) { emitBinary(&op, "&"); continue; }
+      if (dyn_cast<arith::XOrIOp>(&op)) { emitBinary(&op, "^"); continue; }
+
       // arith.cmpf — translate predicate → CSL operator; reject unordered forms.
       if (auto cmp = dyn_cast<arith::CmpFOp>(&op)) {
         using P = arith::CmpFPredicate;
