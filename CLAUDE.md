@@ -37,7 +37,14 @@ cd build && ninja install
 
 ### Run all MLIR unit tests (from build dir)
 ```bash
-cd build && ninja check-airmlir
+cd build && ninja check-air-mlir
+```
+
+For narrower, faster iteration on CSL work:
+```bash
+cd build && ninja check-airmlir-dialect-csl           # CSL round-trip tests
+cd build && ninja check-airmlir-conversion-airtocsl   # -air-to-csl lowering
+cd build && ninja check-airmlir-targets-cslemit       # emitter + e2e
 ```
 
 ### Run a single MLIR test file

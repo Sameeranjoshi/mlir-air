@@ -369,9 +369,9 @@ csl.var @scalar : f32
 
 ### 5.5 Data Movement
 
-#### `csl.get_mem_dsd`
+#### `csl.get_mem_dsd` (v5, enabled)
 
-Creates a memory-backed Data Structure Descriptor referencing a contiguous region of PE-local memory. Corresponds to `@get_dsd(mem1d_dsd, ...)` in CSL.
+Creates a memory-backed 1-D Data Structure Descriptor referencing a contiguous region of PE-local memory. Corresponds to `@get_dsd(mem1d_dsd, .{ .base_address = &buf, .extent = N })` in CSL.
 
 **Arguments:** `AnyMemRef:$buffer`, `Index:$length`
 **Results:** `!csl.dsd`
@@ -380,26 +380,35 @@ Creates a memory-backed Data Structure Descriptor referencing a contiguous regio
 %dsd = csl.get_mem_dsd %buf, %len : memref<1024xf32>, index -> !csl.dsd
 ```
 
-#### `csl.get_fab_dsd`
+v5 supports only `mem1d_dsd`. `mem2d_dsd` is deferred pending a kernel that needs it.
 
-Creates a fabric-backed DSD. Used for streaming data to/from neighboring PEs via colors.
+#### `csl.get_fab_dsd` (deferred)
 
-**Arguments:** `CSL_DsdKindEnum:$kind`, `CSL_ColorType:$color`, `Index:$length`
-**Results:** `!csl.dsd`
+Fabric DSDs (`fabin_dsd`, `fabout_dsd`) require colors/routes/tasks — intentionally excluded from SIMD-only execution. Will be re-enabled when inter-PE communication lands.
 
-```mlir
-%c = csl.color 0 : !csl.color
-%dsd_in  = csl.get_fab_dsd fabin  %c, %len : !csl.color, index -> !csl.dsd
-%dsd_out = csl.get_fab_dsd fabout %c, %len : !csl.color, index -> !csl.dsd
-```
+#### `csl.mov` (deferred)
+
+Bulk DSD-to-DSD data move via `@mov32`/`@mov16`. Deferred alongside fabric DSDs since the common use case is fabric→memory streaming.
 
 **Rationale:** DSDs are WSE's primary mechanism for efficient bulk data access. By representing them as SSA values in MLIR, optimization passes can analyze and transform DSD patterns — for example, converting scalar loops into bulk DSD moves, or merging compatible DSDs.
 
-#### `csl.mov`
+#### `csl.builtin_call` (v5)
 
-Performs a hardware-accelerated bulk data move between two DSDs. Corresponds to `@mov32` or `@mov16` builtins in CSL.
+Generic, untyped call to either a bare CSL language builtin (`@fmacs`, `@fadds`, `@fmovs`, `@fabs`, `@iadds`, ...) or an imported-module member (`math.sqrt`, `layout.get_x_coord`, ...). One op replaces what would otherwise be hundreds of per-builtin ops.
 
-**Arguments:** `CSL_DsdType:$dst`, `CSL_DsdType:$src`
+**Arguments:** `StrAttr:$callee`, `Optional<!csl.imported_module>:$module`, `Variadic<AnyType>:$args`
+**Results:** `Variadic<AnyType>:$results`
+
+```mlir
+// bare-builtin form → emits `@fmacs(y, y, A, alpha);`
+csl.builtin_call "fmacs"(%yd, %yd, %Ad, %a)
+    : (!csl.dsd, !csl.dsd, !csl.dsd, f32) -> ()
+
+// module-member form → emits `mod0.sqrt(x);`
+%r = csl.builtin_call "sqrt" in %math (%x) : (f32) -> f32
+```
+
+Argument typing is intentionally permissive — the CSL compiler owns semantic validation. The `AttrSizedOperandSegments` trait disambiguates the optional module operand from the variadic args.
 
 ```mlir
 csl.mov %dst_dsd, %src_dsd : !csl.dsd, !csl.dsd
