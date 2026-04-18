@@ -213,6 +213,22 @@ emitFuncBody(mlir::Region &bodyRegion, llvm::raw_ostream &os,
         continue;
       }
 
+      // csl.get_mem_dsd → const dN = @get_dsd(mem1d_dsd, .{ .base_address = &buf, .extent = N });
+      if (auto dsdOp = dyn_cast<xilinx::csl::GetMemDsdOp>(&op)) {
+        Value buffer = dsdOp.getBuffer();
+        std::string bufName = resolve(outerMap, buffer);
+        if (bufName == "?")
+          bufName = resolve(nameMap, buffer);
+        std::string lenName = resolve(nameMap, dsdOp.getLength());
+        std::string dname = "d" + std::to_string(tempCount++);
+        indent(os, indentLevel);
+        os << "const " << dname << " = @get_dsd(mem1d_dsd, .{ "
+           << ".base_address = &" << bufName
+           << ", .extent = " << lenName << " });\n";
+        nameMap[dsdOp.getResult()] = dname;
+        continue;
+      }
+
       // func.call → var tN: T = callee(args);  (or plain callee(args); if void)
       if (auto callOp = dyn_cast<func::CallOp>(&op)) {
         indent(os, indentLevel);
