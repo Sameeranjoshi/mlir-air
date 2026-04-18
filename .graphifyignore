@@ -1,0 +1,27 @@
+# graphify scope for mlir-air
+# Keep: our CSL dialect code, conversion passes, tests, design docs
+# Drop: bundled LLVM, build artifacts, the SDK docs (separate graph), emitted output
+
+llvm/
+build/
+install/
+out/
+sdk-examples/
+mlir-aie/
+venv_air_csl/
+__pycache__/
+graphify-out/
+*.pyc
+
+# SDK docs have their own graph at docs/superpowers/raw/cerebras_sdk_docs/graphify-out/
+docs/superpowers/raw/cerebras_sdk_docs/
+
+
+# Old/quarantined code (kept in-tree for history only)
+archived_code/
+
+# Generated / scratch
+compiled/
+simfab_traces/
+*.log
+*.sif

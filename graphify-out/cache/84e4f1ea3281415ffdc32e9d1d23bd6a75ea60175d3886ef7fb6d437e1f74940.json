@@ -1,0 +1,1 @@
+{"nodes": [{"id": "arxiv_paper", "label": "Wang et al. arXiv:2510.14871", "type": "citation", "description": "\"From Loop Nests to Silicon: Mapping AI Workloads onto AMD NPUs with MLIR-AIR\", October 2025.", "source_file": "docs/README.md"}], "edges": [], "hyperedges": []}

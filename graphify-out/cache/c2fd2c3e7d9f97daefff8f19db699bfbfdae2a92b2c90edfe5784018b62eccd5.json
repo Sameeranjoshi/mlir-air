@@ -1,0 +1,1 @@
+{"nodes": [{"id": "vck190_platform", "label": "VCK190 Platform", "type": "hardware_platform", "description": "Xilinx VCK190 evaluation board with Versal xcvc1902 containing MicroBlaze firmware for AIR agent.", "source_file": "docs/vck190_microblaze_firmware.md"}], "edges": [], "hyperedges": []}
