@@ -21,8 +21,8 @@ module {
         %c0 = arith.constant 0   : index
         %n  = arith.constant 128 : index
         %a  = memref.load %alpha[%c0] : memref<1xf32>
-        %xd = csl.get_mem_dsd %x, %n : memref<128xf32>, index -> !csl.dsd
-        %yd = csl.get_mem_dsd %y, %n : memref<128xf32>, index -> !csl.dsd
+        %xd = csl.get_mem_dsd %x : memref<128xf32> -> !csl.dsd
+        %yd = csl.get_mem_dsd %y : memref<128xf32> -> !csl.dsd
         csl.builtin_call "fmacs"(%yd, %yd, %xd, %a)
             : (!csl.dsd, !csl.dsd, !csl.dsd, f32) -> ()
         csl.return

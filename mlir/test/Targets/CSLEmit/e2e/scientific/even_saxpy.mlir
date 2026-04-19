@@ -2,12 +2,10 @@
 // RUN: air-opt %s -csl-infer-exports | air-translate --emit-csl --output-dir=%t
 // RUN: FileCheck %s < %t/even_saxpy/pe.csl
 //
-// v5 Task 11 (bonus) — strided DSD via reusable !csl.view.
-//
-// Compute y[2i] = a*x[2i] + y[2i] for i in [0, 64). The same stride-2 view
-// is built once and applied to both x and y. The emitter should bake
-// `.stride = 2` into the `@get_dsd(mem1d_dsd, .{ ... })` struct for each DSD
-// (and, since offset = 0 folds away, NOT emit a `+ 0` after base_address).
+// Strided DSD via upstream memref.subview: y[2i] = a*x[2i] + y[2i] for
+// i in [0, 64). One subview defines the stride-2 layout; it's used to build
+// the two DSDs (x and y) directly — the emitter reads stride/extent from
+// each result memref's type.
 
 // CHECK-LABEL: fn compute() void
 // CHECK: const {{.*}} = @get_dsd(mem1d_dsd, .{ .base_address = &x, .extent = 64, .stride = 2 });
@@ -20,16 +18,13 @@ module {
       %x = csl.var @x : memref<128xf32>
       %y = csl.var @y : memref<128xf32>
       csl.func @compute {
-        %n   = arith.constant 128 : index
-        %a   = arith.constant 2.0 : f32
-        %ext = arith.constant  64 : index
-        %str = arith.constant   2 : index
-        %off = arith.constant   0 : index
-        %v   = csl.view.strided %ext, %str, %off : !csl.view
-        %xd  = csl.get_mem_dsd %x, %n view %v
-                 : memref<128xf32>, index, !csl.view -> !csl.dsd
-        %yd  = csl.get_mem_dsd %y, %n view %v
-                 : memref<128xf32>, index, !csl.view -> !csl.dsd
+        %a  = arith.constant 2.0 : f32
+        %xv = memref.subview %x[0] [64] [2]
+              : memref<128xf32> to memref<64xf32, strided<[2]>>
+        %yv = memref.subview %y[0] [64] [2]
+              : memref<128xf32> to memref<64xf32, strided<[2]>>
+        %xd = csl.get_mem_dsd %xv : memref<64xf32, strided<[2]>> -> !csl.dsd
+        %yd = csl.get_mem_dsd %yv : memref<64xf32, strided<[2]>> -> !csl.dsd
         csl.builtin_call "fmacs"(%yd, %yd, %xd, %a)
             : (!csl.dsd, !csl.dsd, !csl.dsd, f32) -> ()
         csl.return

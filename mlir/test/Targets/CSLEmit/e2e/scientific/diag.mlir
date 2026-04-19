@@ -2,9 +2,8 @@
 // RUN: air-opt %s -csl-infer-exports | air-translate --emit-csl --output-dir=%t
 // RUN: FileCheck %s < %t/diag/pe.csl
 //
-// 2-D access via 1-D strided view: extract the diagonal of a 16x16 matrix
-// stored as a flat 256-element buffer. For a row-major N-by-N matrix, the
-// diagonal lives at indices 0, N+1, 2(N+1), ... → stride = N+1, extent = N.
+// Diagonal of a flattened 16x16 matrix: access indices 0, 17, 34, ...
+// via memref.subview with stride = N+1 = 17, extent = 16.
 
 // CHECK-LABEL: fn compute() void
 // CHECK: const {{.*}} = @get_dsd(mem1d_dsd, .{ .base_address = &M, .extent = 16, .stride = 17 });
@@ -17,14 +16,11 @@ module {
       %M = csl.var @M : memref<256xf32>   // flattened 16x16 row-major
       %d = csl.var @d : memref<16xf32>    // output diagonal (contiguous)
       csl.func @compute {
-        %n256 = arith.constant 256 : index
-        %n16  = arith.constant  16 : index
-        %str  = arith.constant  17 : index  // N+1 for N=16
-        %off  = arith.constant   0 : index
-        %diag_v = csl.view.strided %n16, %str, %off : !csl.view
-        %Md = csl.get_mem_dsd %M, %n256 view %diag_v
-                : memref<256xf32>, index, !csl.view -> !csl.dsd
-        %dd = csl.get_mem_dsd %d, %n16 : memref<16xf32>, index -> !csl.dsd
+        %diag_view = memref.subview %M[0] [16] [17]
+                     : memref<256xf32> to memref<16xf32, strided<[17]>>
+        %Md = csl.get_mem_dsd %diag_view
+              : memref<16xf32, strided<[17]>> -> !csl.dsd
+        %dd = csl.get_mem_dsd %d : memref<16xf32> -> !csl.dsd
         // d := diag(M)
         csl.builtin_call "fmovs"(%dd, %Md) : (!csl.dsd, !csl.dsd) -> ()
         csl.return

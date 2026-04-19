@@ -21,8 +21,8 @@ module {
       csl.func @compute {
         %n    = arith.constant 128 : index
         %scal = arith.constant 2.0 : f32
-        %Ad   = csl.get_mem_dsd %A, %n : memref<128xf32>, index -> !csl.dsd
-        %yd   = csl.get_mem_dsd %y, %n : memref<128xf32>, index -> !csl.dsd
+        %Ad   = csl.get_mem_dsd %A : memref<128xf32> -> !csl.dsd
+        %yd   = csl.get_mem_dsd %y : memref<128xf32> -> !csl.dsd
         // y = a*A + y
         csl.builtin_call "fmacs"(%yd, %yd, %Ad, %scal)
             : (!csl.dsd, !csl.dsd, !csl.dsd, f32) -> ()

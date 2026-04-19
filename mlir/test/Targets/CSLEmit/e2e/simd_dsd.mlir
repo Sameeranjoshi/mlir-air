@@ -34,8 +34,8 @@ module {
       csl.func @compute {
         %n = arith.constant 32  : index
         %a = arith.constant 2.0 : f32
-        %Ad = csl.get_mem_dsd %A, %n : memref<32xf32>, index -> !csl.dsd
-        %yd = csl.get_mem_dsd %y, %n : memref<32xf32>, index -> !csl.dsd
+        %Ad = csl.get_mem_dsd %A : memref<32xf32> -> !csl.dsd
+        %yd = csl.get_mem_dsd %y : memref<32xf32> -> !csl.dsd
         csl.builtin_call "fmacs"(%yd, %yd, %Ad, %a)
             : (!csl.dsd, !csl.dsd, !csl.dsd, f32) -> ()
         csl.return

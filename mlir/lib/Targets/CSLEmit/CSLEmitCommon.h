@@ -336,42 +336,121 @@ emitFuncBody(mlir::Region &bodyRegion, llvm::raw_ostream &os,
         continue;
       }
 
-      // csl.view.strided — no direct emission; a consuming csl.get_mem_dsd
-      // reads the three operands via getDefiningOp at its own site.
-      if (isa<xilinx::csl::ViewStridedOp>(&op))
+      // memref.subview / memref.reinterpret_cast — no direct emission.
+      // A downstream csl.get_mem_dsd reads shape + strided layout from the
+      // result type; the only piece not on the type is the *original*
+      // buffer's CSL name (for `.base_address = &X`), so we follow the
+      // chain back to the source via nameMap.
+      if (auto sv = dyn_cast<memref::SubViewOp>(&op)) {
+        Value src = sv.getSource();
+        std::string name = resolve(outerMap, src);
+        if (name == "?") name = resolve(nameMap, src);
+        nameMap[sv.getResult()] = name;
         continue;
+      }
+      if (auto rc = dyn_cast<memref::ReinterpretCastOp>(&op)) {
+        Value src = rc.getSource();
+        std::string name = resolve(outerMap, src);
+        if (name == "?") name = resolve(nameMap, src);
+        nameMap[rc.getResult()] = name;
+        continue;
+      }
 
-      // csl.get_mem_dsd [view %v] →
-      //   const dN = @get_dsd(mem1d_dsd, .{ .base_address = &buf [+ offset],
-      //                                     .extent = N [, .stride = S] });
+      // csl.get_mem_dsd — reads shape, stride, offset from the operand
+      // memref's type. Rank 1 → mem1d_dsd, rank 2..4 → mem4d_dsd.
+      // Default identity layouts fold to `stride = 1`, `offset = 0`, both
+      // of which are suppressed in emission. Strided views are supplied by
+      // upstream memref.subview / memref.reinterpret_cast (handled above).
+      //
+      // Dynamic offset / size / stride: resolve via the defining op's
+      // mixed-form accessors so we emit the SSA name as a CSL variable ref.
       if (auto dsdOp = dyn_cast<xilinx::csl::GetMemDsdOp>(&op)) {
         Value buffer = dsdOp.getBuffer();
-        std::string bufName = resolve(outerMap, buffer);
-        if (bufName == "?")
-          bufName = resolve(nameMap, buffer);
-        std::string extentStr = resolve(nameMap, dsdOp.getLength());
-        std::string strideStr, offsetStr;
-        if (Value viewVal = dsdOp.getView()) {
-          auto viewOp =
-              viewVal.getDefiningOp<xilinx::csl::ViewStridedOp>();
-          if (!viewOp) {
-            op.emitError("csl.get_mem_dsd: view operand must be produced "
-                         "by csl.view.strided in v5");
-            return failure();
-          }
-          extentStr = resolve(nameMap, viewOp.getExtent());
-          strideStr = resolve(nameMap, viewOp.getStride());
-          offsetStr = resolve(nameMap, viewOp.getOffset());
+        auto memTy = dyn_cast<MemRefType>(buffer.getType());
+        if (!memTy) {
+          op.emitError("csl.get_mem_dsd expects a memref operand");
+          return failure();
         }
+
+        SmallVector<int64_t> strides;
+        int64_t offset = 0;
+        if (failed(memTy.getStridesAndOffset(strides, offset))) {
+          op.emitError("csl.get_mem_dsd: memref must have a strided layout");
+          return failure();
+        }
+        ArrayRef<int64_t> shape = memTy.getShape();
+        unsigned rank = shape.size();
+        if (rank == 0 || rank > 4) {
+          op.emitError("csl.get_mem_dsd: rank must be 1..4");
+          return failure();
+        }
+
+        // Pull dynamic offsets/sizes/strides from the defining subview/cast,
+        // if present. Index i of each mixed vector matches the memref's dim.
+        SmallVector<OpFoldResult> mOffs, mSizes, mStrides;
+        if (auto sv = buffer.getDefiningOp<memref::SubViewOp>()) {
+          mOffs    = sv.getMixedOffsets();
+          mSizes   = sv.getMixedSizes();
+          mStrides = sv.getMixedStrides();
+        } else if (auto rc = buffer.getDefiningOp<memref::ReinterpretCastOp>()) {
+          mOffs    = rc.getMixedOffsets();
+          mSizes   = rc.getMixedSizes();
+          mStrides = rc.getMixedStrides();
+        }
+
+        auto foldToStr = [&](OpFoldResult r) -> std::string {
+          if (auto a = dyn_cast<Attribute>(r))
+            return std::to_string(cast<IntegerAttr>(a).getInt());
+          return resolve(nameMap, cast<Value>(r));
+        };
+        auto staticToStr = [&](int64_t v, size_t idx,
+                               ArrayRef<OpFoldResult> dyn) -> std::string {
+          if (v != ShapedType::kDynamic) return std::to_string(v);
+          if (idx < dyn.size()) return foldToStr(dyn[idx]);
+          return "?";
+        };
+
+        // base_address is the ORIGINAL buffer's name (follow subview/cast).
+        std::string bufName = resolve(outerMap, buffer);
+        if (bufName == "?") bufName = resolve(nameMap, buffer);
+
         std::string dname = "d" + std::to_string(tempCount++);
+        const char *kind = (rank == 1) ? "mem1d_dsd" : "mem4d_dsd";
+
         indent(os, indentLevel);
-        os << "const " << dname << " = @get_dsd(mem1d_dsd, .{ "
-           << ".base_address = &" << bufName;
+        os << "const " << dname << " = @get_dsd(" << kind
+           << ", .{ .base_address = &" << bufName;
+
+        // Offset: static from layout, or mixed[0] from the subview (subview
+        // collapses all per-dim offsets to a single linear offset).
+        std::string offsetStr;
+        if (offset != ShapedType::kDynamic && offset != 0) {
+          offsetStr = std::to_string(offset);
+        } else if (offset == ShapedType::kDynamic && !mOffs.empty()) {
+          offsetStr = foldToStr(mOffs[0]);
+        }
         if (!offsetStr.empty() && offsetStr != "0")
           os << " + " << offsetStr;
-        os << ", .extent = " << extentStr;
-        if (!strideStr.empty() && strideStr != "1")
-          os << ", .stride = " << strideStr;
+
+        if (rank == 1) {
+          os << ", .extent = " << staticToStr(shape[0], 0, mSizes);
+          std::string s = (!strides.empty())
+              ? staticToStr(strides[0], 0, mStrides) : std::string("1");
+          if (s != "1") os << ", .stride = " << s;
+        } else {
+          os << ", .extent = .{";
+          for (unsigned i = 0; i < rank; ++i) {
+            if (i) os << ", ";
+            os << staticToStr(shape[i], i, mSizes);
+          }
+          os << "}";
+          os << ", .stride = .{";
+          for (unsigned i = 0; i < rank; ++i) {
+            if (i) os << ", ";
+            os << staticToStr(strides[i], i, mStrides);
+          }
+          os << "}";
+        }
         os << " });\n";
         nameMap[dsdOp.getResult()] = dname;
         continue;

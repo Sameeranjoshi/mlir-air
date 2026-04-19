@@ -38,15 +38,6 @@ public:
   static constexpr llvm::StringLiteral name = "xilinx.csl.imported_module";
 };
 
-/// Opaque handle for a reusable access pattern (extent, stride, offset)
-/// that applies to a memref to produce a strided DSD.
-class ViewType
-    : public mlir::Type::TypeBase<ViewType, mlir::Type, mlir::TypeStorage> {
-public:
-  using Base::Base;
-  static constexpr llvm::StringLiteral name = "xilinx.csl.view";
-};
-
 /// Opaque handle for a routing configuration.
 class RouteType
     : public mlir::Type::TypeBase<RouteType, mlir::Type, mlir::TypeStorage> {

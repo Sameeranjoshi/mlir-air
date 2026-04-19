@@ -241,70 +241,48 @@ def CSL_ImportModuleOp : CSL_Op<"import_module", []> {
 // csl.get_mem_dsd — 1-D memory-backed Data Structure Descriptor
 //===----------------------------------------------------------------------===//
 
-def CSL_ViewStridedOp : CSL_Op<"view.strided", []> {
-  let summary = "Build a reusable strided-access view (extent, stride, offset)";
-  let description = [{
-    Defines a 1-D access pattern that can be applied to a buffer by
-    `csl.get_mem_dsd` to produce a strided DSD. The three operands are SSA
-    `index` values — typically `arith.constant`s but can be dynamic (e.g.
-    derived from a PE coord). Emitter behaviour: no emission for the view
-    itself; a consuming `csl.get_mem_dsd` pulls the three values and bakes
-    them into the `@get_dsd(mem1d_dsd, .{ ... })` struct.
-
-    ```mlir
-    %ext = arith.constant 64 : index
-    %str = arith.constant  2 : index
-    %off = arith.constant  0 : index
-    %v   = csl.view.strided %ext, %str, %off : !csl.view
-    ```
-  }];
-
-  let arguments = (ins Index:$extent, Index:$stride, Index:$offset);
-  let results   = (outs CSL_ViewType:$result);
-
-  let assemblyFormat = [{
-    $extent `,` $stride `,` $offset `:` type($result) attr-dict
-  }];
-}
-
 def CSL_GetMemDsdOp : CSL_Op<"get_mem_dsd", []> {
-  let summary = "Create a mem1d DSD over a contiguous or strided PE-local buffer";
+  let summary = "Create a mem1d/mem4d DSD from a strided memref";
   let description = [{
-    Creates a DSD referencing a 1-D slice of PE-local memory. Maps to
-    `@get_dsd(mem1d_dsd, .{ .base_address = &buf [+ offset], .extent = N [, .stride = S] })`
-    in CSL.
+    Builds a CSL memory DSD whose shape, stride, and offset are read from
+    the operand memref's type. Rank 1 emits `mem1d_dsd`; rank 2..4 emits
+    `mem4d_dsd`.
 
-    Contiguous form (no view operand):
+    The memref's `StridedLayoutAttr` (or identity layout for plain memrefs)
+    supplies `.stride = ...` and `.offset = ...`; the memref's shape supplies
+    `.extent = ...`. Build a strided view of a larger buffer with
+    `memref.subview` first — MLIR's canonicalization and fold patterns on
+    `subview`/`strided<>` apply uniformly.
+
+    Contiguous:
     ```mlir
     %a = csl.var @a : memref<128xf32>
-    %n = arith.constant 128 : index
-    %d = csl.get_mem_dsd %a, %n : memref<128xf32>, index -> !csl.dsd
+    %d = csl.get_mem_dsd %a : memref<128xf32> -> !csl.dsd
     ```
 
-    Strided form (with reusable view):
+    Strided (every other element of a 128-elem buffer):
     ```mlir
-    %ext = arith.constant 64 : index
-    %str = arith.constant  2 : index
-    %off = arith.constant  0 : index
-    %v   = csl.view.strided %ext, %str, %off : !csl.view
-    %d   = csl.get_mem_dsd %a, %n view %v
-             : memref<128xf32>, index, !csl.view -> !csl.dsd
+    %v = memref.subview %a[0] [64] [2]
+         : memref<128xf32> to memref<64xf32, strided<[2]>>
+    %d = csl.get_mem_dsd %v : memref<64xf32, strided<[2]>> -> !csl.dsd
     ```
 
-    When a view is present, its `extent` drives the emitted `.extent` and its
-    `offset` is added to the base address. `$length` is retained so the IR
-    stays uniform with the contiguous form; the view's extent wins at
-    emission. v5 supports only `mem1d_dsd`.
+    2-D row-major 8x16 (→ `mem4d_dsd` with tuple `.stride` / `.extent`):
+    ```mlir
+    %v = memref.subview %M[0, 0] [8, 16] [16, 1]
+         : memref<128xf32> to memref<8x16xf32, strided<[16, 1]>>
+    %d = csl.get_mem_dsd %v : memref<8x16xf32, strided<[16, 1]>> -> !csl.dsd
+    ```
+
+    v5 supports mem1d + mem4d. Fabric DSDs (fabin/fabout) remain deferred
+    with the rest of inter-PE communication.
   }];
 
-  let arguments = (ins AnyMemRef:$buffer, Index:$length,
-                       Optional<CSL_ViewType>:$view);
+  let arguments = (ins AnyMemRef:$buffer);
   let results   = (outs CSL_DsdType:$result);
 
   let assemblyFormat = [{
-    $buffer `,` $length (`view` $view^)?
-      `:` type($buffer) `,` type($length) (`,` type($view)^)? `->` type($result)
-      attr-dict
+    $buffer `:` type($buffer) `->` type($result) attr-dict
   }];
 }
 

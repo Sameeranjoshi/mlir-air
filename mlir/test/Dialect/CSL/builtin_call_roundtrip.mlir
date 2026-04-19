@@ -26,8 +26,8 @@ module {
       csl.func @compute {
         %n    = arith.constant 128 : index
         %scal = arith.constant 2.0 : f32
-        %Ad   = csl.get_mem_dsd %A, %n : memref<128xf32>, index -> !csl.dsd
-        %yd   = csl.get_mem_dsd %y, %n : memref<128xf32>, index -> !csl.dsd
+        %Ad   = csl.get_mem_dsd %A : memref<128xf32> -> !csl.dsd
+        %yd   = csl.get_mem_dsd %y : memref<128xf32> -> !csl.dsd
         csl.builtin_call "fmacs"(%yd, %yd, %Ad, %scal)
             : (!csl.dsd, !csl.dsd, !csl.dsd, f32) -> ()
         csl.return
@@ -49,9 +49,9 @@ module {
       %z = csl.var @z : memref<64xf32>
       csl.func @compute {
         %n  = arith.constant 64 : index
-        %xd = csl.get_mem_dsd %x, %n : memref<64xf32>, index -> !csl.dsd
-        %yd = csl.get_mem_dsd %y, %n : memref<64xf32>, index -> !csl.dsd
-        %zd = csl.get_mem_dsd %z, %n : memref<64xf32>, index -> !csl.dsd
+        %xd = csl.get_mem_dsd %x : memref<64xf32> -> !csl.dsd
+        %yd = csl.get_mem_dsd %y : memref<64xf32> -> !csl.dsd
+        %zd = csl.get_mem_dsd %z : memref<64xf32> -> !csl.dsd
         csl.builtin_call "fadds"(%zd, %xd, %yd)
             : (!csl.dsd, !csl.dsd, !csl.dsd) -> ()
         csl.return

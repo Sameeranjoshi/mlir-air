@@ -2,13 +2,9 @@
 // RUN: air-opt %s -csl-infer-exports | air-translate --emit-csl --output-dir=%t
 // RUN: FileCheck %s < %t/bcast/pe.csl
 //
-// Stride-0 broadcast — the SDK DSD spec lists this as the canonical pattern
-// for "replicate a single element across a DSD destination":
-//   @get_dsd(mem1d_dsd, .{ .base_address = &array, .extent = N, .stride = 0 })
-// Reading through this DSD yields array[offset] repeated N times.
-//
-// Kernel: y[i] = alpha * x[0] + y[i]  — uses a stride-0 DSD over x so
-// @fmacs reads x[0] for every lane of y.
+// Stride-0 broadcast via memref.subview — the SDK spec's canonical
+// "replicate a single element" pattern. y[i] += alpha * x[0] for every i,
+// expressed as a stride-0 DSD over x.
 
 // CHECK-LABEL: fn compute() void
 // CHECK: const {{.*}} = @get_dsd(mem1d_dsd, .{ .base_address = &y, .extent = 128 });
@@ -21,14 +17,12 @@ module {
       %x = csl.var @x : memref<128xf32>
       %y = csl.var @y : memref<128xf32>
       csl.func @compute {
-        %n    = arith.constant 128 : index
-        %zero = arith.constant   0 : index
-        %one  = arith.constant   1 : index
-        %a    = arith.constant 2.0 : f32
-        %bcast_v = csl.view.strided %n, %zero, %zero : !csl.view
-        %yd = csl.get_mem_dsd %y, %n : memref<128xf32>, index -> !csl.dsd
-        %xd = csl.get_mem_dsd %x, %n view %bcast_v
-                : memref<128xf32>, index, !csl.view -> !csl.dsd
+        %a  = arith.constant 2.0 : f32
+        %yd = csl.get_mem_dsd %y : memref<128xf32> -> !csl.dsd
+        // Stride-0, 128 copies of x[0].
+        %xv = memref.subview %x[0] [128] [0]
+              : memref<128xf32> to memref<128xf32, strided<[0]>>
+        %xd = csl.get_mem_dsd %xv : memref<128xf32, strided<[0]>> -> !csl.dsd
         // y := y + a * x[0]  (x[0] broadcast across all 128 lanes)
         csl.builtin_call "fmacs"(%yd, %yd, %xd, %a)
             : (!csl.dsd, !csl.dsd, !csl.dsd, f32) -> ()
