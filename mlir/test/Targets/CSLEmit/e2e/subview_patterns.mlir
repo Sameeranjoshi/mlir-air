@@ -12,18 +12,19 @@
 // DEFAULT-LABEL: fn compute() void
 // DEFAULT: @get_dsd(mem1d_dsd, .{ .base_address = &x, .extent = 128 });
 // DEFAULT-NOT: .stride
-// DEFAULT-NOT: &x +
+// DEFAULT-NOT: @increment_dsd_offset
 
 // OFFONLY-LABEL: fn compute() void
-// OFFONLY: @get_dsd(mem1d_dsd, .{ .base_address = &x + 8, .extent = 64 });
-// OFFONLY-NOT: .stride
+// OFFONLY: @get_dsd(mem1d_dsd, .{ .base_address = &x, .extent = 64 });
+// OFFONLY: @increment_dsd_offset({{.*}}, 8, f32);
 
 // STRONLY-LABEL: fn compute() void
 // STRONLY: @get_dsd(mem1d_dsd, .{ .base_address = &x, .extent = 32, .stride = 4 });
-// STRONLY-NOT: &x +
+// STRONLY-NOT: @increment_dsd_offset
 
 // BOTH-LABEL: fn compute() void
-// BOTH: @get_dsd(mem1d_dsd, .{ .base_address = &x + 3, .extent = 32, .stride = 4 });
+// BOTH: @get_dsd(mem1d_dsd, .{ .base_address = &x, .extent = 32, .stride = 4 });
+// BOTH: @increment_dsd_offset({{.*}}, 3, f32);
 
 module {
   // stride = 1, offset = 0 → both defaults collapse, no subview needed.

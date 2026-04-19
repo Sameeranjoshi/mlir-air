@@ -11,20 +11,23 @@
 // ---- Row 3 of an 8x16 row-major matrix: stride = 1, offset = 48 ----
 
 // ROW-LABEL: fn compute() void
-// ROW: @get_dsd(mem1d_dsd, .{ .base_address = &M + 48, .extent = 16 });
-// ROW-NOT: .stride
+// ROW: @get_dsd(mem1d_dsd, .{ .base_address = &M, .extent = 16 });
+// ROW: @increment_dsd_offset({{.*}}, 48, f32);
 
 // ---- Column 5: stride = 16, offset = 5 ----
 
 // COL-LABEL: fn compute() void
-// COL: @get_dsd(mem1d_dsd, .{ .base_address = &M + 5, .extent = 8, .stride = 16 });
+// COL: @get_dsd(mem1d_dsd, .{ .base_address = &M, .extent = 8, .stride = 16 });
+// COL: @increment_dsd_offset({{.*}}, 5, f32);
 
-// ---- Mixed: row 2 + col 7 + a stride-2 output view ----
+// ---- Mixed: 4-elem strided slices of row 2 + col 7 reduced into a    ----
+// ----         contiguous out[0..4]. Two strided reads + one contiguous  ----
+// ----         write — all extent 4 so the DSD engine stays aligned.    ----
 
 // MIX-LABEL: fn compute() void
-// MIX-DAG: @get_dsd(mem1d_dsd, .{ .base_address = &M + 32, .extent = 16 });
-// MIX-DAG: @get_dsd(mem1d_dsd, .{ .base_address = &M + 7, .extent = 8, .stride = 16 });
-// MIX-DAG: @get_dsd(mem1d_dsd, .{ .base_address = &out, .extent = 4, .stride = 2 });
+// MIX-DAG: @increment_dsd_offset({{.*}}, 32, f32);
+// MIX-DAG: @increment_dsd_offset({{.*}}, 7, f32);
+// MIX-DAG: @get_dsd(mem1d_dsd, .{ .base_address = &out, .extent = 4 });
 
 module {
   // Row picker: output = row[3] of an 8x16 row-major matrix.
@@ -93,25 +96,28 @@ module {
     }
   }
 
-  // Three coexisting strided views on the same kernel.
+  // Two strided reads (row + column) reduced into a contiguous write —
+  // exercises row and column views coexisting on the same buffer with the
+  // output DSD being a plain contiguous view of out[0..4]. All extents are
+  // 4, so the DSD engine stays aligned.
   csl.wafer @row_and_col {arch = "wse3"} {
     csl.program @pe {
       %M   = csl.var @M   : memref<128xf32>
       %out = csl.var @out : memref<8xf32>
       csl.func @compute {
-        %row_v = memref.subview %M[32] [16] [1]
-                 : memref<128xf32> to memref<16xf32, strided<[1], offset: 32>>
-        %col_v = memref.subview %M[7]  [8]  [16]
-                 : memref<128xf32> to memref<8xf32,  strided<[16], offset: 7>>
-        %out_v = memref.subview %out[0] [4] [2]
-                 : memref<8xf32>   to memref<4xf32,  strided<[2]>>
+        %row_v = memref.subview %M[32] [4] [1]
+                 : memref<128xf32> to memref<4xf32, strided<[1], offset: 32>>
+        %col_v = memref.subview %M[7]  [4] [16]
+                 : memref<128xf32> to memref<4xf32, strided<[16], offset: 7>>
+        %out_v = memref.subview %out[0] [4] [1]
+                 : memref<8xf32>   to memref<4xf32, strided<[1]>>
 
         %Mr = csl.get_mem_dsd %row_v
-              : memref<16xf32, strided<[1], offset: 32>> -> !csl.dsd
+              : memref<4xf32, strided<[1], offset: 32>> -> !csl.dsd
         %Mc = csl.get_mem_dsd %col_v
-              : memref<8xf32,  strided<[16], offset: 7>> -> !csl.dsd
+              : memref<4xf32, strided<[16], offset: 7>> -> !csl.dsd
         %od = csl.get_mem_dsd %out_v
-              : memref<4xf32,  strided<[2]>>             -> !csl.dsd
+              : memref<4xf32, strided<[1]>>             -> !csl.dsd
 
         csl.builtin_call "fmovs"(%od, %Mr) : (!csl.dsd, !csl.dsd) -> ()
         csl.builtin_call "fadds"(%od, %od, %Mc)

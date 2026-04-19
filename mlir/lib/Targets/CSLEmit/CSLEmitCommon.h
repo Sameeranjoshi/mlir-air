@@ -39,6 +39,7 @@ namespace detail {
 static inline std::string cslTypeName(mlir::Type t) {
   if (t.isF32()) return "f32";
   if (t.isF16()) return "f16";
+  if (t.isInteger(1))  return "bool";
   if (t.isInteger(32)) return "i32";
   if (t.isInteger(16)) return "i16";
   if (t.isIndex()) return "u16";
@@ -59,6 +60,27 @@ resolve(const llvm::DenseMap<mlir::Value, std::string> &nameMap,
   if (it != nameMap.end())
     return it->second;
   return "?";
+}
+
+/// True if `s` is a pure numeric literal (e.g. "42", "-1.5", "2.000000",
+/// "1.5e-3"). Used to spot arith.constant-sourced values that CSL treats as
+/// `comptime_float` / `comptime_int` — those can't flow as runtime args to
+/// module-member calls like `math.sqrt(...)` without a typed cast.
+static inline bool isNumericLiteral(llvm::StringRef s) {
+  if (s.empty()) return false;
+  size_t i = 0;
+  if (s[i] == '-' || s[i] == '+') ++i;
+  bool hasDigit = false, hasDot = false, hasExp = false;
+  for (; i < s.size(); ++i) {
+    char c = s[i];
+    if (c >= '0' && c <= '9') hasDigit = true;
+    else if (c == '.' && !hasDot && !hasExp) hasDot = true;
+    else if ((c == 'e' || c == 'E') && !hasExp && hasDigit) hasExp = true;
+    else if ((c == '+' || c == '-') && hasExp
+             && (s[i-1] == 'e' || s[i-1] == 'E')) { /* exponent sign */ }
+    else return false;
+  }
+  return hasDigit;
 }
 
 /// Emit CSL function body ops into `os`. `outerMap` maps values defined
@@ -91,13 +113,16 @@ emitFuncBody(mlir::Region &bodyRegion, llvm::raw_ostream &os,
         continue;
       }
 
-      // arith.addf / arith.addi
+      // arith.addf / arith.addi — type comes from the result; addi on index
+      // values emits u16, on i32 emits i32, etc.
       if (auto addOp = dyn_cast<arith::AddFOp>(&op)) {
         std::string lhs = resolve(nameMap, addOp.getLhs());
         std::string rhs = resolve(nameMap, addOp.getRhs());
         std::string tname = "t" + std::to_string(tempCount++);
         indent(os, indentLevel);
-        os << "var " << tname << ": f32 = " << lhs << " + " << rhs << ";\n";
+        os << "var " << tname << ": "
+           << cslTypeName(addOp.getResult().getType()) << " = "
+           << lhs << " + " << rhs << ";\n";
         nameMap[addOp.getResult()] = tname;
         continue;
       }
@@ -106,7 +131,9 @@ emitFuncBody(mlir::Region &bodyRegion, llvm::raw_ostream &os,
         std::string rhs = resolve(nameMap, addOp.getRhs());
         std::string tname = "t" + std::to_string(tempCount++);
         indent(os, indentLevel);
-        os << "var " << tname << ": i32 = " << lhs << " + " << rhs << ";\n";
+        os << "var " << tname << ": "
+           << cslTypeName(addOp.getResult().getType()) << " = "
+           << lhs << " + " << rhs << ";\n";
         nameMap[addOp.getResult()] = tname;
         continue;
       }
@@ -148,10 +175,16 @@ emitFuncBody(mlir::Region &bodyRegion, llvm::raw_ostream &os,
       if (dyn_cast<arith::SubIOp>(&op)) { emitBinary(&op, "-"); continue; }
       if (dyn_cast<arith::MulIOp>(&op)) { emitBinary(&op, "*"); continue; }
 
-      // Bitwise / logical ops. For i1 these act as logical and/or/xor; for
-      // wider integers they're bitwise. CSL accepts `|`/`&`/`^` in both cases.
-      if (dyn_cast<arith::OrIOp>(&op))  { emitBinary(&op, "|"); continue; }
-      if (dyn_cast<arith::AndIOp>(&op)) { emitBinary(&op, "&"); continue; }
+      // Bitwise (wider integers) or logical (i1) ops. CSL separates the two:
+      // bool uses `or`/`and`; integer uses `|`/`&`/`^`.
+      auto orWord = [](Operation *bop) {
+        return bop->getResult(0).getType().isInteger(1) ? "or"  : "|";
+      };
+      auto andWord = [](Operation *bop) {
+        return bop->getResult(0).getType().isInteger(1) ? "and" : "&";
+      };
+      if (dyn_cast<arith::OrIOp>(&op))  { emitBinary(&op, orWord(&op));  continue; }
+      if (dyn_cast<arith::AndIOp>(&op)) { emitBinary(&op, andWord(&op)); continue; }
       if (dyn_cast<arith::XOrIOp>(&op)) { emitBinary(&op, "^"); continue; }
 
       // arith.cmpf — translate predicate → CSL operator; reject unordered forms.
@@ -328,9 +361,20 @@ emitFuncBody(mlir::Region &bodyRegion, llvm::raw_ostream &os,
           os << "@" << bc.getCallee();
         }
         os << "(";
+        bool isModuleCall = (bool)bc.getModule();
         for (auto it : llvm::enumerate(bc.getArgs())) {
           if (it.index()) os << ", ";
-          os << resolve(nameMap, it.value());
+          std::string argName = resolve(nameMap, it.value());
+          // Module-member calls (e.g. `math.sqrt(x)`) take runtime-typed
+          // parameters. Our arith.constant lowering leaves literals unnamed
+          // in nameMap, so CSL sees `comptime_float` and refuses. Wrap
+          // numeric-literal args in `@as(<T>, ...)` to pin the runtime type.
+          if (isModuleCall && isNumericLiteral(argName)) {
+            os << "@as(" << cslTypeName(it.value().getType()) << ", "
+               << argName << ")";
+          } else {
+            os << argName;
+          }
         }
         os << ");\n";
         continue;
@@ -414,44 +458,60 @@ emitFuncBody(mlir::Region &bodyRegion, llvm::raw_ostream &os,
         std::string bufName = resolve(outerMap, buffer);
         if (bufName == "?") bufName = resolve(nameMap, buffer);
 
-        std::string dname = "d" + std::to_string(tempCount++);
-        const char *kind = (rank == 1) ? "mem1d_dsd" : "mem4d_dsd";
-
-        indent(os, indentLevel);
-        os << "const " << dname << " = @get_dsd(" << kind
-           << ", .{ .base_address = &" << bufName;
-
-        // Offset: static from layout, or mixed[0] from the subview (subview
-        // collapses all per-dim offsets to a single linear offset).
+        // Offset: static from layout, or mixed[0] from the subview. Rather
+        // than emit `.offset = N` in the struct (whose units are hardware
+        // i16 words — misaligned for f32 with odd element offsets), we emit
+        // `@increment_dsd_offset(<base>, N, <elem_type>)` which matches the
+        // SDK tutorial convention: element-count semantics with explicit
+        // element type. This also sidesteps `&buf + N` pointer-arithmetic
+        // issues on `*[N]T`.
         std::string offsetStr;
         if (offset != ShapedType::kDynamic && offset != 0) {
           offsetStr = std::to_string(offset);
         } else if (offset == ShapedType::kDynamic && !mOffs.empty()) {
           offsetStr = foldToStr(mOffs[0]);
         }
-        if (!offsetStr.empty() && offsetStr != "0")
-          os << " + " << offsetStr;
+        bool hasOffset = !offsetStr.empty() && offsetStr != "0";
 
-        if (rank == 1) {
-          os << ", .extent = " << staticToStr(shape[0], 0, mSizes);
-          std::string s = (!strides.empty())
-              ? staticToStr(strides[0], 0, mStrides) : std::string("1");
-          if (s != "1") os << ", .stride = " << s;
-        } else {
-          os << ", .extent = .{";
-          for (unsigned i = 0; i < rank; ++i) {
-            if (i) os << ", ";
-            os << staticToStr(shape[i], i, mSizes);
+        std::string dname = "d" + std::to_string(tempCount++);
+        std::string baseName = hasOffset ? dname + "_base" : dname;
+        const char *kind = (rank == 1) ? "mem1d_dsd" : "mem4d_dsd";
+
+        auto emitShape = [&]() {
+          if (rank == 1) {
+            os << ", .extent = " << staticToStr(shape[0], 0, mSizes);
+            std::string s = (!strides.empty())
+                ? staticToStr(strides[0], 0, mStrides) : std::string("1");
+            if (s != "1") os << ", .stride = " << s;
+          } else {
+            os << ", .extent = .{";
+            for (unsigned i = 0; i < rank; ++i) {
+              if (i) os << ", ";
+              os << staticToStr(shape[i], i, mSizes);
+            }
+            os << "}";
+            os << ", .stride = .{";
+            for (unsigned i = 0; i < rank; ++i) {
+              if (i) os << ", ";
+              os << staticToStr(strides[i], i, mStrides);
+            }
+            os << "}";
           }
-          os << "}";
-          os << ", .stride = .{";
-          for (unsigned i = 0; i < rank; ++i) {
-            if (i) os << ", ";
-            os << staticToStr(strides[i], i, mStrides);
-          }
-          os << "}";
-        }
+        };
+
+        indent(os, indentLevel);
+        os << "const " << baseName << " = @get_dsd(" << kind
+           << ", .{ .base_address = &" << bufName;
+        emitShape();
         os << " });\n";
+
+        if (hasOffset) {
+          std::string elemTy = cslTypeName(memTy.getElementType());
+          indent(os, indentLevel);
+          os << "const " << dname << " = @increment_dsd_offset("
+             << baseName << ", " << offsetStr << ", " << elemTy << ");\n";
+        }
+
         nameMap[dsdOp.getResult()] = dname;
         continue;
       }
