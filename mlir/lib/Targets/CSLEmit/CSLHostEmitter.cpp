@@ -622,7 +622,7 @@ LogicalResult HostEmitter::emit(xilinx::csl::WaferOp wafer) {
   os << "\n";
 
   os << "# Create runtime and load compiled artifacts.\n";
-  os << "runner = SdkRuntime(args.name, cmaddr=args.cmaddr)\n";
+  os << "runner = SdkRuntime(args.name, cmaddr=args.cmaddr, simfab_numthreads=16)\n";
   os << "runner.load()\n";
   os << "runner.run()\n\n";
 

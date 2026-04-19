@@ -50,7 +50,7 @@
 // HOST: arg0 = np.arange(N, dtype=np.float32)
 // HOST: arg1 = np.arange(N, dtype=np.float32) * 2.0
 // HOST: arg2 = np.zeros(N, dtype=np.float32)
-// HOST: runner = SdkRuntime(args.name, cmaddr=args.cmaddr)
+// HOST: runner = SdkRuntime(args.name, cmaddr=args.cmaddr, simfab_numthreads=16)
 // HOST: runner.load()
 // HOST: runner.run()
 // HOST: runner.memcpy_h2d(runner.get_id("arg0"), arg0, 0, 0, 1, 1, 256,
