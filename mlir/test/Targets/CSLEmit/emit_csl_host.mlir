@@ -22,7 +22,7 @@
 // CHECK: arg0 = np.arange(N, dtype=np.float32)
 // CHECK: arg1 = np.arange(N, dtype=np.float32) * 2.0
 // CHECK: arg2 = np.zeros(N, dtype=np.float32)
-// CHECK: runner = SdkRuntime(args.name, cmaddr=args.cmaddr, simfab_numthreads=16)
+// CHECK: runner = SdkRuntime(args.name, cmaddr=args.cmaddr, simfab_numthreads=32)
 // CHECK: runner.load()
 // CHECK: runner.run()
 // CHECK: runner.memcpy_h2d(runner.get_id("a"), arg0, 0, 0, 1, 1, 256,

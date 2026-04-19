@@ -36,6 +36,13 @@ namespace csl {
 namespace detail {
 
 /// Return the CSL primitive type name for an MLIR type.
+///
+/// `index` → `u16`: matches the SDK tutorials' canonical loop-counter form
+/// (e.g. Builtins.md:1169 `for(@range(u16, 8))`, gemv-02). The CSL docs
+/// (Builtins.md `@range` examples, lines 1589–1592) accept any of u16/i16/
+/// i32/u32 for loop element types — there is no mandated choice. Open
+/// question: user preference is `i16` for loop variables; revisit if a
+/// concrete pattern requires signed iteration.
 static inline std::string cslTypeName(mlir::Type t) {
   if (t.isF32()) return "f32";
   if (t.isF16()) return "f16";
@@ -176,16 +183,20 @@ emitFuncBody(mlir::Region &bodyRegion, llvm::raw_ostream &os,
       if (dyn_cast<arith::MulIOp>(&op)) { emitBinary(&op, "*"); continue; }
 
       // Bitwise (wider integers) or logical (i1) ops. CSL separates the two:
-      // bool uses `or`/`and`; integer uses `|`/`&`/`^`.
+      // bool uses `or`/`and` (Syntax.md operator table); integer uses `|`/`&`/`^`.
+      // CSL has no logical-xor keyword on bool — `a != b` is the canonical form.
       auto orWord = [](Operation *bop) {
         return bop->getResult(0).getType().isInteger(1) ? "or"  : "|";
       };
       auto andWord = [](Operation *bop) {
         return bop->getResult(0).getType().isInteger(1) ? "and" : "&";
       };
+      auto xorWord = [](Operation *bop) {
+        return bop->getResult(0).getType().isInteger(1) ? "!=" : "^";
+      };
       if (dyn_cast<arith::OrIOp>(&op))  { emitBinary(&op, orWord(&op));  continue; }
       if (dyn_cast<arith::AndIOp>(&op)) { emitBinary(&op, andWord(&op)); continue; }
-      if (dyn_cast<arith::XOrIOp>(&op)) { emitBinary(&op, "^"); continue; }
+      if (dyn_cast<arith::XOrIOp>(&op)) { emitBinary(&op, xorWord(&op)); continue; }
 
       // arith.cmpf — translate predicate → CSL operator; reject unordered forms.
       if (auto cmp = dyn_cast<arith::CmpFOp>(&op)) {
@@ -458,13 +469,22 @@ emitFuncBody(mlir::Region &bodyRegion, llvm::raw_ostream &os,
         std::string bufName = resolve(outerMap, buffer);
         if (bufName == "?") bufName = resolve(nameMap, buffer);
 
-        // Offset: static from layout, or mixed[0] from the subview. Rather
-        // than emit `.offset = N` in the struct (whose units are hardware
-        // i16 words — misaligned for f32 with odd element offsets), we emit
-        // `@increment_dsd_offset(<base>, N, <elem_type>)` which matches the
-        // SDK tutorial convention: element-count semantics with explicit
-        // element type. This also sidesteps `&buf + N` pointer-arithmetic
-        // issues on `*[N]T`.
+        // Offset: static from layout, or mixed[0] from the subview.
+        //
+        // We emit `@increment_dsd_offset(<base>, N, <elem_type>)` rather than
+        // pointer arithmetic `&buf + N`. Two doc-supported reasons:
+        //   1. Pointer arithmetic on `*[N]T` is forbidden — Types.md:508 says
+        //      "the only operation allowed on pointers to a single element is
+        //      to dereference them with the .* operator". `&buf` is `*[N]T`,
+        //      so `&buf + N` is illegal.
+        //   2. `@increment_dsd_offset` is the canonical SDK form — DSDs.md:
+        //      695-731 documents it as taking element-count + element-type;
+        //      gemv-02 tutorial uses exactly this pattern.
+        // (The `.offset = N` struct field would also work in principle, but
+        // the docs (DSDs.md:38, 117-118) only specify its *type* as `i16`
+        // without stating the *unit* — elements vs 16-bit words is left
+        // ambiguous, so an f32 buffer with `.offset = 1` could be
+        // misinterpreted. The element-typed builtin is unambiguous.)
         std::string offsetStr;
         if (offset != ShapedType::kDynamic && offset != 0) {
           offsetStr = std::to_string(offset);
