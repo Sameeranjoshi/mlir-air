@@ -38,11 +38,8 @@ namespace detail {
 /// Return the CSL primitive type name for an MLIR type.
 ///
 /// `index` → `u16`: matches the SDK tutorials' canonical loop-counter form
-/// (e.g. Builtins.md:1169 `for(@range(u16, 8))`, gemv-02). The CSL docs
-/// (Builtins.md `@range` examples, lines 1589–1592) accept any of u16/i16/
-/// i32/u32 for loop element types — there is no mandated choice. Open
-/// question: user preference is `i16` for loop variables; revisit if a
-/// concrete pattern requires signed iteration.
+/// (Builtins.md:1169 `for(@range(u16, 8))`, gemv-02). DSD `extent` is also
+/// `u16` (DSDs.md:36), so unsigned indexing flows naturally into DSD shape.
 static inline std::string cslTypeName(mlir::Type t) {
   if (t.isF32()) return "f32";
   if (t.isF16()) return "f16";
@@ -471,20 +468,21 @@ emitFuncBody(mlir::Region &bodyRegion, llvm::raw_ostream &os,
 
         // Offset: static from layout, or mixed[0] from the subview.
         //
-        // We emit `@increment_dsd_offset(<base>, N, <elem_type>)` rather than
-        // pointer arithmetic `&buf + N`. Two doc-supported reasons:
-        //   1. Pointer arithmetic on `*[N]T` is forbidden — Types.md:508 says
-        //      "the only operation allowed on pointers to a single element is
-        //      to dereference them with the .* operator". `&buf` is `*[N]T`,
-        //      so `&buf + N` is illegal.
-        //   2. `@increment_dsd_offset` is the canonical SDK form — DSDs.md:
-        //      695-731 documents it as taking element-count + element-type;
-        //      gemv-02 tutorial uses exactly this pattern.
-        // (The `.offset = N` struct field would also work in principle, but
-        // the docs (DSDs.md:38, 117-118) only specify its *type* as `i16`
-        // without stating the *unit* — elements vs 16-bit words is left
-        // ambiguous, so an f32 buffer with `.offset = 1` could be
-        // misinterpreted. The element-typed builtin is unambiguous.)
+        // Emitted as `@increment_dsd_offset(<base>, N, <elem_type>)` rather
+        // than the `.offset = N` field of @get_dsd. Why: the underlying DSD
+        // offset is stored in **16-bit-word units**, not element units —
+        // DSDs.md:711-714 says of @increment_dsd_offset's elem_type "is used
+        // to convert offset into number of words." Therefore `.offset = N`
+        // sets N words directly, and an f32 element-offset of 5 (`.offset=5`,
+        // 10 bytes) is misaligned for an f32 access.
+        //   Verified at runtime: emitting `.offset = 5` on an f32 buffer for
+        //   pick_col made the SDK simulator raise
+        //     "MEM[0711] is not 32-bit aligned"
+        //   on the first DSD read. `pick_row` (offset=48 → 96 bytes, aligned)
+        //   passed only by accident. The `[10]i16` example at DSDs.md:127
+        //   does not disambiguate the unit because i16 elements ARE words.
+        // `@increment_dsd_offset` does the elements→words conversion for us.
+        // Pointer arithmetic `&buf + N` is also forbidden (Types.md:508).
         std::string offsetStr;
         if (offset != ShapedType::kDynamic && offset != 0) {
           offsetStr = std::to_string(offset);
