@@ -30,13 +30,15 @@
 // PROG:   @export_symbol(arg2_ptr, "arg2");
 // PROG: }
 
-// ---- Layout checks ----
-// LAYOUT: from cerebras.sdk.runtime.sdkruntimepybind import SdkLayout, SdkTarget
-// LAYOUT: def get_layout(target: SdkTarget) -> SdkLayout:
-// LAYOUT:     layout = SdkLayout(target)
-// LAYOUT:     region = layout.create_code_region("h.csl", "h", 1, 1)
-// LAYOUT:     region.place(0, 0)
-// LAYOUT:     return layout
+// ---- Layout checks (cslc-input layout.csl wrapper) ----
+// LAYOUT: const memcpy = @import_module("<memcpy/get_params>", .{
+// LAYOUT:   .width = 1,
+// LAYOUT:   .height = 1,
+// LAYOUT: });
+// LAYOUT: layout {
+// LAYOUT:   @set_rectangle(1, 1);
+// LAYOUT:   @set_tile_code(0, 0, "h.csl", .{ .memcpy_params = memcpy.get_params(0) });
+// LAYOUT: }
 
 // ---- Host checks ----
 // HOST: #!/usr/bin/env cs_python
