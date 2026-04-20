@@ -1,0 +1,10 @@
+add_mlir_dialect(ChipletOps chiplet)
+add_mlir_doc(ChipletDialect ChipletDialect Dialect/ -gen-dialect-doc)
+add_mlir_doc(ChipletOps ChipletOps Dialect/ -gen-op-doc)
+
+set(LLVM_TARGET_DEFINITIONS ChipletAttrs.td)
+mlir_tablegen(ChipletEnums.h.inc -gen-enum-decls)
+mlir_tablegen(ChipletEnums.cpp.inc -gen-enum-defs)
+mlir_tablegen(ChipletAttrs.h.inc -gen-attrdef-decls -attrdefs-dialect=chiplet)
+mlir_tablegen(ChipletAttrs.cpp.inc -gen-attrdef-defs -attrdefs-dialect=chiplet)
+add_public_tablegen_target(MLIRChipletAttrsIncGen)
