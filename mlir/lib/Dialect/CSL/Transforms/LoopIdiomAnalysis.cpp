@@ -249,6 +249,36 @@ FailureOr<LoopIdiom> analyzeForLoop(scf::ForOp op) {
   // and allowed body-op set (arith.* + memref.load/store only; constants
   // that are index values are index-typed arith.constant which is already
   // dialect=arith).
+  //
+  // Helper: returns true when every use of `v` is as an index operand of
+  // a memref.load or memref.store (i.e. the value flows only into index
+  // positions, never into value/data positions).  This lets us exclude
+  // index-arithmetic arith ops (e.g. `arith.subi %i, %c1` for stencils)
+  // from `bodyOps` so that patterns only see "computation" arith ops.
+  auto usedOnlyAsIndex = [&](Value v) -> bool {
+    for (Operation *user : v.getUsers()) {
+      if (auto ld = dyn_cast<memref::LoadOp>(user)) {
+        // operand 0 is the memref; operands 1.. are indices.
+        bool isIndex = false;
+        for (unsigned i = 1, e = ld->getNumOperands(); i < e; ++i)
+          if (ld->getOperand(i) == v) isIndex = true;
+        if (!isIndex) return false;
+        continue;
+      }
+      if (auto st = dyn_cast<memref::StoreOp>(user)) {
+        // operand 0 = value, operand 1 = memref, operands 2.. = indices.
+        bool isIndex = false;
+        for (unsigned i = 2, e = st->getNumOperands(); i < e; ++i)
+          if (st->getOperand(i) == v) isIndex = true;
+        if (!isIndex) return false;
+        continue;
+      }
+      // Used by another arith op — recurse: if that op's result is also
+      // index-only, it's fine; otherwise this value is a computation value.
+      return false;
+    }
+    return true;
+  };
   for (Operation &inner : bodyBlock->without_terminator()) {
     if (auto ld = dyn_cast<memref::LoadOp>(&inner)) {
       info.loads.push_back(ld);
@@ -258,8 +288,15 @@ FailureOr<LoopIdiom> analyzeForLoop(scf::ForOp op) {
       info.stores.push_back(st);
       continue;
     }
-    // Anything that passed Rule 5 and isn't load/store must be arith.*.
-    // Record it for idiom-signature matching by patterns.
+    // Skip arith ops whose sole purpose is to compute a memref index
+    // (e.g. `arith.subi %i, %c1` in a stencil).  Such ops are visible to
+    // matchAffineIndexInIV() through the load's operand chain; they must not
+    // appear in `bodyOps` or patterns will count them as computation ops.
+    if (inner.getNumResults() == 1 &&
+        inner.getResult(0).getType().isIndex() &&
+        usedOnlyAsIndex(inner.getResult(0)))
+      continue;
+    // Anything else that passed Rule 5 must be arith.*; record it.
     info.bodyOps.push_back(&inner);
   }
   if (info.stores.size() != 1) {
