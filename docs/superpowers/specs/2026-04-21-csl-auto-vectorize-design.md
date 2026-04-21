@@ -27,7 +27,7 @@ Automatically convert scalar `scf.for`-based element-wise loops inside `csl.func
 - **Stride:** unit stride directly, plus constant non-unit stride via `memref.subview` with `strided<[c], offset: k>` layout.
 - **Index:** affine functions of the induction var — `%i`, `%i + k` (k any signed constant including negative), `%i * c + k`. Access-in-bounds checked; OOB → reject.
 - **Loops:** single-block body, no `iter_args`, no `scf.if` / nested `scf.for` / function calls inside body (rank-2 is the exception: perfect nest of two `scf.for`s).
-- **Element types (T2 — pending re-confirmation, see §5 note):** `f32` and `i32`. `f16` / `i16` deferred. **Caveat surfaced during spec self-review:** the CSL SDK integer DSD builtins are 16-bit-native — `@add16`, `@sub16`, `@mov16`, `@mov32`, etc. There are **no `@add32`, `@sub32`, `@mul32`, `@mul16`, `@neg16`** builtins. Under T2=(f32, i32), scope-D integer coverage collapses to `@mov32` alone. Options T2-native (f32+i16) or T2-augmented (f32+i16+i32-copy-only) are tracked as open decisions in §9.2.
+- **Element types (T1):** `f32` only. Single-precision float is the universal DSD arithmetic path on WSE hardware. Integer widths are explicitly deferred — see §9.2. Rationale: CSL DSDs are 16-bit-native on the integer side (`@add16`, `@sub16`, `@mov16`, `@mov32`, no `@...32` arith and no `@mul16`), so any honest integer support is an i16 story, not an i32 story. The typical MLIR input uses i32 arithmetic which **cannot** be vectorized to DSDs regardless of scope — it would always fall through to scalar. Shipping "integer support" before the workload is known (i16 kernels vs i32 kernels) risks committing to the wrong path.
 - **Idiom set (tier-1, scope D):** elementwise binary (add/sub/mul) + FMA fusion + copy/unary (mov/neg) + scalar-broadcast operand.
 
 ### Explicitly out of scope
@@ -122,10 +122,10 @@ mlir/lib/Dialect/CSL/Transforms/
   Patterns/
     CMakeLists.txt
     PatternsCommon.h        ← NEW: shared IR-construction helpers
-    ElementwisePatterns.cpp ← NEW: Fadds/Fsubs/Fmuls (f32); Add16/Sub16 if T2-native
-    FmaPattern.cpp          ← NEW: Fmacs (f32 only — no integer FMA in SDK)
-    MovePatterns.cpp        ← NEW: Fmovs/Fnegs (f32); Mov32 (i32); Mov16 if T2-native
-    ScalarBroadcastPatterns.cpp ← NEW: FmulsScalar, FmacsScalar
+    ElementwisePatterns.cpp ← NEW: Fadds/Fsubs/Fmuls (f32)
+    FmaPattern.cpp          ← NEW: Fmacs (f32)
+    MovePatterns.cpp        ← NEW: Fmovs/Fnegs (f32)
+    ScalarBroadcastPatterns.cpp ← NEW: FmulsScalar, FmacsScalar (f32)
 ```
 
 Each `Patterns/*.cpp` contains 1–4 sibling `OpRewritePattern<scf::ForOp>` subclasses. Pattern files stay ~100–150 lines; each maps 1:1 to a published CSL builtin name.
@@ -186,7 +186,7 @@ Applied in order; first failure logged and returned.
 
 7. Exactly one `memref.store` in body (single output).
 8. Every non-terminator op is one of `arith.*`, `memref.load`, `memref.store`, `arith.constant`. No side-effecting ops.
-9. SSA values consumed by body but defined outside the loop classify as: the IV (see rule 6), a loop-invariant memref (→ `AccessPattern.buffer`), or a loop-invariant scalar of element type ∈ {f32, i32} (→ `loopInvariants`). Anything else rejects.
+9. SSA values consumed by body but defined outside the loop classify as: the IV (see rule 6), a loop-invariant memref (→ `AccessPattern.buffer`), or a loop-invariant scalar of type `f32` (→ `loopInvariants`, the scalar-broadcast candidate set). Anything else rejects.
 
 **Access-pattern rules (per load/store):**
 10. Index is a constant-coefficient affine function of the IV: MVP accepts `%i`, `%i + k`, `%i * c + k` for constants `c, k ∈ ℤ` (including negative).
@@ -212,9 +212,9 @@ One `OpRewritePattern<scf::ForOp>` subclass per row. Each pattern:
 2. Checks if `bodyOps` matches its specific body signature.
 3. If matched, rewrites; returns `success()`. Else returns `failure()`.
 
-The following table reflects the **actual SDK builtin set** as enumerated from `docs/superpowers/raw/cerebras_sdk_docs/csl/Language/Builtins.md`. Naming is not uniform across the float/int divide: float ops use letter-width suffixes (`…s` for f32, `…h` for f16); integer ops use numeric-width suffixes (`…16`, `…32`), and the integer set is sparse.
+The following table reflects the **actual SDK float-DSD builtin set** as enumerated from `docs/superpowers/raw/cerebras_sdk_docs/csl/Language/Builtins.md`. The `…s` suffix = single precision = 32-bit float. (Half-precision `@…h` variants exist but are T3 follow-up scope.)
 
-| Pattern class | Body signature | CSL builtin(s) | Covered examples |
+| Pattern class | Body signature | CSL builtin | Covered examples |
 |---|---|---|---|
 | `FaddsPattern` | `%0 = load a[i]; %1 = load b[i]; %2 = arith.addf %0, %1 : f32; store %2, c[i]` | `@fadds` | `vecadd_*`, `plain_vecadd`, `helper_add` |
 | `FsubsPattern` | same with `arith.subf : f32` | `@fsubs` | — |
@@ -224,18 +224,12 @@ The following table reflects the **actual SDK builtin set** as enumerated from `
 | `FnegsPattern` | `%0 = load a[i] : f32; %1 = arith.negf %0; store %1, c[i]` | `@fnegs` | `neg_signflip` |
 | `FmulsScalarPattern` | `%0 = load a[i] : f32; %1 = mulf %0, %α; store %1, c[i]` (α loop-invariant f32) | `@fmuls(dc, da, α)` | saxpy-scale leg |
 | `FmacsScalarPattern` | `%m = mulf a[i], %α : f32; %s = addf %m, c[i] : f32; store %s, c[i]` | `@fmacs(dc, dc, da, α)` | `saxpy`, `even_saxpy` |
-| `Mov32Pattern` | `%0 = load a[i] : i32; store %0, c[i] : i32` — i32 buffer copy | `@mov32` | bulk i32 copies (under T2) |
 
-**Integer-width options (pending user re-confirmation):** if scope expands to `i16` (T2-native), additional patterns land: `Add16Pattern` (`arith.addi … : i16` → `@add16`), `Sub16Pattern` (`@sub16`), `Mov16Pattern` (`@mov16`). No `@mul16` exists, so `Mul16Pattern` is not implementable; no `@neg16` exists, so negation must go through `arith.subi 0, x → @sub16` if wanted. Logical/shift ops (`@and16`, `@or16`, `@xor16`, `@sll16`, `@slr16`, `@sar16`) are outside scope D but would be straightforward to add in a follow-up.
+Every pattern's `matchAndRewrite` bails (`return failure()`) if `load.getType() != f32`. Non-f32 loops fall through unchanged to the emitter's scalar path — users of i32/i16/f16 kernels see no regression, they simply don't get DSD speedup in this release.
 
-### 5.1 Dispatch on element type within each pattern
+### 5.1 Element-type gate
 
-Each pattern class reads `loads[0].getType()` (or the relevant op's type) and:
-- `f32` → selects the `@f…s` builtin.
-- `i32` → selects the `@i…s` builtin.
-- Any other type → returns `failure()` (pattern does not match; other patterns or the fall-through apply).
-
-This keeps the pattern count bounded (one class per algebraic idiom) rather than one class per idiom × type-width product.
+Each pattern class begins with a type guard: if `loads[0].getType() != f32` (or the relevant op's result type isn't f32), the pattern returns `failure()` immediately. The pattern count is one per algebraic idiom; widening to f16 / i16 later is a matter of adding sibling classes (`FaddhPattern`, `Add16Pattern`, …) inside the same `Patterns/*.cpp` files, not restructuring.
 
 ---
 
@@ -420,20 +414,15 @@ Under `mlir/test/Targets/CSLEmit/e2e/auto-vectorize/`. Full pipeline RUN line: `
 ### 9.1 Commit sequence
 
 1. **Prep commit:** relocate `CSLInferExports` to `mlir/lib/Dialect/CSL/Transforms/`. Zero behavior change. `ninja check-air-mlir` green.
-2. **Pass commit:** add `-csl-auto-vectorize` with S4-scope + D-tier + T2-types coverage. Full test suite per §7. `aircc.py` updated to include the pass in its default CSL pipeline.
+2. **Pass commit:** add `-csl-auto-vectorize` with S4-scope + D-tier + T1-types (f32-only) coverage. Full test suite per §7. `aircc.py` updated to include the pass in its default CSL pipeline.
 
-### 9.2 Open decisions (needed before plan)
+### 9.2 Follow-ups (not in this spec)
 
-- **Element-type scope (revisit):** In light of §5's finding that integer DSD builtins don't symmetrically mirror the float set (no `@add32`/`@sub32`/`@mul32`/`@mul16`/`@neg16`), user to confirm which scope to ship:
-  - T2 as originally chosen (f32+i32): scope-D integer coverage = `@mov32` only.
-  - **T2-native (f32+i16):** full scope-D where the SDK has it (i16 drops mul/neg).
-  - T2-augmented (f32+i16+i32-copy-only).
-
-### 9.3 Known follow-ups (not in this spec)
-
+- **i16 integer support — one follow-up patch.** Adds `Add16Pattern`, `Sub16Pattern`, `Mov16Pattern` as sibling classes inside the existing `Patterns/` files. No structural change to the pass — just sibling rewrite patterns with a type gate of `i16`. Does **not** include multiply (`@mul16` doesn't exist), direct negation (`@neg16` doesn't exist — goes through `arith.subi 0, x → @sub16`), or FMA (no integer FMA in SDK).
+- **i32 bulk copy (`@mov32`).** Single pattern (`Mov32Pattern`), likely bundled with the i16 patch. i32 arithmetic (`add`/`sub`/`mul`) has no DSD builtin; those loops stay scalar forever. Ship when there's a workload that benefits.
+- **f16 (half-precision) support.** Sibling classes (`FaddhPattern`, `FmachPattern`, …) using `@faddh` / `@fmach` / `@fmulh` / `@fmovh` / `@fnegh`. Orthogonal to i16.
+- **Logical / shift integer DSD ops** (`@and16`, `@or16`, `@xor16`, `@sll16`, `@slr16`, `@sar16`, `@popcnt`, `@clz`, `@ctz`). Straightforward pattern additions once i16 lands.
 - **Tier-2 `@map` lowering.** Pure-body non-idiom loops → CSL `@map` with closure. Requires new CSL dialect op (`csl.map`) and closure-lowering.
 - **Reductions (`@fadds` with DSR accumulator).** `scf.for` with `iter_args` of scalar type, commutative associative body. Likely a sibling pass `-csl-recognize-reductions`.
-- **`f16` / `i16`** element-type extensions once test inputs materialise (orthogonal to §9.2).
-- **Logical / shift integer DSD ops** (`@and16`, `@or16`, `@xor16`, `@sll16`, `@slr16`, `@sar16`, `@popcnt`, `@clz`, `@ctz`). Straightforward Add16/Sub16-style pattern additions once i16 lands.
 - **Non-unit loop step.** Confirm SDK semantics under DSD stride vs IV step composition.
 - **Memref canonicalisation interactions.** If upstream memref-subview folding runs before `-csl-auto-vectorize`, some rewrites may see already-folded input. Expected to be a no-op, but plan stage should verify with a mixed test.
