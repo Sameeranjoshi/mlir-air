@@ -14,6 +14,7 @@
 #ifndef AIR_DIALECT_CSL_TRANSFORMS_PASSES_H
 #define AIR_DIALECT_CSL_TRANSFORMS_PASSES_H
 
+#include "air/Dialect/CSL/Transforms/CSLAutoVectorizePass.h"
 #include "air/Dialect/CSL/Transforms/CSLInferExportsPass.h"
 
 namespace xilinx {

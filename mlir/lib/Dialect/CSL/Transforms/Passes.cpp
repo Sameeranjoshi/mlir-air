@@ -13,4 +13,8 @@ void xilinx::air::registerCSLTransformPasses() {
       []() -> std::unique_ptr<mlir::Pass> {
         return createCSLInferExportsPass();
       });
+  mlir::registerPass(
+      []() -> std::unique_ptr<mlir::Pass> {
+        return createCSLAutoVectorizePass();
+      });
 }

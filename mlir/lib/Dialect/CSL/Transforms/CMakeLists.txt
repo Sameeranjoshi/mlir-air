@@ -4,6 +4,7 @@
 add_mlir_library(
   CSLTransforms
   CSLInferExports.cpp
+  CSLAutoVectorize.cpp
   Passes.cpp
 
   PARTIAL_SOURCES_INTENDED
@@ -16,4 +17,7 @@ add_mlir_library(
   MLIRIR
   MLIRPass
   MLIRSupport
-  MLIRTransforms)
+  MLIRTransforms
+  MLIRSCFDialect
+  MLIRMemRefDialect
+  MLIRArithDialect)
