@@ -19,6 +19,54 @@ using namespace mlir;
 namespace xilinx {
 namespace air {
 
+/// Match index expression `expr` against (coeff * %iv + k) with constant
+/// integer `coeff`, `k`.  Returns {coeff, k} on match, failure otherwise.
+static FailureOr<std::pair<int64_t, int64_t>>
+matchAffineIndexInIV(Value expr, Value iv) {
+  // Base case: the IV itself.
+  if (expr == iv) return std::make_pair(int64_t(1), int64_t(0));
+
+  // A constant — expressible as (0 * iv + c).
+  if (auto c = getConstantIntValue(expr))
+    return std::make_pair(int64_t(0), *c);
+
+  Operation *def = expr.getDefiningOp();
+  if (!def) return failure();
+
+  // arith.addi a, b : i_or_index  →  coeff(a) + coeff(b), k(a) + k(b)
+  if (auto add = dyn_cast<arith::AddIOp>(def)) {
+    auto l = matchAffineIndexInIV(add.getLhs(), iv);
+    auto r = matchAffineIndexInIV(add.getRhs(), iv);
+    if (failed(l) || failed(r)) return failure();
+    return std::make_pair(l->first + r->first, l->second + r->second);
+  }
+
+  // arith.subi a, b → coeff(a) - coeff(b), k(a) - k(b)
+  if (auto sub = dyn_cast<arith::SubIOp>(def)) {
+    auto l = matchAffineIndexInIV(sub.getLhs(), iv);
+    auto r = matchAffineIndexInIV(sub.getRhs(), iv);
+    if (failed(l) || failed(r)) return failure();
+    return std::make_pair(l->first - r->first, l->second - r->second);
+  }
+
+  // arith.muli iv, c  or  arith.muli c, iv  →  (coeff*c, k*c) IF the OTHER
+  // side is a compile-time constant (otherwise reject — we can't multiply
+  // two affine expressions and stay affine).
+  if (auto mul = dyn_cast<arith::MulIOp>(def)) {
+    auto l = matchAffineIndexInIV(mul.getLhs(), iv);
+    auto r = matchAffineIndexInIV(mul.getRhs(), iv);
+    if (failed(l) || failed(r)) return failure();
+    // One side must have coeff == 0 (be a pure constant).
+    if (l->first == 0)
+      return std::make_pair(l->second * r->first, l->second * r->second);
+    if (r->first == 0)
+      return std::make_pair(l->first * r->second, l->second * r->second);
+    return failure();
+  }
+
+  return failure();
+}
+
 FailureOr<LoopIdiom> analyzeForLoop(scf::ForOp op) {
   LoopIdiom info;
 
@@ -175,10 +223,92 @@ FailureOr<LoopIdiom> analyzeForLoop(scf::ForOp op) {
     }
   }
 
-  // Rules 10-12 land in Task 6.
-  LLVM_DEBUG(llvm::dbgs() << "reject: access-pattern check not implemented @"
+  // Rules 10, 11, 12 — per-access analysis.
+  auto analyzeAccess = [&](Value memRef, ValueRange indices,
+                           Operation *accessOp) -> LogicalResult {
+    auto ty = dyn_cast<MemRefType>(memRef.getType());
+    if (!ty) {
+      LLVM_DEBUG(llvm::dbgs() << "reject: non-memref access operand @"
+                              << accessOp->getLoc() << "\n");
+      return failure();
+    }
+    if ((unsigned)ty.getRank() != indices.size()) {
+      LLVM_DEBUG(llvm::dbgs() << "reject: rank/indices mismatch @"
+                              << accessOp->getLoc() << "\n");
+      return failure();
+    }
+    if (ty.getRank() != 1) {
+      // Rank-2 handling arrives in Task 7.
+      LLVM_DEBUG(llvm::dbgs() << "reject: non-rank-1 access (rank "
+                              << ty.getRank() << ") @"
+                              << accessOp->getLoc() << "\n");
+      return failure();
+    }
+    if (!ty.hasStaticShape()) {
+      LLVM_DEBUG(llvm::dbgs() << "reject: dynamic memref shape @"
+                              << accessOp->getLoc() << "\n");
+      return failure();
+    }
+
+    // Rule 10 — index is affine in IV.
+    auto aff = matchAffineIndexInIV(indices[0], info.inductionVar);
+    if (failed(aff)) {
+      LLVM_DEBUG(llvm::dbgs() << "reject: non-affine index @"
+                              << accessOp->getLoc() << "\n");
+      return failure();
+    }
+    int64_t coeff = aff->first;
+    int64_t k = aff->second;
+
+    // Rule 11 — access-in-bounds.
+    // Iteration range is [lb, ub).
+    int64_t ax0 = coeff * info.lb + k;
+    int64_t ax1 = coeff * (info.ub - 1) + k;
+    int64_t amin = std::min(ax0, ax1);
+    int64_t amax = std::max(ax0, ax1);
+    int64_t bufExtent = ty.getShape()[0];
+    if (amin < 0 || amax >= bufExtent) {
+      LLVM_DEBUG(llvm::dbgs() << "reject: access OOB [" << amin << ","
+                              << amax << "] on buffer extent " << bufExtent
+                              << " @" << accessOp->getLoc() << "\n");
+      return failure();
+    }
+
+    // Rule 12 — DSD field widths (mem1d: stride i8, offset i16).
+    if (coeff < kMinMem1dStride || coeff > kMaxMem1dStride) {
+      LLVM_DEBUG(llvm::dbgs() << "reject: stride " << coeff
+                              << " outside mem1d i8 range @"
+                              << accessOp->getLoc() << "\n");
+      return failure();
+    }
+    if (amin < kMinDsdOffset || amin > kMaxDsdOffset) {
+      LLVM_DEBUG(llvm::dbgs() << "reject: effective offset " << amin
+                              << " outside i16 range @"
+                              << accessOp->getLoc() << "\n");
+      return failure();
+    }
+
+    DsdAccessPattern ap;
+    ap.buffer = memRef;
+    ap.strides = {coeff};
+    ap.offsets = {amin};                 // effective post-clip start offset
+    ap.rank = 1;
+    info.accesses.push_back(ap);
+    return success();
+  };
+
+  for (auto &ld : info.loads)
+    if (failed(analyzeAccess(ld.getMemRef(), ld.getIndices(), ld)))
+      return failure();
+  for (auto &st : info.stores)
+    if (failed(analyzeAccess(st.getMemRef(), st.getIndices(), st)))
+      return failure();
+
+  LLVM_DEBUG(llvm::dbgs() << "accept: LoopIdiom extent=" << info.extent
+                          << " loads=" << info.loads.size()
+                          << " stores=" << info.stores.size() << " @"
                           << op.getLoc() << "\n");
-  return failure();
+  return info;
 }
 
 } // namespace air
