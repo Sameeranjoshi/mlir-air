@@ -7,6 +7,7 @@ add_mlir_library(
   CSLAutoVectorize.cpp
   LoopIdiomAnalysis.cpp
   Passes.cpp
+  Patterns/ElementwisePatterns.cpp
 
   PARTIAL_SOURCES_INTENDED
 

@@ -18,11 +18,17 @@
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/PatternMatch.h"
 #include "mlir/Pass/Pass.h"
+#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 #define DEBUG_TYPE "csl-auto-vectorize"
 
 using namespace mlir;
+
+namespace xilinx { namespace air {
+  void populateElementwisePatterns(mlir::RewritePatternSet &patterns);
+}}
 
 namespace {
 
@@ -43,7 +49,12 @@ struct CSLAutoVectorizePass
   }
 
   void runOnOperation() override {
-    // No-op for now — patterns are added in later tasks.
+    RewritePatternSet patterns(&getContext());
+    xilinx::air::populateElementwisePatterns(patterns);
+    // More populators land in later tasks.
+
+    if (failed(applyPatternsGreedily(getOperation(), std::move(patterns))))
+      signalPassFailure();
   }
 };
 
