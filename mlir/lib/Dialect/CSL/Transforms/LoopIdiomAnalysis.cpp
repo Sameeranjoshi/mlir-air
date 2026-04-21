@@ -438,19 +438,27 @@ FailureOr<LoopIdiom> analyzeForLoop(scf::ForOp op) {
                                 << accessOp->getLoc() << "\n");
         return failure();
       }
-      strides[0] = std::get<0>(*affOuter);
-      offsets[0] = strides[0] * info.lb + std::get<2>(*affOuter);
-      strides[1] = std::get<1>(*affInner);
-      offsets[1] = strides[1] * info.innerLb + std::get<2>(*affInner);
+      int64_t s0 = std::get<0>(*affOuter);
+      int64_t k0 = std::get<2>(*affOuter);
+      int64_t s1 = std::get<1>(*affInner);
+      int64_t k1 = std::get<2>(*affInner);
+      // Effective access range start = min over iteration of (stride*iv + k).
+      int64_t s0_x0 = s0 * info.lb + k0;
+      int64_t s0_x1 = s0 * (info.ub - 1) + k0;
+      int64_t amin0 = std::min(s0_x0, s0_x1);
+      int64_t amax0 = std::max(s0_x0, s0_x1);
+      int64_t s1_x0 = s1 * info.innerLb + k1;
+      int64_t s1_x1 = s1 * (info.innerUb - 1) + k1;
+      int64_t amin1 = std::min(s1_x0, s1_x1);
+      int64_t amax1 = std::max(s1_x0, s1_x1);
       int64_t M = ty.getShape()[0], N = ty.getShape()[1];
-      if (offsets[0] < 0 ||
-          offsets[0] + (info.extent - 1) * strides[0] >= M ||
-          offsets[1] < 0 ||
-          offsets[1] + (info.innerExtent - 1) * strides[1] >= N) {
+      if (amin0 < 0 || amax0 >= M || amin1 < 0 || amax1 >= N) {
         LLVM_DEBUG(llvm::dbgs() << "reject: rank-2 OOB @"
                                 << accessOp->getLoc() << "\n");
         return failure();
       }
+      strides[0] = s0;  strides[1] = s1;
+      offsets[0] = amin0;  offsets[1] = amin1;
       for (int64_t s : strides)
         if (s < kMinMem4dStride || s > kMaxMem4dStride) return failure();
       for (int64_t o : offsets)

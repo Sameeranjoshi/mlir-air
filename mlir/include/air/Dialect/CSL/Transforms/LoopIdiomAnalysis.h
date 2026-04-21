@@ -27,7 +27,14 @@ namespace air {
 
 /// One memref access (load or store) classified by its affine pattern.
 /// For rank-R memrefs, strides and offsets each have R entries.
-/// Indexes the IV as:  access = buffer[stride[d] * iv_d + offset[d]]
+///
+/// `strides[d]` is the coefficient of the IV for dimension `d` (signed).
+/// `offsets[d]` is the effective range-start for dimension `d`: the
+/// minimum value of (stride*iv + k) over the iteration range.  This
+/// means `memref.subview %buf[offsets] [extents] [strides]` with the
+/// loop's extent covers the exact access range, regardless of sign.
+/// For positive strides, offsets[d] equals the access at iv = lb.
+/// For negative strides, offsets[d] equals the access at iv = ub-1.
 struct DsdAccessPattern {
   mlir::Value buffer;                              // root memref SSA value
   llvm::SmallVector<int64_t, 2> strides;           // per-rank coefficient
