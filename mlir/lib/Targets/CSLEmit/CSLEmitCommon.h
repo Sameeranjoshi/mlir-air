@@ -373,6 +373,21 @@ emitFuncBody(mlir::Region &bodyRegion, llvm::raw_ostream &os,
         for (auto it : llvm::enumerate(bc.getArgs())) {
           if (it.index()) os << ", ";
           std::string argName = resolve(nameMap, it.value());
+          // If the value is not in nameMap (e.g., an arith.constant hoisted
+          // out of the csl.func body by the pattern rewriter), fall back to
+          // emitting the literal inline from the defining op.
+          if (argName == "?") {
+            if (auto *defOp = it.value().getDefiningOp()) {
+              if (auto constOp = dyn_cast<arith::ConstantOp>(defOp)) {
+                if (auto floatAttr =
+                        dyn_cast<FloatAttr>(constOp.getValue()))
+                  argName = std::to_string(floatAttr.getValueAsDouble());
+                else if (auto intAttr =
+                             dyn_cast<IntegerAttr>(constOp.getValue()))
+                  argName = std::to_string(intAttr.getInt());
+              }
+            }
+          }
           // Module-member calls (e.g. `math.sqrt(x)`) take runtime-typed
           // parameters. Our arith.constant lowering leaves literals unnamed
           // in nameMap, so CSL sees `comptime_float` and refuses. Wrap
