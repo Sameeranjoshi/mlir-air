@@ -18,7 +18,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "air/Conversion/CSLInferExportsPass.h"
+#include "air/Dialect/CSL/Transforms/CSLInferExportsPass.h"
 #include "air/Dialect/CSL/CSLHostOps.h"
 #include "air/Dialect/CSL/CSLLayoutOps.h"
 #include "air/Dialect/CSL/CSLOps.h"

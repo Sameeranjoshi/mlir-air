@@ -21,6 +21,7 @@ set(LIBS
   AIRUtil
   AIRConversionPasses
   AIRTransformPasses
+  CSLTransforms
   AIRInitAll
   MLIRAffineAnalysis
   MLIRAnalysis

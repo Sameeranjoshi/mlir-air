@@ -9,6 +9,7 @@
 #include "air/InitAll.h"
 
 #include "air/Conversion/Passes.h"
+#include "air/Dialect/CSL/Transforms/Passes.h"
 #include "air/Dialect/AIR/AIRDialect.h"
 #include "air/Dialect/AIR/AIRTransformOps.h"
 #include "air/Dialect/AIRRt/AIRRtDialect.h"
@@ -33,4 +34,5 @@ void xilinx::air::registerAllDialects(mlir::DialectRegistry &registry) {
 void xilinx::air::registerAllPasses() {
   xilinx::air::registerTransformPasses();
   xilinx::air::registerConversionPasses();
+  xilinx::air::registerCSLTransformPasses();
 }

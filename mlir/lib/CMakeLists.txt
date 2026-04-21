@@ -24,11 +24,13 @@ add_mlir_library(
   AIRTransformOpsIncGen
   AIRConversionPasses
   AIRTransformPasses
+  CSLTransforms
   AIRInterface
 
   LINK_LIBS
   AIRConversionPasses
   AIRTransformPasses
+  CSLTransforms
   AIRTransformOps
   AIRDialect
   AIRRtDialect

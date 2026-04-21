@@ -14,8 +14,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef AIR_CONVERSION_CSL_INFER_EXPORTS_PASS_H
-#define AIR_CONVERSION_CSL_INFER_EXPORTS_PASS_H
+#ifndef AIR_DIALECT_CSL_TRANSFORMS_CSL_INFER_EXPORTS_PASS_H
+#define AIR_DIALECT_CSL_TRANSFORMS_CSL_INFER_EXPORTS_PASS_H
 
 #include "mlir/Pass/Pass.h"
 #include <memory>
@@ -34,4 +34,4 @@ createCSLInferExportsPass();
 } // namespace air
 } // namespace xilinx
 
-#endif // AIR_CONVERSION_CSL_INFER_EXPORTS_PASS_H
+#endif // AIR_DIALECT_CSL_TRANSFORMS_CSL_INFER_EXPORTS_PASS_H
