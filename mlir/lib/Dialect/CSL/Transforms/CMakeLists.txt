@@ -5,6 +5,7 @@ add_mlir_library(
   CSLTransforms
   CSLInferExports.cpp
   CSLAutoVectorize.cpp
+  LoopIdiomAnalysis.cpp
   Passes.cpp
 
   PARTIAL_SOURCES_INTENDED
