@@ -9,6 +9,7 @@ add_mlir_library(
   Passes.cpp
   Patterns/ElementwisePatterns.cpp
   Patterns/FmaPattern.cpp
+  Patterns/MovePatterns.cpp
 
   PARTIAL_SOURCES_INTENDED
 
