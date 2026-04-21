@@ -8,6 +8,7 @@ add_mlir_library(
   LoopIdiomAnalysis.cpp
   Passes.cpp
   Patterns/ElementwisePatterns.cpp
+  Patterns/FmaPattern.cpp
 
   PARTIAL_SOURCES_INTENDED
 

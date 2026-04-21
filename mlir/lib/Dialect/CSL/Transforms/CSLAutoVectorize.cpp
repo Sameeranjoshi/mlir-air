@@ -28,6 +28,7 @@ using namespace mlir;
 
 namespace xilinx { namespace air {
   void populateElementwisePatterns(mlir::RewritePatternSet &patterns);
+  void populateFmaPattern(mlir::RewritePatternSet &patterns);
 }}
 
 namespace {
@@ -51,7 +52,7 @@ struct CSLAutoVectorizePass
   void runOnOperation() override {
     RewritePatternSet patterns(&getContext());
     xilinx::air::populateElementwisePatterns(patterns);
-    // More populators land in later tasks.
+    xilinx::air::populateFmaPattern(patterns);
 
     if (failed(applyPatternsGreedily(getOperation(), std::move(patterns))))
       signalPassFailure();
