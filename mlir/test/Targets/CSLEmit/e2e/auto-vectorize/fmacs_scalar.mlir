@@ -1,17 +1,19 @@
 // RUN: rm -rf %t && mkdir -p %t
 // RUN: air-opt %s -csl-auto-vectorize -csl-infer-exports | \
 // RUN:   air-translate --emit-csl --output-dir=%t
-// RUN: FileCheck %s < %t/saxpy_auto/pe.csl
+// RUN: FileCheck %s < %t/fmacs_scalar_e2e/pe.csl
 //
-// Mirror dsds.mlir but with a scalar scf.for input: -csl-auto-vectorize
-// detects the saxpy FMA idiom (A[i]*alpha + y[i] -> y[i]) and replaces it
-// with @fmacs.
-//
+// SAXPY: y[i] = alpha*A[i] + y[i]  (alpha = 2.0, loop-invariant scalar)
+// ->  @fmacs(dy, dy, dA, alpha) : (!csl.dsd, !csl.dsd, !csl.dsd, f32) -> ()
+// y is the accumulator: read and written, so it gets both h2d and d2h.
+
 // CHECK-LABEL: fn compute() void
+// CHECK: @get_dsd(mem1d_dsd, .{ .base_address = &A, .extent = 128 });
+// CHECK: @get_dsd(mem1d_dsd, .{ .base_address = &y, .extent = 128 });
 // CHECK: @fmacs(
 
 module {
-  csl.wafer @saxpy_auto {arch = "wse3"} {
+  csl.wafer @fmacs_scalar_e2e {arch = "wse3"} {
     csl.program @pe {
       %A = csl.var @A : memref<128xf32>
       %y = csl.var @y : memref<128xf32>

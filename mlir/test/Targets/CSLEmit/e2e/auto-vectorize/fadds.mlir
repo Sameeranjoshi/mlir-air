@@ -1,8 +1,10 @@
 // RUN: rm -rf %t && mkdir -p %t
 // RUN: air-opt %s -csl-auto-vectorize -csl-infer-exports | \
 // RUN:   air-translate --emit-csl --output-dir=%t
-// RUN: FileCheck %s < %t/vecadd_e2e/pe.csl
+// RUN: FileCheck %s < %t/fadds_e2e/pe.csl
 //
+// c[i] = a[i] + b[i]  ->  @fadds(dc, da, db)
+
 // CHECK-LABEL: fn compute() void
 // CHECK: @get_dsd(mem1d_dsd, .{ .base_address = &a, .extent = 1024 });
 // CHECK: @get_dsd(mem1d_dsd, .{ .base_address = &b, .extent = 1024 });
@@ -10,7 +12,7 @@
 // CHECK: @fadds(
 
 module {
-  csl.wafer @vecadd_e2e {arch = "wse3"} {
+  csl.wafer @fadds_e2e {arch = "wse3"} {
     csl.program @pe {
       %a = csl.var @a : memref<1024xf32>
       %b = csl.var @b : memref<1024xf32>
