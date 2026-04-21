@@ -272,6 +272,14 @@ static void emitRefOp(mlir::Operation &op, llvm::raw_ostream &os,
     emitBin(&op, "/");
     return;
   }
+  if (isa<arith::RemSIOp>(&op) || isa<arith::RemUIOp>(&op)) {
+    emitBin(&op, "%");
+    return;
+  }
+  if (isa<arith::DivSIOp>(&op) || isa<arith::DivUIOp>(&op)) {
+    emitBin(&op, "//");
+    return;
+  }
   if (isa<arith::MaximumFOp>(&op)) {
     emitCall(&op, "np.maximum");
     return;
@@ -318,6 +326,16 @@ static void emitRefOp(mlir::Operation &op, llvm::raw_ostream &os,
     return;
   }
 
+  // arith.index_cast / arith.index_castui — transparent in Python (index == int)
+  if (auto cast = dyn_cast<arith::IndexCastOp>(&op)) {
+    s.nameMap[cast.getResult()] = rresolve(s, cast.getIn());
+    return;
+  }
+  if (auto cast = dyn_cast<arith::IndexCastUIOp>(&op)) {
+    s.nameMap[cast.getResult()] = rresolve(s, cast.getIn());
+    return;
+  }
+
   // scf.for
   if (auto forOp = dyn_cast<scf::ForOp>(&op)) {
     std::string lo = rresolve(s, forOp.getLowerBound());
@@ -329,6 +347,31 @@ static void emitRefOp(mlir::Operation &op, llvm::raw_ostream &os,
     os << "for " << iv << " in range(" << lo << ", " << hi << ", " << st
        << "):\n";
     emitRefBody(forOp.getBodyRegion(), os, indentLevel + 1, s);
+    return;
+  }
+
+  // scf.index_switch → Python if/elif/else chain.
+  // The scrutinee is index-typed; Python % gives the same result as remsi.
+  if (auto sw = dyn_cast<scf::IndexSwitchOp>(&op)) {
+    if (sw.getNumResults() != 0) {
+      s.ok = false;
+      s.reason = "scf.index_switch with yielded values unsupported";
+      return;
+    }
+    std::string arg = rresolve(s, sw.getArg());
+    auto caseVals = sw.getCases();
+    auto caseRegions = sw.getCaseRegions();
+    for (unsigned idx = 0; idx < caseVals.size(); ++idx) {
+      ind();
+      os << (idx == 0 ? "if" : "elif") << " " << arg << " == "
+         << caseVals[idx] << ":\n";
+      emitRefBody(caseRegions[idx], os, indentLevel + 1, s);
+      if (!s.ok) return;
+    }
+    // Default region.
+    ind();
+    os << (caseVals.empty() ? "if True:\n" : "else:\n");
+    emitRefBody(sw.getDefaultRegion(), os, indentLevel + 1, s);
     return;
   }
 

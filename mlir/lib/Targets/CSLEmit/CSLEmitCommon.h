@@ -178,6 +178,10 @@ emitFuncBody(mlir::Region &bodyRegion, llvm::raw_ostream &os,
       // Integer binary ops
       if (dyn_cast<arith::SubIOp>(&op)) { emitBinary(&op, "-"); continue; }
       if (dyn_cast<arith::MulIOp>(&op)) { emitBinary(&op, "*"); continue; }
+      if (dyn_cast<arith::RemSIOp>(&op)) { emitBinary(&op, "%"); continue; }
+      if (dyn_cast<arith::RemUIOp>(&op)) { emitBinary(&op, "%"); continue; }
+      if (dyn_cast<arith::DivSIOp>(&op)) { emitBinary(&op, "/"); continue; }
+      if (dyn_cast<arith::DivUIOp>(&op)) { emitBinary(&op, "/"); continue; }
 
       // Bitwise (wider integers) or logical (i1) ops. CSL separates the two:
       // bool uses `or`/`and` (Syntax.md operator table); integer uses `|`/`&`/`^`.
@@ -278,6 +282,51 @@ emitFuncBody(mlir::Region &bodyRegion, llvm::raw_ostream &os,
           os << "}";
         }
         os << "\n";
+        continue;
+      }
+
+      // scf.index_switch → CSL switch (@as(i32, arg)) { N => { body }, ..., else => { default } }
+      // The CSL switch scrutinee must be a fixed-width integer, so we cast the
+      // index-typed arg through @as(i32, ...). Case labels are integer literals
+      // which CSL accepts against an i32 scrutinee. The default region is
+      // always present in scf.index_switch (MLIR spec).
+      if (auto sw = dyn_cast<scf::IndexSwitchOp>(&op)) {
+        if (sw.getNumResults() != 0) {
+          op.emitError("scf.index_switch with yielded values is unsupported in v5");
+          return failure();
+        }
+        std::string arg = resolve(nameMap, sw.getArg());
+        indent(os, indentLevel);
+        // CSL switch requires a fixed-width integer scrutinee. The argument is
+        // index-typed, which maps to u16 in CSL — already a valid fixed-width
+        // integer. Case literals are comptime_int and are coercible to u16
+        // (Syntax.md: "case_value expressions must be comptime-known and
+        // coercible to the type of the input expression"). Do NOT add an
+        // @as(i32, ...) wrapper: the SDK rejects extsi u16->i32 as a
+        // "cast incompatible" error on its internal lowering path.
+        os << "switch (" << arg << ") {\n";
+        // Emit each case region alongside its label.
+        auto caseVals = sw.getCases();
+        auto caseRegions = sw.getCaseRegions();
+        for (unsigned idx = 0; idx < caseVals.size(); ++idx) {
+          indent(os, indentLevel + 1);
+          os << caseVals[idx] << " => {\n";
+          if (failed(emitFuncBody(caseRegions[idx], os, indentLevel + 2,
+                                  outerMap, nameMap, tempCount)))
+            return failure();
+          indent(os, indentLevel + 1);
+          os << "},\n";
+        }
+        // Default region — always present.
+        indent(os, indentLevel + 1);
+        os << "else => {\n";
+        if (failed(emitFuncBody(sw.getDefaultRegion(), os, indentLevel + 2,
+                                outerMap, nameMap, tempCount)))
+          return failure();
+        indent(os, indentLevel + 1);
+        os << "}\n";
+        indent(os, indentLevel);
+        os << "}\n";
         continue;
       }
 
