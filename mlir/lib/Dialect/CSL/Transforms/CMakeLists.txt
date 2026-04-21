@@ -10,6 +10,7 @@ add_mlir_library(
   Patterns/ElementwisePatterns.cpp
   Patterns/FmaPattern.cpp
   Patterns/MovePatterns.cpp
+  Patterns/Rank2Patterns.cpp
   Patterns/ScalarBroadcastPatterns.cpp
 
   PARTIAL_SOURCES_INTENDED

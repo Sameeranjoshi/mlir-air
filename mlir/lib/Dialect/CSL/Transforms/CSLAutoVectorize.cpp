@@ -31,6 +31,7 @@ namespace xilinx { namespace air {
   void populateFmaPattern(mlir::RewritePatternSet &patterns);
   void populateMovePatterns(mlir::RewritePatternSet &patterns);
   void populateScalarBroadcastPatterns(mlir::RewritePatternSet &patterns);
+  void populateRank2Patterns(mlir::RewritePatternSet &patterns);
 }}
 
 namespace {
@@ -57,6 +58,7 @@ struct CSLAutoVectorizePass
     xilinx::air::populateFmaPattern(patterns);
     xilinx::air::populateMovePatterns(patterns);
     xilinx::air::populateScalarBroadcastPatterns(patterns);
+    xilinx::air::populateRank2Patterns(patterns);
 
     if (failed(applyPatternsGreedily(getOperation(), std::move(patterns))))
       signalPassFailure();
