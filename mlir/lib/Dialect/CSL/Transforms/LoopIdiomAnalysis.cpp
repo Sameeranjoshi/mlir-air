@@ -67,6 +67,59 @@ matchAffineIndexInIV(Value expr, Value iv) {
   return failure();
 }
 
+/// Like matchAffineIndexInIV but handles a pair of IVs; returns
+/// (coeff_primary, coeff_secondary, k).  Either coeff may be 0.
+static FailureOr<std::tuple<int64_t, int64_t, int64_t>>
+matchAffineIndexInIVPair(Value expr, Value ivA, Value ivB) {
+  auto a = matchAffineIndexInIV(expr, ivA);
+  if (succeeded(a) && ivB == Value{})
+    return std::make_tuple(a->first, int64_t(0), a->second);
+  // Try treating expr as affine in ivB with ivA contributing via a constant.
+  // Simpler: call matchAffineIndexInIV with one IV at a time after splitting.
+  // For MVP: require index expression to decompose as (cA*ivA + cB*ivB + k)
+  // with additive structure.  We handle it recursively:
+  if (expr == ivA) return std::make_tuple(int64_t(1), int64_t(0), int64_t(0));
+  if (expr == ivB) return std::make_tuple(int64_t(0), int64_t(1), int64_t(0));
+  if (auto c = getConstantIntValue(expr))
+    return std::make_tuple(int64_t(0), int64_t(0), *c);
+
+  Operation *def = expr.getDefiningOp();
+  if (!def) return failure();
+  if (auto add = dyn_cast<arith::AddIOp>(def)) {
+    auto l = matchAffineIndexInIVPair(add.getLhs(), ivA, ivB);
+    auto r = matchAffineIndexInIVPair(add.getRhs(), ivA, ivB);
+    if (failed(l) || failed(r)) return failure();
+    return std::make_tuple(std::get<0>(*l) + std::get<0>(*r),
+                           std::get<1>(*l) + std::get<1>(*r),
+                           std::get<2>(*l) + std::get<2>(*r));
+  }
+  if (auto sub = dyn_cast<arith::SubIOp>(def)) {
+    auto l = matchAffineIndexInIVPair(sub.getLhs(), ivA, ivB);
+    auto r = matchAffineIndexInIVPair(sub.getRhs(), ivA, ivB);
+    if (failed(l) || failed(r)) return failure();
+    return std::make_tuple(std::get<0>(*l) - std::get<0>(*r),
+                           std::get<1>(*l) - std::get<1>(*r),
+                           std::get<2>(*l) - std::get<2>(*r));
+  }
+  if (auto mul = dyn_cast<arith::MulIOp>(def)) {
+    auto l = matchAffineIndexInIVPair(mul.getLhs(), ivA, ivB);
+    auto r = matchAffineIndexInIVPair(mul.getRhs(), ivA, ivB);
+    if (failed(l) || failed(r)) return failure();
+    bool lIsConst = std::get<0>(*l) == 0 && std::get<1>(*l) == 0;
+    bool rIsConst = std::get<0>(*r) == 0 && std::get<1>(*r) == 0;
+    if (lIsConst)
+      return std::make_tuple(std::get<2>(*l) * std::get<0>(*r),
+                             std::get<2>(*l) * std::get<1>(*r),
+                             std::get<2>(*l) * std::get<2>(*r));
+    if (rIsConst)
+      return std::make_tuple(std::get<0>(*l) * std::get<2>(*r),
+                             std::get<1>(*l) * std::get<2>(*r),
+                             std::get<2>(*l) * std::get<2>(*r));
+    return failure();
+  }
+  return failure();
+}
+
 FailureOr<LoopIdiom> analyzeForLoop(scf::ForOp op) {
   LoopIdiom info;
 
@@ -111,32 +164,92 @@ FailureOr<LoopIdiom> analyzeForLoop(scf::ForOp op) {
     return failure();
   }
 
-  // Rule 5 — no nested control flow or calls in body.  (Rank-2 will relax
-  // this in Task 7; for now any nested op of these kinds rejects.)
-  for (Operation &inner : op.getBody()->without_terminator()) {
-    if (isa<scf::ForOp, scf::IfOp, scf::WhileOp>(&inner)) {
-      LLVM_DEBUG(llvm::dbgs() << "reject: nested control flow ("
-                              << inner.getName() << ") @"
-                              << inner.getLoc() << "\n");
-      return failure();
+  // Rule 5 — no nested control flow or calls in body. Exception: exactly
+  // one nested scf.for whose body is the rank-1 shape (perfect 2-deep nest).
+  scf::ForOp innerFor;
+  {
+    unsigned nonTermCount = 0;
+    for (Operation &inner : op.getBody()->without_terminator()) {
+      nonTermCount++;
+      if (auto nested = dyn_cast<scf::ForOp>(&inner)) {
+        if (innerFor) {
+          LLVM_DEBUG(llvm::dbgs() << "reject: multiple nested loops @"
+                                  << inner.getLoc() << "\n");
+          return failure();
+        }
+        innerFor = nested;
+      }
     }
-    if (inner.hasTrait<OpTrait::HasRecursiveMemoryEffects>() ||
-        inner.mightHaveTrait<OpTrait::IsTerminator>())
-      continue;
-    if (!isa<arith::ArithDialect>(inner.getDialect()) &&
-        !isa<memref::MemRefDialect>(inner.getDialect())) {
-      LLVM_DEBUG(llvm::dbgs() << "reject: disallowed dialect in body ("
-                              << inner.getName() << ") @"
-                              << inner.getLoc() << "\n");
+    if (innerFor && nonTermCount != 1) {
+      LLVM_DEBUG(llvm::dbgs() << "reject: non-perfect rank-2 nest @"
+                              << innerFor.getLoc() << "\n");
       return failure();
     }
   }
+
+  if (innerFor) {
+    // Outer-loop body is the one inner scf.for — no body ops to classify
+    // here.  Perform shape + extent checks on the inner loop, then treat
+    // the inner loop's body as the "real" body for rules 6-12.
+    std::optional<int64_t> ilb = getConstantIntValue(innerFor.getLowerBound());
+    std::optional<int64_t> iub = getConstantIntValue(innerFor.getUpperBound());
+    std::optional<int64_t> istep = getConstantIntValue(innerFor.getStep());
+    if (!ilb || !iub || !istep || *istep != 1) {
+      LLVM_DEBUG(llvm::dbgs() << "reject: inner loop non-constant or step!=1 @"
+                              << innerFor.getLoc() << "\n");
+      return failure();
+    }
+    info.isRank2 = true;
+    info.innerLb = *ilb;
+    info.innerUb = *iub;
+    info.innerStep = 1;
+    info.innerExtent = info.innerUb - info.innerLb;
+    info.innerInductionVar = innerFor.getInductionVar();
+    if (info.innerExtent <= 0 || info.innerExtent > kMaxDsdExtent ||
+        info.innerLb < 0) {
+      LLVM_DEBUG(llvm::dbgs() << "reject: inner extent out of range @"
+                              << innerFor.getLoc() << "\n");
+      return failure();
+    }
+    if (!innerFor.getRegion().hasOneBlock() ||
+        innerFor.getNumRegionIterArgs() != 0) {
+      LLVM_DEBUG(llvm::dbgs() << "reject: inner loop iter_args/non-single-block @"
+                              << innerFor.getLoc() << "\n");
+      return failure();
+    }
+  } else {
+    // No inner loop — check that the flat body has no disallowed ops.
+    for (Operation &inner : op.getBody()->without_terminator()) {
+      if (isa<scf::ForOp, scf::IfOp, scf::WhileOp>(&inner)) {
+        LLVM_DEBUG(llvm::dbgs() << "reject: nested control flow ("
+                                << inner.getName() << ") @"
+                                << inner.getLoc() << "\n");
+        return failure();
+      }
+      if (inner.hasTrait<OpTrait::HasRecursiveMemoryEffects>() ||
+          inner.mightHaveTrait<OpTrait::IsTerminator>())
+        continue;
+      if (!isa<arith::ArithDialect>(inner.getDialect()) &&
+          !isa<memref::MemRefDialect>(inner.getDialect())) {
+        LLVM_DEBUG(llvm::dbgs() << "reject: disallowed dialect in body ("
+                                << inner.getName() << ") @"
+                                << inner.getLoc() << "\n");
+        return failure();
+      }
+    }
+  }
+
+  // Loops from here on — iterate over innerFor's body if rank-2, else
+  // the outer body.  Bind a helper.
+  Block *bodyBlock = innerFor ? innerFor.getBody() : op.getBody();
+  Value primaryIV = info.inductionVar;    // outer IV in rank-2
+  Value secondaryIV = innerFor ? innerFor.getInductionVar() : Value{};
 
   // Rules 7 & 8 — collect loads / stores / arith ops; enforce single store
   // and allowed body-op set (arith.* + memref.load/store only; constants
   // that are index values are index-typed arith.constant which is already
   // dialect=arith).
-  for (Operation &inner : op.getBody()->without_terminator()) {
+  for (Operation &inner : bodyBlock->without_terminator()) {
     if (auto ld = dyn_cast<memref::LoadOp>(&inner)) {
       info.loads.push_back(ld);
       continue;
@@ -165,37 +278,43 @@ FailureOr<LoopIdiom> analyzeForLoop(scf::ForOp op) {
 
   // Rule 6 — induction variable uses restricted to memref index positions,
   // either directly or via arith.addi/arith.muli %iv, %const / affine.apply.
-  for (Operation *user : info.inductionVar.getUsers()) {
-    if (isa<memref::LoadOp, memref::StoreOp>(user)) {
-      // Ok — check the IV is used as an index (not as the memref operand).
-      for (auto [idx, operand] : llvm::enumerate(user->getOperands())) {
-        if (operand != info.inductionVar) continue;
-        if (auto ld = dyn_cast<memref::LoadOp>(user)) {
-          if (idx == 0) {
-            LLVM_DEBUG(llvm::dbgs() << "reject: IV used as memref operand @"
-                                    << user->getLoc() << "\n");
-            return failure();
-          }
-        } else if (auto st = dyn_cast<memref::StoreOp>(user)) {
-          if (idx <= 1) {
-            LLVM_DEBUG(llvm::dbgs() << "reject: IV used as value/memref @"
-                                    << user->getLoc() << "\n");
-            return failure();
+  auto checkIVUses = [&](Value iv, const char *which) -> LogicalResult {
+    for (Operation *user : iv.getUsers()) {
+      if (isa<memref::LoadOp, memref::StoreOp>(user)) {
+        for (auto [idx, operand] : llvm::enumerate(user->getOperands())) {
+          if (operand != iv) continue;
+          if (auto ld = dyn_cast<memref::LoadOp>(user)) {
+            if (idx == 0) {
+              LLVM_DEBUG(llvm::dbgs() << "reject: " << which
+                                      << " IV used as memref operand @"
+                                      << user->getLoc() << "\n");
+              return failure();
+            }
+          } else if (auto st = dyn_cast<memref::StoreOp>(user)) {
+            if (idx <= 1) {
+              LLVM_DEBUG(llvm::dbgs() << "reject: " << which
+                                      << " IV used as value/memref @"
+                                      << user->getLoc() << "\n");
+              return failure();
+            }
           }
         }
+        continue;
       }
-      continue;
+      if (isa<arith::AddIOp, arith::MulIOp, arith::SubIOp>(user)) continue;
+      // Outer IV used by inner scf.for (as nothing directly — the inner
+      // uses ITS OWN iv).  So non-memref, non-arith users should be empty.
+      if (isa<scf::ForOp>(user)) continue;
+      LLVM_DEBUG(llvm::dbgs() << "reject: " << which
+                              << " IV has non-index user: "
+                              << user->getName() << "\n");
+      return failure();
     }
-    if (isa<arith::AddIOp, arith::MulIOp, arith::SubIOp>(user)) {
-      // OK — the other operand must be a constant for the index to be
-      // affine in %iv with constant coefficients (enforced in Task 6).
-      continue;
-    }
-    LLVM_DEBUG(llvm::dbgs() << "reject: IV has non-index user: "
-                            << user->getName() << " @" << user->getLoc()
-                            << "\n");
+    return success();
+  };
+  if (failed(checkIVUses(primaryIV, "outer"))) return failure();
+  if (info.isRank2 && failed(checkIVUses(secondaryIV, "inner")))
     return failure();
-  }
 
   // Rule 9 — collect loop-invariant scalar f32 values consumed by the body.
   // (Loop-invariant memrefs are captured per-access in Task 6.)
@@ -237,64 +356,116 @@ FailureOr<LoopIdiom> analyzeForLoop(scf::ForOp op) {
                               << accessOp->getLoc() << "\n");
       return failure();
     }
-    if (ty.getRank() != 1) {
-      // Rank-2 handling arrives in Task 7.
-      LLVM_DEBUG(llvm::dbgs() << "reject: non-rank-1 access (rank "
-                              << ty.getRank() << ") @"
-                              << accessOp->getLoc() << "\n");
-      return failure();
-    }
     if (!ty.hasStaticShape()) {
       LLVM_DEBUG(llvm::dbgs() << "reject: dynamic memref shape @"
                               << accessOp->getLoc() << "\n");
       return failure();
     }
 
-    // Rule 10 — index is affine in IV.
-    auto aff = matchAffineIndexInIV(indices[0], info.inductionVar);
-    if (failed(aff)) {
-      LLVM_DEBUG(llvm::dbgs() << "reject: non-affine index @"
-                              << accessOp->getLoc() << "\n");
-      return failure();
+    if (ty.getRank() == 1) {
+      if (info.isRank2) {
+        // Outer rank-2 nest over rank-1 accesses: index must be affine only
+        // in the inner IV, outer coefficient must be zero.
+        auto aff = matchAffineIndexInIVPair(indices[0], primaryIV, secondaryIV);
+        if (failed(aff) || std::get<0>(*aff) != 0) {
+          LLVM_DEBUG(llvm::dbgs() << "reject: inner-only-indexed rank-1 access"
+                                     " but outer-coeff non-zero @"
+                                  << accessOp->getLoc() << "\n");
+          return failure();
+        }
+        int64_t coeff = std::get<1>(*aff);
+        int64_t kk = std::get<2>(*aff);
+        // Range over [innerLb, innerUb)
+        int64_t x0 = coeff * info.innerLb + kk;
+        int64_t x1 = coeff * (info.innerUb - 1) + kk;
+        int64_t amin = std::min(x0, x1);
+        int64_t amax = std::max(x0, x1);
+        int64_t bufExtent = ty.getShape()[0];
+        if (amin < 0 || amax >= bufExtent) {
+          LLVM_DEBUG(llvm::dbgs() << "reject: rank-1 (inside rank-2) OOB @"
+                                  << accessOp->getLoc() << "\n");
+          return failure();
+        }
+        DsdAccessPattern ap{memRef, {coeff}, {amin}, 1};
+        info.accesses.push_back(ap);
+        return success();
+      }
+      // Pure rank-1 (existing logic from Task 6 — keep it).
+      auto aff = matchAffineIndexInIV(indices[0], primaryIV);
+      if (failed(aff)) {
+        LLVM_DEBUG(llvm::dbgs() << "reject: non-affine index @"
+                                << accessOp->getLoc() << "\n");
+        return failure();
+      }
+      int64_t coeff = aff->first, k = aff->second;
+      int64_t x0 = coeff * info.lb + k, x1 = coeff * (info.ub - 1) + k;
+      int64_t amin = std::min(x0, x1), amax = std::max(x0, x1);
+      int64_t bufExtent = ty.getShape()[0];
+      if (amin < 0 || amax >= bufExtent) {
+        LLVM_DEBUG(llvm::dbgs() << "reject: access OOB [" << amin << ","
+                                << amax << "] on buffer extent " << bufExtent
+                                << " @" << accessOp->getLoc() << "\n");
+        return failure();
+      }
+      if (coeff < kMinMem1dStride || coeff > kMaxMem1dStride) {
+        LLVM_DEBUG(llvm::dbgs() << "reject: stride " << coeff
+                                << " outside mem1d i8 range @"
+                                << accessOp->getLoc() << "\n");
+        return failure();
+      }
+      if (amin < kMinDsdOffset || amin > kMaxDsdOffset) {
+        LLVM_DEBUG(llvm::dbgs() << "reject: effective offset " << amin
+                                << " outside i16 range @"
+                                << accessOp->getLoc() << "\n");
+        return failure();
+      }
+      DsdAccessPattern ap{memRef, {coeff}, {amin}, 1};
+      info.accesses.push_back(ap);
+      return success();
     }
-    int64_t coeff = aff->first;
-    int64_t k = aff->second;
-
-    // Rule 11 — access-in-bounds.
-    // Iteration range is [lb, ub).
-    int64_t ax0 = coeff * info.lb + k;
-    int64_t ax1 = coeff * (info.ub - 1) + k;
-    int64_t amin = std::min(ax0, ax1);
-    int64_t amax = std::max(ax0, ax1);
-    int64_t bufExtent = ty.getShape()[0];
-    if (amin < 0 || amax >= bufExtent) {
-      LLVM_DEBUG(llvm::dbgs() << "reject: access OOB [" << amin << ","
-                              << amax << "] on buffer extent " << bufExtent
-                              << " @" << accessOp->getLoc() << "\n");
-      return failure();
+    if (ty.getRank() == 2 && info.isRank2) {
+      // Rank-2 memref inside rank-2 nest — each dim gets its own (coeff, k).
+      int64_t strides[2] = {0, 0};
+      int64_t offsets[2] = {0, 0};
+      // Dim 0 uses outer IV only; dim 1 uses inner IV only.
+      auto affOuter =
+          matchAffineIndexInIVPair(indices[0], primaryIV, secondaryIV);
+      auto affInner =
+          matchAffineIndexInIVPair(indices[1], primaryIV, secondaryIV);
+      if (failed(affOuter) || failed(affInner)) return failure();
+      if (std::get<1>(*affOuter) != 0 || std::get<0>(*affInner) != 0) {
+        LLVM_DEBUG(llvm::dbgs() << "reject: rank-2 access mixes IVs @"
+                                << accessOp->getLoc() << "\n");
+        return failure();
+      }
+      strides[0] = std::get<0>(*affOuter);
+      offsets[0] = strides[0] * info.lb + std::get<2>(*affOuter);
+      strides[1] = std::get<1>(*affInner);
+      offsets[1] = strides[1] * info.innerLb + std::get<2>(*affInner);
+      int64_t M = ty.getShape()[0], N = ty.getShape()[1];
+      if (offsets[0] < 0 ||
+          offsets[0] + (info.extent - 1) * strides[0] >= M ||
+          offsets[1] < 0 ||
+          offsets[1] + (info.innerExtent - 1) * strides[1] >= N) {
+        LLVM_DEBUG(llvm::dbgs() << "reject: rank-2 OOB @"
+                                << accessOp->getLoc() << "\n");
+        return failure();
+      }
+      for (int64_t s : strides)
+        if (s < kMinMem4dStride || s > kMaxMem4dStride) return failure();
+      for (int64_t o : offsets)
+        if (o < kMinDsdOffset || o > kMaxDsdOffset) return failure();
+      DsdAccessPattern ap;
+      ap.buffer = memRef;
+      ap.strides = {strides[0], strides[1]};
+      ap.offsets = {offsets[0], offsets[1]};
+      ap.rank = 2;
+      info.accesses.push_back(ap);
+      return success();
     }
-
-    // Rule 12 — DSD field widths (mem1d: stride i8, offset i16).
-    if (coeff < kMinMem1dStride || coeff > kMaxMem1dStride) {
-      LLVM_DEBUG(llvm::dbgs() << "reject: stride " << coeff
-                              << " outside mem1d i8 range @"
-                              << accessOp->getLoc() << "\n");
-      return failure();
-    }
-    if (amin < kMinDsdOffset || amin > kMaxDsdOffset) {
-      LLVM_DEBUG(llvm::dbgs() << "reject: effective offset " << amin
-                              << " outside i16 range @"
-                              << accessOp->getLoc() << "\n");
-      return failure();
-    }
-
-    DsdAccessPattern ap;
-    ap.buffer = memRef;
-    ap.strides = {coeff};
-    ap.offsets = {amin};                 // effective post-clip start offset
-    ap.rank = 1;
-    info.accesses.push_back(ap);
-    return success();
+    LLVM_DEBUG(llvm::dbgs() << "reject: rank mismatch @"
+                            << accessOp->getLoc() << "\n");
+    return failure();
   };
 
   for (auto &ld : info.loads)
