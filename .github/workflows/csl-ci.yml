@@ -1,0 +1,99 @@
+# CSL CI — runs on every PR targeting main/air-to-fire, and on pushes to
+# air-to-fire.
+#
+# IMPORTANT: The container image reference below is a placeholder.  Replace
+# ghcr.io/your-org/mlir-air-csl-ci:latest with an actual image that has:
+#   - Cerebras SDK (cslc, cs_python) installed under /opt/cerebras or on PATH
+#   - LLVM + MLIR built under /opt/llvm-install
+#   - Python 3.10 + singularity available
+# Until a real image exists, the "csl-tests" job will fail at container pull.
+# The "csl-tests-lite" job (build + Tier 1 lit only) can run on ubuntu-latest
+# without the SDK container and is always useful as a fast merge gate.
+
+name: CSL CI
+
+on:
+  pull_request:
+    branches: [main, air-to-fire]
+  push:
+    branches: [air-to-fire]
+
+jobs:
+  # ------------------------------------------------------------------ #
+  # Tier 1 only — no Cerebras SDK required.  Runs the MLIR lit suite    #
+  # (round-trip, conversion, emitter unit tests) inside a plain Linux   #
+  # runner after building the project from source.                       #
+  # ------------------------------------------------------------------ #
+  csl-lit:
+    name: CSL lit tests (Tier 1)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache build
+        uses: actions/cache@v3
+        with:
+          path: build
+          key: build-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', '**/CMakeLists.txt') }}
+          restore-keys: |
+            build-${{ runner.os }}-
+
+      - name: Configure + build
+        run: |
+          mkdir -p build && cd build
+          cmake .. -G Ninja \
+            -DLLVM_INSTALL_DIR=/opt/llvm-install \
+            -DAIR_ENABLE_AIE=OFF \
+            -DCMAKE_BUILD_TYPE=Release
+          ninja install
+
+      - name: Run CSL CI (Tier 1 only — no simulator)
+        run: bash utils/run_csl_ci.sh --no-build --fast
+
+  # ------------------------------------------------------------------ #
+  # Tier 1 + Tier 2 — requires the Cerebras SDK container.              #
+  # Skipped until a real container image is configured.                  #
+  # ------------------------------------------------------------------ #
+  csl-tests:
+    name: CSL full (Tier 1 + Tier 2 simulator)
+    runs-on: ubuntu-latest
+    # Remove the `if: false` line once a real SDK image is available.
+    if: false
+    container:
+      # Replace this with the actual image path once set up in your org.
+      image: ${{ vars.CEREBRAS_SDK_IMAGE || 'ghcr.io/your-org/mlir-air-csl-ci:latest' }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache build
+        uses: actions/cache@v3
+        with:
+          path: build
+          key: build-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', '**/CMakeLists.txt') }}
+          restore-keys: |
+            build-${{ runner.os }}-
+
+      - name: Configure + build
+        run: |
+          mkdir -p build && cd build
+          cmake .. -G Ninja \
+            -DLLVM_INSTALL_DIR=/opt/llvm-install \
+            -DAIR_ENABLE_AIE=OFF \
+            -DCMAKE_BUILD_TYPE=Release
+          ninja install
+
+      - name: Run CSL CI (Tier 1 + Tier 2)
+        run: bash utils/run_csl_ci.sh --no-build -j 8
+
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: csl-ci-failures
+          path: |
+            /tmp/tmp.*/**/pe.csl
+            /tmp/tmp.*/**/run.log

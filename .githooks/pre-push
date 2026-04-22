@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Pre-push hook — runs Tier 1 (lit) only before each push.
+#
+# Enable with:
+#   git config core.hooksPath .githooks
+#
+# Bypass with:
+#   git push --no-verify
+set -e
+echo "Running CSL Tier 1 tests before push..."
+exec "$(git rev-parse --show-toplevel)/utils/run_csl_ci.sh" --fast --no-build
