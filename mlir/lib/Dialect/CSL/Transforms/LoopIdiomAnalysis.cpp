@@ -423,6 +423,14 @@ FailureOr<LoopIdiom> analyzeForLoop(scf::ForOp op) {
                                   << accessOp->getLoc() << "\n");
           return failure();
         }
+        // Rule 13 — store target must not be stride-0 (that would be a
+        // reduction, deferred to a separate pass — spec §9.2).
+        if (isa<memref::StoreOp>(accessOp) && coeff == 0) {
+          LLVM_DEBUG(llvm::dbgs()
+                     << "reject: store target has stride 0 "
+                        "(reduction pattern) @" << accessOp->getLoc() << "\n");
+          return failure();
+        }
         DsdAccessPattern ap{memRef, {coeff}, {amin}, 1};
         info.accesses.push_back(ap);
         return success();
@@ -454,6 +462,14 @@ FailureOr<LoopIdiom> analyzeForLoop(scf::ForOp op) {
         LLVM_DEBUG(llvm::dbgs() << "reject: effective offset " << amin
                                 << " outside i16 range @"
                                 << accessOp->getLoc() << "\n");
+        return failure();
+      }
+      // Rule 13 — store target must not be stride-0 (that would be a
+      // reduction, deferred to a separate pass — spec §9.2).
+      if (isa<memref::StoreOp>(accessOp) && coeff == 0) {
+        LLVM_DEBUG(llvm::dbgs()
+                   << "reject: store target has stride 0 "
+                      "(reduction pattern) @" << accessOp->getLoc() << "\n");
         return failure();
       }
       DsdAccessPattern ap{memRef, {coeff}, {amin}, 1};
@@ -500,6 +516,18 @@ FailureOr<LoopIdiom> analyzeForLoop(scf::ForOp op) {
         if (s < kMinMem4dStride || s > kMaxMem4dStride) return failure();
       for (int64_t o : offsets)
         if (o < kMinDsdOffset || o > kMaxDsdOffset) return failure();
+      // Rule 13 — store target must not be stride-0 in any dimension (that
+      // would be a reduction, deferred to a separate pass — spec §9.2).
+      if (isa<memref::StoreOp>(accessOp)) {
+        for (int64_t s : strides) {
+          if (s == 0) {
+            LLVM_DEBUG(llvm::dbgs()
+                       << "reject: store target has stride 0 "
+                          "(reduction pattern) @" << accessOp->getLoc() << "\n");
+            return failure();
+          }
+        }
+      }
       DsdAccessPattern ap;
       ap.buffer = memRef;
       ap.strides = {strides[0], strides[1]};
