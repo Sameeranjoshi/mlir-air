@@ -58,7 +58,12 @@ struct CSLAutoVectorizePass
     xilinx::air::populateScalarBroadcastPatterns(patterns);
     xilinx::air::populateRank2Patterns(patterns);
 
-    if (failed(applyPatternsGreedily(getOperation(), std::move(patterns))))
+    GreedyRewriteConfig config;
+    config.setRegionSimplificationLevel(GreedySimplifyRegionLevel::Disabled);
+    config.enableFolding(false);
+    config.enableConstantCSE(false);
+
+    if (failed(applyPatternsGreedily(getOperation(), std::move(patterns), config)))
       signalPassFailure();
   }
 };
