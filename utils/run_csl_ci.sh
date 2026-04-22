@@ -42,11 +42,17 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ---- env ----
-module load python/3.10.3 cmake/3.26.0 rocm/6.2.1 singularity 2>/dev/null || true
+# Temporarily disable strict-mode flags for environment sourcing.  The
+# scripts contain probes (command -v, grep) that may return non-zero, and
+# they reference $PYTHONPATH which may be unset — neither is fatal to us,
+# but under `set -eu` both abort the script silently.
+set +eu
+module load python/3.10.3 cmake/3.26.0 rocm/6.2.1 singularity 2>/dev/null
 if [[ -d "$ROOT_DIR/sandbox" ]]; then
-  source "$ROOT_DIR/sandbox/bin/activate"
+  source "$ROOT_DIR/sandbox/bin/activate" 2>/dev/null
 fi
 source "$ROOT_DIR/utils/env_setup_gpu.sh" install llvm/install >/dev/null 2>&1
+set -eu
 
 # ---- build ----
 if [[ $NO_BUILD -eq 0 ]]; then
