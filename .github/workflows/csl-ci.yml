@@ -46,18 +46,54 @@ jobs:
         uses: actions/cache@v4
         with:
           path: llvm/install
-          key: llvm-install-${{ runner.os }}-${{ steps.llvm.outputs.hash }}
+          key: llvm-install-${{ runner.os }}-${{ steps.llvm.outputs.hash }}-slim
 
       - name: ccache
         uses: hendrikmuhs/ccache-action@v1
         with:
           key: air-ccache-${{ runner.os }}-${{ steps.llvm.outputs.hash }}
 
-      - name: Build LLVM (cache miss only)
+      - name: Build LLVM (cache miss only — slim CI config)
         if: steps.llvm-cache.outputs.cache-hit != 'true'
         run: |
           bash utils/clone-llvm.sh
-          bash utils/build-llvm-local.sh llvm
+          mkdir -p llvm/build llvm/install
+          cd llvm/build
+          cmake ../llvm -GNinja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DLLVM_USE_LINKER=lld \
+            -DCMAKE_INSTALL_PREFIX=$PWD/../install \
+            -DLLVM_ENABLE_PROJECTS=mlir \
+            -DLLVM_TARGETS_TO_BUILD=X86 \
+            -DLLVM_BUILD_EXAMPLES=OFF \
+            -DLLVM_INCLUDE_EXAMPLES=OFF \
+            -DLLVM_INCLUDE_BENCHMARKS=OFF \
+            -DLLVM_INCLUDE_DOCS=OFF \
+            -DLLVM_INCLUDE_TESTS=OFF \
+            -DMLIR_INCLUDE_TESTS=OFF \
+            -DLLVM_ENABLE_ASSERTIONS=OFF \
+            -DLLVM_ENABLE_RTTI=OFF \
+            -DLLVM_BUILD_LLVM_DYLIB=OFF \
+            -DLLVM_LINK_LLVM_DYLIB=OFF \
+            -DMLIR_BUILD_MLIR_DYLIB=OFF \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DLLVM_INSTALL_UTILS=ON \
+            -DLLVM_ENABLE_ZSTD=OFF \
+            -DLLVM_ENABLE_ZLIB=FORCE_OFF \
+            -DLLVM_ENABLE_TERMINFO=OFF \
+            -DLLVM_ENABLE_LIBXML2=OFF \
+            -DMLIR_ENABLE_BINDINGS_PYTHON=OFF \
+            -DMLIR_ENABLE_ROCM_RUNNER=OFF \
+            -DMLIR_ENABLE_CUDA_RUNNER=OFF \
+            -DMLIR_ENABLE_ROCDL=OFF \
+            -DMLIR_ENABLE_VULKAN_RUNNER=OFF \
+            -DMLIR_ENABLE_SPIRV_CPU_RUNNER=OFF \
+            -DMLIR_ENABLE_EXECUTION_ENGINE=OFF
+          ninja install
 
       - name: Cache build/
         uses: actions/cache@v4
