@@ -1,14 +1,17 @@
 # CSL CI — MLIR lit tests (Tier 1) only.
 #
 # Runs on every PR targeting main/air-to-fire and on pushes to air-to-fire.
-# Builds the project from source on a stock Linux runner; no Cerebras SDK
-# required at this tier.
+# Builds on a stock Linux runner.  Two caches keep re-runs cheap:
+#   * llvm/install — keyed on the LLVM commit pinned in utils/clone-llvm.sh.
+#     Built once (~60 min), reused for every subsequent run until that
+#     pin changes.
+#   * build/       — keyed on LLVM hash + repo SHA, with restore-keys for
+#     partial hits.  Combined with ccache this turns a rebuild into an
+#     incremental ninja.
 #
-# Tier 2 (simulator sweep against real Cerebras hardware via cslc +
-# cs_python) is NOT run in CI.  Developers run it locally via the
-# pre-push hook — see .githooks/pre-push and utils/run_csl_ci.sh.
-# When a self-hosted runner with the Cerebras SDK is available, add a
-# second job that invokes `utils/run_csl_ci.sh --no-build -j 8`.
+# Tier 2 (simulator sweep via Cerebras SDK) is NOT run in cloud CI; the
+# SDK isn't available on GitHub runners.  Developers run it locally via
+# the pre-push hook — see .githooks/pre-push and utils/run_csl_ci.sh.
 
 name: CSL CI
 
@@ -25,22 +28,70 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Cache build
-        uses: actions/cache@v3
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ninja-build clang lld ccache cmake python3-pip
+          pip3 install --user pybind11 lit numpy
+
+      - name: Resolve LLVM commit
+        id: llvm
+        run: |
+          hash=$(grep '^export commithash=' utils/clone-llvm.sh | cut -d= -f2)
+          echo "hash=$hash" >> "$GITHUB_OUTPUT"
+
+      - name: Cache llvm/install
+        id: llvm-cache
+        uses: actions/cache@v4
+        with:
+          path: llvm/install
+          key: llvm-install-${{ runner.os }}-${{ steps.llvm.outputs.hash }}
+
+      - name: ccache
+        uses: hendrikmuhs/ccache-action@v1
+        with:
+          key: air-ccache-${{ runner.os }}-${{ steps.llvm.outputs.hash }}
+
+      - name: Build LLVM (cache miss only)
+        if: steps.llvm-cache.outputs.cache-hit != 'true'
+        run: |
+          bash utils/clone-llvm.sh
+          bash utils/build-llvm-local.sh llvm
+
+      - name: Cache build/
+        uses: actions/cache@v4
         with:
           path: build
-          key: build-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', '**/CMakeLists.txt') }}
+          key: air-build-${{ runner.os }}-${{ steps.llvm.outputs.hash }}-${{ github.sha }}
           restore-keys: |
-            build-${{ runner.os }}-
+            air-build-${{ runner.os }}-${{ steps.llvm.outputs.hash }}-
 
-      - name: Configure + build
+      - name: Configure + build AIR
         run: |
+          LIT_PATH=$(python3 -c 'import lit, os; print(os.path.join(os.path.dirname(lit.__file__), "..", "..", "..", "bin", "lit"))')
           mkdir -p build && cd build
           cmake .. -G Ninja \
-            -DLLVM_INSTALL_DIR=/opt/llvm-install \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=$PWD/../install \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DLLVM_USE_LINKER=lld \
+            -DLLVM_DIR=$PWD/../llvm/install/lib/cmake/llvm \
+            -DMLIR_DIR=$PWD/../llvm/install/lib/cmake/mlir \
+            -DLLVM_EXTERNAL_LIT=$LIT_PATH \
             -DAIR_ENABLE_AIE=OFF \
-            -DCMAKE_BUILD_TYPE=Release
+            -DAIR_ENABLE_GPU=OFF \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DLLVM_ENABLE_ASSERTIONS=ON
           ninja install
 
       - name: Run CSL lit suite
-        run: bash utils/run_csl_ci.sh --no-build --fast
+        run: |
+          export PATH="$PWD/install/bin:$PWD/build/bin:$PWD/llvm/install/bin:$HOME/.local/bin:$PATH"
+          lit -v \
+            build/mlir/test/Dialect/CSL \
+            build/mlir/test/Conversion/AIRToCSL \
+            build/mlir/test/Targets/CSLEmit
