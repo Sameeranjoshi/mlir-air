@@ -598,4 +598,37 @@ def CSL_StreamPutOp : CSL_Op<"stream.put", []> {
   let hasVerifier = 1;
 }
 
+//===----------------------------------------------------------------------===//
+// csl.stream.get — Receive a buffer through a declared stream
+//===----------------------------------------------------------------------===//
+
+def CSL_StreamGetOp : CSL_Op<"stream.get", []> {
+  let summary = "Receive into a memref buffer through an inter-PE stream";
+  let description = [{
+    Receives `extent` elements through the named stream into `target`. The
+    stream symbol must resolve to a `csl_layout.stream` whose `to` coord
+    matches the parent program's placement.
+
+    Sync-looking at the user level; `--csl-lower-stream-data` expands this
+    to fabric DSD + async builtin + completion task.
+
+    ```mlir
+    %n = arith.constant 128 : index
+    csl.stream.get @send_ch target(%buf) extent(%n : index)
+                   : memref<128xf32>
+    ```
+  }];
+
+  let arguments = (ins
+    FlatSymbolRefAttr:$stream,
+    AnyMemRef:$target,
+    Index:$extent
+  );
+
+  let assemblyFormat =
+      "$stream `target` `(` $target `)` `extent` `(` $extent `:` "
+      "type($extent) `)` `:` type($target) attr-dict";
+  let hasVerifier = 1;
+}
+
 #endif // CSL_OPS

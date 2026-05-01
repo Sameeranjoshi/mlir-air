@@ -20,6 +20,21 @@ using namespace mlir;
 #define GET_OP_CLASSES
 #include "air/Dialect/CSL/CSLOps.cpp.inc"
 
+namespace {
+// Find the csl.layout child of the enclosing csl.wafer. Returns null if no
+// wafer or no layout.
+::xilinx::csl::LayoutOp findEnclosingLayout(mlir::Operation *op) {
+  auto wafer = op->getParentOfType<::xilinx::csl::WaferOp>();
+  if (!wafer)
+    return nullptr;
+  for (auto &child : wafer.getBody().front()) {
+    if (auto l = mlir::dyn_cast<::xilinx::csl::LayoutOp>(child))
+      return l;
+  }
+  return nullptr;
+}
+} // namespace
+
 //===----------------------------------------------------------------------===//
 // CSL_VarOp
 //===----------------------------------------------------------------------===//
@@ -296,14 +311,7 @@ mlir::LogicalResult xilinx::csl::GetFabDsdOp::verify() {
   if (!wafer)
     return emitOpError("must be inside csl.wafer");
 
-  // Find the csl.layout child by walking the wafer body once.
-  xilinx::csl::LayoutOp layout;
-  for (auto &op : wafer.getBody().front()) {
-    if (auto l = mlir::dyn_cast<xilinx::csl::LayoutOp>(op)) {
-      layout = l;
-      break;
-    }
-  }
+  auto layout = findEnclosingLayout(*this);
   if (!layout)
     return emitOpError("no csl.layout found in enclosing csl.wafer");
 
@@ -339,20 +347,43 @@ mlir::LogicalResult xilinx::csl::StreamPutOp::verify() {
     return emitOpError("source memref element type must be f32 (got ")
            << memTy.getElementType() << ")";
 
+  // TODO(Task 12): cross-check stream's from/to coord against the parent
+  // program's placement at lowering time. Verifier intentionally does not do
+  // this here because (a) a program may be placed at multiple coords and
+  // (b) Pass 4 has full placement info available.
+
   // Stream symbol must exist in enclosing csl.wafer's csl.layout.
-  auto wafer = (*this)->getParentOfType<xilinx::csl::WaferOp>();
-  if (!wafer)
-    return emitOpError("must be inside csl.wafer");
-  ::xilinx::csl_layout::StreamOp stream;
-  for (auto &op : wafer.getBody().front()) {
-    if (auto layout = mlir::dyn_cast<xilinx::csl::LayoutOp>(op)) {
-      if (auto found = mlir::dyn_cast_or_null<::xilinx::csl_layout::StreamOp>(
-              mlir::SymbolTable::lookupSymbolIn(layout,
-                                                 getStreamAttr().getAttr())))
-        stream = found;
-      break;
-    }
-  }
+  auto layout = findEnclosingLayout(*this);
+  if (!layout)
+    return emitOpError("must be inside csl.wafer with a csl.layout");
+  auto stream = mlir::dyn_cast_or_null<::xilinx::csl_layout::StreamOp>(
+      mlir::SymbolTable::lookupSymbolIn(layout, getStreamAttr().getAttr()));
+  if (!stream)
+    return emitOpError("references undefined stream '@")
+           << getStreamAttr().getValue() << "'";
+  return mlir::success();
+}
+
+//===----------------------------------------------------------------------===//
+// csl.stream.get — verifier
+//===----------------------------------------------------------------------===//
+
+mlir::LogicalResult xilinx::csl::StreamGetOp::verify() {
+  auto memTy = mlir::cast<mlir::MemRefType>(getTarget().getType());
+  if (!memTy.getElementType().isF32())
+    return emitOpError("target memref element type must be f32 (got ")
+           << memTy.getElementType() << ")";
+
+  // TODO(Task 12): cross-check stream's `to` coord against the parent
+  // program's placement at lowering time. Verifier intentionally does not do
+  // this here because (a) a program may be placed at multiple coords and
+  // (b) Pass 4 has full placement info available.
+
+  auto layout = findEnclosingLayout(*this);
+  if (!layout)
+    return emitOpError("must be inside csl.wafer with a csl.layout");
+  auto stream = mlir::dyn_cast_or_null<::xilinx::csl_layout::StreamOp>(
+      mlir::SymbolTable::lookupSymbolIn(layout, getStreamAttr().getAttr()));
   if (!stream)
     return emitOpError("references undefined stream '@")
            << getStreamAttr().getValue() << "'";

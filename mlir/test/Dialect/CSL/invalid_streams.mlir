@@ -63,3 +63,21 @@ csl.wafer @w_putnope {arch = "wse3"} {
   }
   csl.layout {width = 1, height = 1} @layout { csl_layout.place @p at (0,0) }
 }
+
+// -----
+
+csl.wafer @w_getty {arch = "wse3"} {
+  csl.program @p {
+    %buf = csl.var @buf : memref<128xf16>
+    csl.func @c {
+      %n = arith.constant 128 : index
+      // CHECK: error: 'csl.stream.get' op target memref element type must be f32
+      csl.stream.get @ch target(%buf) extent(%n : index) : memref<128xf16>
+      csl.return
+    }
+  }
+  csl.layout {width = 2, height = 1} @layout {
+    csl_layout.stream @ch from(0, 0) to(1, 0)
+    csl_layout.place @p at (1, 0)
+  }
+}
