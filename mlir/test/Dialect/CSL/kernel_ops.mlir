@@ -44,10 +44,33 @@ module {
         csl.return
       }
 
-      // NOTE: csl.task tests previously here used csl.color SSA values from
-      // within csl.program. After Task 1 (color scope move), csl.color lives
-      // in csl.layout and is referenced by symbol. Task 4 will refactor
-      // csl.task to take a FlatSymbolRefAttr and reinstate these tests.
+      // Task triggered by a local task id
+      // CHECK: csl.task @exit_task attributes {id = 8 : i32, trigger_kind = "local_task_id"} {
+      // CHECK:   csl.return
+      // CHECK: }
+      csl.task @exit_task attributes {trigger_kind = "local_task_id", id = 8 : i32} {
+        csl.return
+      }
+
+      // Task bound to a color (symbol-referenced)
+      // CHECK: csl.task @recv_task attributes {color = @recv_color, trigger_kind = "color"} {
+      // CHECK:   csl.return
+      // CHECK: }
+      csl.task @recv_task attributes {trigger_kind = "color", color = @recv_color} {
+        csl.return
+      }
+
+      // Task triggered by a higher local task id
+      // CHECK: csl.task @data_task attributes {id = 15 : i32, trigger_kind = "local_task_id"} {
+      // CHECK:   csl.return
+      // CHECK: }
+      csl.task @data_task attributes {trigger_kind = "local_task_id", id = 15 : i32} {
+        csl.return
+      }
+    }
+    csl.layout {width = 1 : i64, height = 1 : i64} @test_layout {
+      csl.color @recv_color
+      csl_layout.place @test_pe at (0, 0)
     }
   }
 }

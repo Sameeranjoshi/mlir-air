@@ -127,23 +127,33 @@ def CSL_FuncOp : CSL_Op<"func", [
 }
 
 //===----------------------------------------------------------------------===//
-// csl.task — PE task bound to a color
+// csl.task — PE task with attribute-driven trigger binding
 //===----------------------------------------------------------------------===//
 
 def CSL_TaskOp : CSL_Op<"task", [
     IsolatedFromAbove,
     Symbol
   ]> {
-  let summary = "PE task bound to a color";
+  let summary = "PE task with attribute-driven trigger binding";
   let description = [{
-    Defines an event-driven task on a PE. Tasks are triggered when a
-    wavelet arrives on the bound color. This is the fundamental
-    execution mechanism on the WSE.
+    Defines an event-driven task on a PE. The trigger binding is expressed
+    via attributes:
 
-    Example (current — color SSA operand form, will be refactored to a
-    FlatSymbolRefAttr trigger in Task 4):
+    - `trigger_kind = "local_task_id"`: must also set `id` (i32). The
+      task fires when `@get_local_task_id(N)` is activated. Used for
+      send/recv completion.
+    - `trigger_kind = "color"`: must also set `color` (FlatSymbolRefAttr
+      to a csl.color). The task fires when a wavelet arrives on that color.
+
+    The emitter generates the corresponding CSL triplet (id const, task
+    body, comptime bind) automatically.
+
+    Examples:
     ```mlir
-    csl.task @recv color(%c) {
+    csl.task @exit_task attributes {trigger_kind = "local_task_id", id = 8 : i32} {
+      csl.return
+    }
+    csl.task @recv attributes {trigger_kind = "color", color = @send_color} {
       csl.return
     }
     ```
@@ -151,11 +161,14 @@ def CSL_TaskOp : CSL_Op<"task", [
 
   let arguments = (ins
     SymbolNameAttr:$sym_name,
-    CSL_ColorType:$color
+    StrAttr:$trigger_kind,
+    OptionalAttr<I32Attr>:$id,
+    OptionalAttr<FlatSymbolRefAttr>:$color
   );
   let regions = (region AnyRegion:$body);
 
-  let assemblyFormat = "$sym_name `color` `(` $color `)` $body attr-dict";
+  let assemblyFormat = "$sym_name attr-dict-with-keyword $body";
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//

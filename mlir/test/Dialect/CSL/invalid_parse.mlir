@@ -9,8 +9,10 @@
 
 // -----
 
-// Missing color keyword in task
-// expected-error @+1 {{expected 'color'}}
+// Stray '(' after task symbol: task is now attribute-driven and has no
+// operand list, so the parser expects either `attributes {...}` or the
+// region body.
+// expected-error @+1 {{expected '{' to begin a region}}
 csl.task @bad_task() : () -> () {
   csl.return
 }

@@ -324,7 +324,7 @@ mlir::LogicalResult xilinx::csl_layout::SetColorConfigOp::verify() {
   auto *color = mlir::SymbolTable::lookupSymbolIn(
       layout, getColorAttr().getAttr());
   if (!color)
-    return emitOpError("references undefined symbol '@")
+    return emitOpError("references undefined color symbol '@")
            << getColorAttr().getValue() << "'";
   if (!mlir::isa<::xilinx::csl::ColorOp>(color))
     return emitOpError("'@") << getColorAttr().getValue()

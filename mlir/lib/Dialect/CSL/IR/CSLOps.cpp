@@ -258,6 +258,34 @@ void xilinx::csl::HostOp::print(mlir::OpAsmPrinter &printer) {
 }
 
 //===----------------------------------------------------------------------===//
+// csl.task — verifier: trigger_kind must match id/color attribute presence
+//===----------------------------------------------------------------------===//
+
+mlir::LogicalResult xilinx::csl::TaskOp::verify() {
+  auto kind = getTriggerKind();
+  bool hasId = (bool)getIdAttr();
+  bool hasColor = (bool)getColorAttr();
+
+  if (kind == "local_task_id") {
+    if (!hasId)
+      return emitOpError(
+          "trigger_kind = \"local_task_id\" requires `id` attribute");
+    if (hasColor)
+      return emitOpError(
+          "trigger_kind = \"local_task_id\" must not set `color`");
+  } else if (kind == "color") {
+    if (!hasColor)
+      return emitOpError("trigger_kind = \"color\" requires `color` attribute");
+    if (hasId)
+      return emitOpError("trigger_kind = \"color\" must not set `id`");
+  } else {
+    return emitOpError("trigger_kind must be \"local_task_id\" or \"color\"")
+           << " (got \"" << kind << "\")";
+  }
+  return mlir::success();
+}
+
+//===----------------------------------------------------------------------===//
 // csl.get_fab_dsd — verifier: color symbol must resolve in csl.layout body
 //===----------------------------------------------------------------------===//
 
