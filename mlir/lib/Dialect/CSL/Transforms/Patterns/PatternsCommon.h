@@ -79,7 +79,9 @@ inline void buildBuiltinCall(mlir::PatternRewriter &rewriter,
       /*results=*/TypeRange{},
       /*callee=*/rewriter.getStringAttr(callee),
       /*module=*/Value{},
-      /*operands=*/args);
+      /*operands=*/args,
+      /*async=*/UnitAttr{},
+      /*activate=*/FlatSymbolRefAttr{});
 }
 
 } // namespace air

@@ -316,3 +316,13 @@ mlir::LogicalResult xilinx::csl::GetFabDsdOp::verify() {
                               << "' is not a csl.color";
   return mlir::success();
 }
+
+//===----------------------------------------------------------------------===//
+// csl.builtin_call — verifier: 'activate' requires 'async'
+//===----------------------------------------------------------------------===//
+
+mlir::LogicalResult xilinx::csl::BuiltinCallOp::verify() {
+  if (getActivateAttr() && !getAsync())
+    return emitOpError("'activate' requires 'async'");
+  return mlir::success();
+}

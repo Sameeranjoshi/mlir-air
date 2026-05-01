@@ -383,13 +383,17 @@ def CSL_BuiltinCallOp : CSL_Op<"builtin_call", [AttrSizedOperandSegments]> {
   let arguments = (ins
     StrAttr:$callee,
     Optional<CSL_ImportedModuleType>:$module,
-    Variadic<AnyType>:$args);
+    Variadic<AnyType>:$args,
+    UnitAttr:$async,
+    OptionalAttr<FlatSymbolRefAttr>:$activate);
   let results   = (outs Variadic<AnyType>:$results);
 
   let assemblyFormat = [{
     $callee (`in` $module^)? `(` $args `)` attr-dict
       `:` functional-type($args, $results)
   }];
+
+  let hasVerifier = 1;
 }
 
 
