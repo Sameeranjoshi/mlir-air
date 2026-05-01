@@ -21,4 +21,8 @@ void xilinx::air::registerCSLTransformPasses() {
       []() -> std::unique_ptr<mlir::Pass> {
         return createCSLMaterializeStreamColorsPass();
       });
+  mlir::registerPass(
+      []() -> std::unique_ptr<mlir::Pass> {
+        return createCSLAllocateColorIdsPass();
+      });
 }
