@@ -7,6 +7,7 @@ add_mlir_library(
   CSLAutoVectorize.cpp
   CSLMaterializeStreamColors.cpp
   CSLAllocateColorIds.cpp
+  CSLLowerStreamRouting.cpp
   LoopIdiomAnalysis.cpp
   Passes.cpp
   Patterns/ElementwisePatterns.cpp
