@@ -229,6 +229,60 @@ LogicalResult ProgramEmitter::emit(xilinx::csl::WaferOp wafer) {
     os << "}\n\n";
   }
 
+  // 3.5 Emit csl.task ops. Two trigger forms:
+  //   - "local_task_id" + id : emit a `<sym>_id: local_task_id` const, the
+  //     task body, then a comptime block binding the task to the id.
+  //   - "color"             : emit just the task body + a comptime block
+  //     binding the task to the named color.
+  for (Operation &op : prog.getBody().front()) {
+    auto taskOp = dyn_cast<cslns::TaskOp>(&op);
+    if (!taskOp) continue;
+
+    StringRef triggerKind = taskOp.getTriggerKind();
+    StringRef sym = taskOp.getSymName();
+
+    if (triggerKind == "local_task_id") {
+      auto idAttr = taskOp.getIdAttr();
+      if (!idAttr) {
+        taskOp.emitOpError(
+            "CSLEmit: csl.task with trigger_kind \"local_task_id\" "
+            "requires an `id` attribute");
+        return failure();
+      }
+      os << "const " << sym << "_id: local_task_id = @get_local_task_id("
+         << idAttr.getInt() << ");\n";
+    } else if (triggerKind != "color") {
+      taskOp.emitOpError("CSLEmit: csl.task has unknown trigger_kind '")
+          << triggerKind << "'";
+      return failure();
+    }
+
+    os << "task " << sym << "() void {\n";
+    llvm::DenseMap<Value, std::string> nameMap;
+    for (auto &kv : outerMap)
+      nameMap[kv.first] = kv.second;
+    unsigned tempCount = 0;
+    if (failed(emitFuncBody(taskOp.getBody(), os, /*indentLevel=*/1,
+                            outerMap, nameMap, tempCount)))
+      return failure();
+    os << "}\n";
+
+    if (triggerKind == "local_task_id") {
+      os << "comptime { @bind_local_task(" << sym << ", " << sym
+         << "_id); }\n\n";
+    } else {
+      auto colorAttr = taskOp.getColorAttr();
+      if (!colorAttr) {
+        taskOp.emitOpError(
+            "CSLEmit: csl.task with trigger_kind \"color\" "
+            "requires a `color` symbol attribute");
+        return failure();
+      }
+      os << "comptime { @bind_local_task(" << sym << ", "
+         << colorAttr.getValue() << "); }\n\n";
+    }
+  }
+
   // 4. Emit comptime block for csl.export ops (direction != "internal")
   bool hasExports = false;
   for (Operation &op : prog.getBody().front()) {

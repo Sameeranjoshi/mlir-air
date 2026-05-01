@@ -414,6 +414,12 @@ emitFuncBody(mlir::Region &bodyRegion, llvm::raw_ostream &os,
           if (modName == "?")
             modName = resolve(nameMap, modVal);
           os << modName << "." << bc.getCallee();
+        } else if (bc.getCallee() == "unblock_cmd_stream") {
+          // SDK memcpy builtin lives on the implicitly-imported `sys_mod`
+          // (see ProgramEmitter preamble). The lower-stream-data pass
+          // synthesizes csl.builtin_call "unblock_cmd_stream" with no
+          // module operand because sys_mod is invented at emit time.
+          os << "sys_mod." << bc.getCallee();
         } else {
           os << "@" << bc.getCallee();
         }
@@ -447,6 +453,28 @@ emitFuncBody(mlir::Region &bodyRegion, llvm::raw_ostream &os,
           } else {
             os << argName;
           }
+        }
+        // Async / activate fields: emit the trailing CSL struct
+        //   .{ .async = true, .activate = <activate>_id }
+        // The `_id` suffix matches the local-task-id symbol the csl.task
+        // emitter generates alongside the task body.
+        bool isAsync = bc.getAsync();
+        auto activate = bc.getActivateAttr();
+        if (isAsync || activate) {
+          if (!bc.getArgs().empty())
+            os << ", ";
+          os << ".{";
+          bool first = true;
+          if (isAsync) {
+            os << " .async = true";
+            first = false;
+          }
+          if (activate) {
+            if (!first) os << ",";
+            os << " .activate = " << activate.getValue() << "_id";
+            first = false;
+          }
+          os << " }";
         }
         os << ");\n";
         continue;
@@ -595,6 +623,36 @@ emitFuncBody(mlir::Region &bodyRegion, llvm::raw_ostream &os,
         }
 
         nameMap[dsdOp.getResult()] = dname;
+        continue;
+      }
+
+      // csl.get_fab_dsd <dir> @color extent(%n) → fabin/fabout DSD on a color.
+      // Emits:
+      //   const dN = @get_dsd(<dir>_dsd,
+      //                       .{ .extent = N, .fabric_color = <color> });
+      // Extent resolves to either the SSA name in `nameMap` or, if unresolved,
+      // the numeric literal from the defining arith.constant. Synthesized by
+      // --csl-lower-stream-data from csl.stream.put/get.
+      if (auto fab = dyn_cast<xilinx::csl::GetFabDsdOp>(&op)) {
+        Value extentVal = fab.getExtent();
+        std::string extentStr = resolve(nameMap, extentVal);
+        if (extentStr == "?") {
+          if (auto *defOp = extentVal.getDefiningOp()) {
+            if (auto cst = dyn_cast<arith::ConstantOp>(defOp)) {
+              if (auto ia = dyn_cast<IntegerAttr>(cst.getValue()))
+                extentStr = std::to_string(ia.getInt());
+            }
+          }
+        }
+        StringRef dirStr =
+            ::xilinx::csl::stringifyFabDsdDirection(fab.getDirection());
+        std::string dname = "d" + std::to_string(tempCount++);
+        indent(os, indentLevel);
+        os << "const " << dname << " = @get_dsd(" << dirStr
+           << "_dsd, .{ .extent = " << extentStr
+           << ", .fabric_color = " << fab.getColor()
+           << " });\n";
+        nameMap[fab.getResult()] = dname;
         continue;
       }
 

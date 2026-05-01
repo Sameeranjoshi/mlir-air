@@ -231,6 +231,22 @@ std::string makeLayoutCsl(xilinx::csl::WaferOp wafer, int64_t width,
   os << "  .width = " << width << ",\n";
   os << "  .height = " << height << ",\n";
   os << "});\n\n";
+
+  // Emit `const <sym> = @get_color(N);` for every csl.color in the wafer's
+  // csl.layout body. Colors live at file scope (above the `layout {}` block),
+  // so they're declared here before @set_rectangle. Synthesized by
+  // --csl-materialize-stream-colors / --csl-allocate-color-ids.
+  bool anyColor = false;
+  wafer.walk([&](xilinx::csl::ColorOp c) {
+    auto idAttr = c.getIdAttr();
+    if (!idAttr) return; // skip virtual (un-allocated) colors defensively
+    os << "const " << c.getSymName() << " = @get_color("
+       << idAttr.getInt() << ");\n";
+    anyColor = true;
+  });
+  if (anyColor)
+    os << "\n";
+
   os << "layout {\n";
   os << "  @set_rectangle(" << width << ", " << height << ");\n";
 
@@ -295,6 +311,22 @@ std::string makeLayoutCsl(xilinx::csl::WaferOp wafer, int64_t width,
     os << "  }\n";
   });
   os << "\n";
+
+  // Emit `@set_color_config(x, y, color, .{ .routes = .{ .rx = ..., .tx = ... } });`
+  // for every csl_layout.set_color_config in the wafer's csl.layout body.
+  // Synthesized by --csl-lower-stream-routing.
+  bool anyCfg = false;
+  wafer.walk([&](xilinx::csl_layout::SetColorConfigOp cfg) {
+    if (!anyCfg) anyCfg = true;
+    StringRef rx = ::xilinx::csl::stringifyDirection(cfg.getRx());
+    StringRef tx = ::xilinx::csl::stringifyDirection(cfg.getTx());
+    os << "  @set_color_config(" << cfg.getPx() << ", " << cfg.getPy()
+       << ", " << cfg.getColor()
+       << ", .{ .routes = .{ .rx = .{" << rx
+       << "}, .tx = .{" << tx << "} } });\n";
+  });
+  if (anyCfg)
+    os << "\n";
 
   // Declare host-visible exports.
   auto exports = collectExports(wafer);
