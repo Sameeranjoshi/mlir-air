@@ -111,6 +111,13 @@ LogicalResult ProgramEmitter::emitProgram(xilinx::csl::ProgramOp prog) {
     if (auto archAttr = wafer->getAttrOfType<StringAttr>("arch"))
       isWse3 = archAttr.getValue() == "wse3";
   }
+  // Collected (queueName, colorName) pairs to emit @initialize_queue for.
+  // Required on WSE-3: every fabric input/output queue must be explicitly
+  // bound to its color via @initialize_queue, otherwise wavelets on the
+  // color never reach the queue and the kernel stalls. Color 0 happens to
+  // have an implicit default binding which masks the bug for single-stream
+  // tests; non-zero colors fail without it.
+  llvm::SmallVector<std::pair<std::string, std::string>, 4> queueColorPairs;
   if (isWse3) {
     unsigned outQId = 2; // 0 and 1 reserved by memcpy internals on WSE-3
     unsigned inQId = 2;
@@ -119,13 +126,17 @@ LogicalResult ProgramEmitter::emitProgram(xilinx::csl::ProgramOp prog) {
       StringRef dirStr =
           ::xilinx::csl::stringifyFabDsdDirection(fab.getDirection());
       std::string colorName = fab.getColor().str();
+      std::string queueName;
       if (dirStr == "fabout") {
-        os << "const " << colorName << "_out_q: output_queue = "
+        queueName = colorName + "_out_q";
+        os << "const " << queueName << ": output_queue = "
            << "@get_output_queue(" << outQId++ << ");\n";
       } else {
-        os << "const " << colorName << "_in_q: input_queue = "
+        queueName = colorName + "_in_q";
+        os << "const " << queueName << ": input_queue = "
            << "@get_input_queue(" << inQId++ << ");\n";
       }
+      queueColorPairs.emplace_back(queueName, colorName);
       anyQ = true;
     });
     if (anyQ)
@@ -360,8 +371,22 @@ LogicalResult ProgramEmitter::emitProgram(xilinx::csl::ProgramOp prog) {
     }
   }
 
-  // 4. Emit comptime block for csl.export ops (direction != "internal")
-  bool hasExports = false;
+  // 4. Emit comptime block: @initialize_queue (WSE-3) + csl.export ops.
+  //
+  // @initialize_queue binds each fabric queue to its color. Required on
+  // WSE-3 for non-zero colors; emitted unconditionally inside an
+  // @is_arch("wse3") guard so the same source compiles on wse2 too.
+  bool comptimeOpen = false;
+  if (!queueColorPairs.empty()) {
+    os << "comptime {\n";
+    comptimeOpen = true;
+    os << "  if (@is_arch(\"wse3\")) {\n";
+    for (auto &qc : queueColorPairs) {
+      os << "    @initialize_queue(" << qc.first
+         << ", .{ .color = " << qc.second << " });\n";
+    }
+    os << "  }\n";
+  }
   for (Operation &op : prog.getBody().front()) {
     if (auto expOp = dyn_cast<cslns::ExportOp>(&op)) {
       auto dir = expOp.getDirection();
@@ -369,9 +394,9 @@ LogicalResult ProgramEmitter::emitProgram(xilinx::csl::ProgramOp prog) {
       bool isFuncExport = kind.has_value() && *kind == "func";
       if (!isFuncExport && dir.has_value() && *dir == "internal")
         continue;
-      if (!hasExports) {
+      if (!comptimeOpen) {
         os << "comptime {\n";
-        hasExports = true;
+        comptimeOpen = true;
       }
       StringRef sym = expOp.getSym();
       if (isFuncExport) {
@@ -382,7 +407,7 @@ LogicalResult ProgramEmitter::emitProgram(xilinx::csl::ProgramOp prog) {
       }
     }
   }
-  if (hasExports)
+  if (comptimeOpen)
     os << "}\n";
 
   return success();
