@@ -54,8 +54,8 @@ def CSL_ColorOp : CSL_Op<"color", [
 
     Examples:
     ```mlir
-    csl.color @red : !csl.color                 // virtual
-    csl.color @blue {id = 5 : i32} : !csl.color // pinned
+    csl.color @red                  // virtual
+    csl.color @blue {id = 5 : i32}  // pinned
     ```
   }];
 
@@ -140,9 +140,9 @@ def CSL_TaskOp : CSL_Op<"task", [
     wavelet arrives on the bound color. This is the fundamental
     execution mechanism on the WSE.
 
-    Example:
+    Example (current — color SSA operand form, will be refactored to a
+    FlatSymbolRefAttr trigger in Task 4):
     ```mlir
-    %c = csl.color {id = 3 : i32} : !csl.color
     csl.task @recv color(%c) {
       csl.return
     }
