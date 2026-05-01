@@ -313,6 +313,39 @@ mlir::LogicalResult xilinx::csl_layout::PlaceOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
+// csl_layout.stream — verifier
+//===----------------------------------------------------------------------===//
+
+mlir::LogicalResult xilinx::csl_layout::StreamOp::verify() {
+  int64_t dx = getToX() - getFromX();
+  int64_t dy = getToY() - getFromY();
+  // Single-hop, cardinal: exactly one of |dx|, |dy| is 1, the other is 0.
+  bool xOne = (dx == 1 || dx == -1);
+  bool yOne = (dy == 1 || dy == -1);
+  bool xZero = (dx == 0);
+  bool yZero = (dy == 0);
+  if (!((xOne && yZero) || (xZero && yOne)))
+    return emitOpError("requires single-hop cardinal route; got delta (")
+           << dx << ", " << dy << ")";
+
+  // Optional color must resolve to a csl.color in parent csl.layout.
+  if (auto colorAttr = getColorAttr()) {
+    auto layout = (*this)->getParentOfType<::xilinx::csl::LayoutOp>();
+    if (!layout)
+      return emitOpError("must be inside csl.layout body");
+    auto *color =
+        mlir::SymbolTable::lookupSymbolIn(layout, colorAttr.getAttr());
+    if (!color)
+      return emitOpError("references undefined color '@")
+             << colorAttr.getValue() << "'";
+    if (!mlir::isa<::xilinx::csl::ColorOp>(color))
+      return emitOpError("'@") << colorAttr.getValue()
+                                << "' is not a csl.color";
+  }
+  return mlir::success();
+}
+
+//===----------------------------------------------------------------------===//
 // csl_layout.set_color_config — verifier
 //===----------------------------------------------------------------------===//
 

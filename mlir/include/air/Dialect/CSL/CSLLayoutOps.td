@@ -159,4 +159,43 @@ def CSLLayout_SetColorConfigOp : CSLLayout_Op<"set_color_config"> {
   let hasVerifier = 1;
 }
 
+//===----------------------------------------------------------------------===//
+// csl_layout.stream — declare an inter-PE dataflow edge
+//===----------------------------------------------------------------------===//
+
+def CSLLayout_StreamOp : CSLLayout_Op<"stream", [Symbol]> {
+  let summary = "Declare a single-hop dataflow edge between two PEs";
+  let description = [{
+    Declares a typeless point-to-point dataflow edge from PE `(from_x, from_y)`
+    to PE `(to_x, to_y)`. The endpoint coords must differ by exactly one along
+    a single cardinal axis (single-hop only this milestone).
+
+    The optional `color` attribute references a `csl.color` symbol declared
+    in the same `csl.layout` body. Users do not write the `color` attribute
+    directly — `--csl-materialize-stream-colors` synthesizes one per stream.
+
+    ```mlir
+    // user-facing form (no color)
+    csl_layout.stream @send_ch from(0, 0) to(1, 0)
+
+    // post-Pass-1 form (color materialized)
+    csl_layout.stream @send_ch from(0, 0) to(1, 0) {color = @send_ch_color}
+    ```
+  }];
+
+  let arguments = (ins
+    SymbolNameAttr:$sym_name,
+    I64Attr:$from_x,
+    I64Attr:$from_y,
+    I64Attr:$to_x,
+    I64Attr:$to_y,
+    OptionalAttr<FlatSymbolRefAttr>:$color
+  );
+
+  let assemblyFormat =
+      "$sym_name `from` `(` $from_x `,` $from_y `)` "
+      "`to` `(` $to_x `,` $to_y `)` attr-dict";
+  let hasVerifier = 1;
+}
+
 #endif // CSL_LAYOUT_OPS
