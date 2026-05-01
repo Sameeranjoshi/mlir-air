@@ -41,15 +41,14 @@ struct InferredDirs {
 
 static InferredDirs inferDirs(int64_t dx, int64_t dy) {
   using ::xilinx::csl::Direction;
-  if (dx == 1 && dy == 0)
-    return {Direction::EAST, Direction::WEST};
-  if (dx == -1 && dy == 0)
+  // Verifier guarantees the route is along a single axis with |delta| >= 1.
+  // Normalize to step direction; multi-hop is handled by the caller.
+  if (dy == 0) {
+    if (dx > 0) return {Direction::EAST, Direction::WEST};
     return {Direction::WEST, Direction::EAST};
-  if (dx == 0 && dy == 1)
-    return {Direction::SOUTH, Direction::NORTH};
-  if (dx == 0 && dy == -1)
-    return {Direction::NORTH, Direction::SOUTH};
-  llvm_unreachable("verifier on csl_layout.stream rejects non-cardinal deltas");
+  }
+  if (dy > 0) return {Direction::SOUTH, Direction::NORTH};
+  return {Direction::NORTH, Direction::SOUTH};
 }
 
 class CSLLowerStreamRoutingPass
@@ -104,6 +103,33 @@ void CSLLowerStreamRoutingPass::runOnOperation() {
           /*py=*/static_cast<uint64_t>(fy),
           /*rx=*/::xilinx::csl::Direction::RAMP,
           /*tx=*/dirs.src_tx);
+      // Intermediate PEs (multi-hop): walk one step at a time from src to
+      // dst along the cardinal axis and emit a pass-through config at each
+      // PE strictly between the endpoints. The intermediate's rx is the
+      // opposite of the step direction (data arrives from there), its tx
+      // is the step direction (data continues toward dst). Verifier on
+      // csl_layout.stream guarantees the path is purely horizontal or
+      // purely vertical.
+      int64_t stepX = (dx > 0) ? 1 : (dx < 0) ? -1 : 0;
+      int64_t stepY = (dy > 0) ? 1 : (dy < 0) ? -1 : 0;
+      ::xilinx::csl::Direction interRx, interTx;
+      if (stepX == 1)       { interRx = ::xilinx::csl::Direction::WEST;  interTx = ::xilinx::csl::Direction::EAST;  }
+      else if (stepX == -1) { interRx = ::xilinx::csl::Direction::EAST;  interTx = ::xilinx::csl::Direction::WEST;  }
+      else if (stepY == 1)  { interRx = ::xilinx::csl::Direction::NORTH; interTx = ::xilinx::csl::Direction::SOUTH; }
+      else                  { interRx = ::xilinx::csl::Direction::SOUTH; interTx = ::xilinx::csl::Direction::NORTH; }
+      int64_t ix = fx + stepX;
+      int64_t iy = fy + stepY;
+      while (ix != tx || iy != ty) {
+        b.create<::xilinx::csl_layout::SetColorConfigOp>(
+            stream.getLoc(),
+            /*color=*/colorAttr.getValue(),
+            /*px=*/static_cast<uint64_t>(ix),
+            /*py=*/static_cast<uint64_t>(iy),
+            /*rx=*/interRx,
+            /*tx=*/interTx);
+        ix += stepX;
+        iy += stepY;
+      }
       // Destination endpoint: rx = inferred, tx = RAMP.
       b.create<::xilinx::csl_layout::SetColorConfigOp>(
           stream.getLoc(),

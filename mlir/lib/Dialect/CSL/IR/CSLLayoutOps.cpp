@@ -319,13 +319,13 @@ mlir::LogicalResult xilinx::csl_layout::PlaceOp::verify() {
 mlir::LogicalResult xilinx::csl_layout::StreamOp::verify() {
   int64_t dx = getToX() - getFromX();
   int64_t dy = getToY() - getFromY();
-  // Single-hop, cardinal: exactly one of |dx|, |dy| is 1, the other is 0.
-  bool xOne = (dx == 1 || dx == -1);
-  bool yOne = (dy == 1 || dy == -1);
+  // Cardinal multi-hop: must lie strictly along one axis (the other delta
+  // is zero) and source != dest. Diagonal routes are not supported by the
+  // routing pass (Pass 3 walks one step at a time along a single axis).
   bool xZero = (dx == 0);
   bool yZero = (dy == 0);
-  if (!((xOne && yZero) || (xZero && yOne)))
-    return emitOpError("requires single-hop cardinal route; got delta (")
+  if (!((xZero && dy != 0) || (yZero && dx != 0)))
+    return emitOpError("requires cardinal route along a single axis; got delta (")
            << dx << ", " << dy << ")";
 
   // Optional color must resolve to a csl.color in parent csl.layout.

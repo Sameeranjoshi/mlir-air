@@ -3,7 +3,7 @@
 csl.wafer @w1 {arch = "wse3"} {
   csl.program @p { csl.func @c { csl.return } }
   csl.layout {width = 4 : i64, height = 4 : i64} @layout {
-    // CHECK: error: 'csl_layout.stream' op requires single-hop cardinal route; got delta (2, 1)
+    // CHECK: error: 'csl_layout.stream' op requires cardinal route along a single axis; got delta (2, 1)
     csl_layout.stream @bad from(0, 0) to(2, 1)
     csl_layout.place @p at (0, 0)
   }
@@ -25,7 +25,7 @@ csl.wafer @w2 {arch = "wse3"} {
 csl.wafer @w_self {arch = "wse3"} {
   csl.program @p { csl.func @c { csl.return } }
   csl.layout {width = 2, height = 1} @layout {
-    // CHECK: error: 'csl_layout.stream' op requires single-hop cardinal route; got delta (0, 0)
+    // CHECK: error: 'csl_layout.stream' op requires cardinal route along a single axis; got delta (0, 0)
     csl_layout.stream @self_edge from(1, 0) to(1, 0)
     csl_layout.place @p at (0, 0)
   }
