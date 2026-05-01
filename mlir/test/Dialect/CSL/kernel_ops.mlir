@@ -44,32 +44,10 @@ module {
         csl.return
       }
 
-      // Task bound to a color
-      // CHECK: csl.task @recv_task color(%{{.*}}) {
-      // CHECK:   csl.return
-      // CHECK: }
-      %c3 = csl.color {id = 3 : i32} : !csl.color
-      csl.task @recv_task color(%c3) {
-        csl.return
-      }
-
-      // Task bound to color 0
-      // CHECK: csl.task @send_task color(%{{.*}}) {
-      // CHECK:   csl.return
-      // CHECK: }
-      %c0 = csl.color {id = 0 : i32} : !csl.color
-      csl.task @send_task color(%c0) {
-        csl.return
-      }
-
-      // Task with higher color id
-      // CHECK: csl.task @data_task color(%{{.*}}) {
-      // CHECK:   csl.return
-      // CHECK: }
-      %c15 = csl.color {id = 15 : i32} : !csl.color
-      csl.task @data_task color(%c15) {
-        csl.return
-      }
+      // NOTE: csl.task tests previously here used csl.color SSA values from
+      // within csl.program. After Task 1 (color scope move), csl.color lives
+      // in csl.layout and is referenced by symbol. Task 4 will refactor
+      // csl.task to take a FlatSymbolRefAttr and reinstate these tests.
     }
   }
 }

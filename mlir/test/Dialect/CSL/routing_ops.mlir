@@ -7,21 +7,30 @@
 
 // RUN: air-opt %s | FileCheck %s
 
-// CHECK-LABEL: module {
+// CHECK-LABEL: csl.wafer @routing_test
+csl.wafer @routing_test {arch = "wse3"} {
+  csl.program @p { csl.func @c { csl.return } }
 
-// Color declaration (no ID — compiler assigns)
-// CHECK: %[[RED:.*]] = csl.color : !csl.color
-// CHECK: %[[GREEN:.*]] = csl.color : !csl.color
-%red   = csl.color : !csl.color
-%green = csl.color : !csl.color
+  // Color declarations now live inside csl.layout and have a symbol name.
+  // CHECK: csl.layout
+  csl.layout {width = 1 : i64, height = 1 : i64} @layout {
+    // Color without ID — compiler assigns
+    // CHECK: csl.color @red
+    // CHECK: csl.color @green
+    csl.color @red
+    csl.color @green
 
-// Color with explicit ID
-// CHECK: %[[C0:.*]] = csl.color {id = 0 : i32} : !csl.color
-// CHECK: %[[C1:.*]] = csl.color {id = 1 : i32} : !csl.color
-%c0 = csl.color {id = 0 : i32} : !csl.color
-%c1 = csl.color {id = 1 : i32} : !csl.color
+    // Color with explicit ID
+    // CHECK: csl.color @c0 {id = 0 : i32}
+    // CHECK: csl.color @c1 {id = 1 : i32}
+    csl.color @c0 {id = 0 : i32}
+    csl.color @c1 {id = 1 : i32}
 
-// Route with in/out directions
+    csl_layout.place @p at (0, 0)
+  }
+}
+
+// Routes are still top-level SSA-valued ops (untouched by Task 1).
 // CHECK: %[[R1:.*]] = csl.route in(RAMP) out(EAST) : !csl.route
 // CHECK: %[[R2:.*]] = csl.route in(RAMP) out(EAST) : !csl.route
 // CHECK: %[[R3:.*]] = csl.route in(RAMP) out(EAST) : !csl.route

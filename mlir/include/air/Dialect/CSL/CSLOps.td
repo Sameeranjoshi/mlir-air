@@ -35,25 +35,35 @@ include "mlir/Interfaces/SideEffectInterfaces.td"
 // csl.color — Declare a communication color
 //===----------------------------------------------------------------------===//
 
-def CSL_ColorOp : CSL_Op<"color", []> {
-  let summary = "Declare a communication color";
+def CSL_ColorOp : CSL_Op<"color", [
+    Symbol,
+    HasParent<"LayoutOp">
+  ]> {
+  let summary = "Declare a communication color (lives in csl.layout body)";
   let description = [{
     Declares a CSL communication color. Colors are the fundamental routing
-    primitive on the WSE fabric. When an integer ID is provided, the color
-    is bound to that specific physical color. When no ID is given, the
-    compiler assigns one automatically.
+    primitive on the WSE fabric. A color symbol is shared across all PE
+    programs that reference it (via csl.get_fab_dsd / csl_layout.set_color_config).
+
+    The op is **synthesized** by --csl-materialize-stream-colors from
+    csl_layout.stream ops; users do not write it directly.
+
+    When `id` is absent, the color is "virtual" and the
+    --csl-allocate-color-ids pass assigns one. When present, the color is
+    pinned to that physical id and the allocator skips it.
 
     Examples:
     ```mlir
-    %red = csl.color : !csl.color
-    %c0  = csl.color {id = 0 : i32} : !csl.color
+    csl.color @red : !csl.color                 // virtual
+    csl.color @blue {id = 5 : i32} : !csl.color // pinned
     ```
   }];
 
-  let arguments = (ins OptionalAttr<I32Attr>:$id);
-  let results = (outs CSL_ColorType:$result);
+  let arguments = (ins
+    SymbolNameAttr:$sym_name,
+    OptionalAttr<I32Attr>:$id);
 
-  let assemblyFormat = "attr-dict `:` type($result)";
+  let assemblyFormat = "$sym_name attr-dict";
 }
 
 //===----------------------------------------------------------------------===//
