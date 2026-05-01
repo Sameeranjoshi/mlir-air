@@ -29,4 +29,8 @@ void xilinx::air::registerCSLTransformPasses() {
       []() -> std::unique_ptr<mlir::Pass> {
         return createCSLLowerStreamRoutingPass();
       });
+  mlir::registerPass(
+      []() -> std::unique_ptr<mlir::Pass> {
+        return createCSLLowerStreamDataPass();
+      });
 }
