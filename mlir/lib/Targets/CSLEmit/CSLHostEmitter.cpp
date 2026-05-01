@@ -934,36 +934,40 @@ LogicalResult HostEmitter::emit(xilinx::csl::WaferOp wafer) {
       wafer.walk([&](xilinx::csl::StreamPutOp) { hasFabricOp = true; });
       wafer.walk([&](xilinx::csl::StreamGetOp) { hasFabricOp = true; });
 
-      unsigned nH2D = 0, nD2H = 0;
-      int h2dIdx = -1, d2hIdx = -1;
-      for (unsigned i = 0; i < argDir.size(); ++i) {
-        if (argDir[i] == Dir::H2D) {
-          ++nH2D;
-          h2dIdx = i;
-        } else if (argDir[i] == Dir::D2H) {
-          ++nD2H;
-          d2hIdx = i;
-        }
+      // Collect H2D and D2H arg indices in host-body order (matching the
+      // order memcpys appear in csl.host). Pairing is by-position: 1st H2D
+      // is verified against 1st D2H, 2nd against 2nd, etc. The test author
+      // controls the pairing by ordering the memcpy ops accordingly.
+      llvm::SmallVector<unsigned, 4> h2dIdxs;
+      llvm::SmallVector<unsigned, 4> d2hIdxs;
+      for (auto &e : memcpys) {
+        if (e.isH2d) h2dIdxs.push_back(e.argIdx);
+        else d2hIdxs.push_back(e.argIdx);
       }
-      if (hasFabricOp && nH2D == 1 && nD2H == 1) {
+      if (hasFabricOp && !h2dIdxs.empty() && h2dIdxs.size() == d2hIdxs.size()) {
         isStreamPassthrough = true;
         os << "# Verification: stream pass-through. The kernel uses fabric\n"
-              "# DSDs to forward the H2D buffer through the network into the\n"
-              "# D2H buffer; expect element-wise equality.\n";
-        os << "if not np.allclose(" << argNames[h2dIdx] << ", "
-           << argNames[d2hIdx] << ", atol=1e-5, rtol=1e-5):\n";
-        os << "    print(\"MISMATCH (" << argNames[h2dIdx] << " vs "
-           << argNames[d2hIdx] << "):\", file=sys.stderr)\n";
-        os << "    print(f\"  src[:8] = {" << argNames[h2dIdx]
-           << "[:min(8, len(" << argNames[h2dIdx] << "))]}\","
-           " file=sys.stderr)\n";
-        os << "    print(f\"  dst[:8] = {" << argNames[d2hIdx]
-           << "[:min(8, len(" << argNames[d2hIdx] << "))]}\","
-           " file=sys.stderr)\n";
-        os << "    sys.exit(1)\n";
-        os << "print(f\"  " << argNames[d2hIdx] << "[:8] = {"
-           << argNames[d2hIdx] << "[:min(8, len(" << argNames[d2hIdx]
-           << "))].tolist()} (matches " << argNames[h2dIdx] << ")\")\n";
+              "# DSDs to forward H2D buffer(s) through the network into D2H\n"
+              "# buffer(s); expect element-wise equality. Pairing is by\n"
+              "# host-body order: i-th H2D matches i-th D2H.\n";
+        for (size_t k = 0; k < h2dIdxs.size(); ++k) {
+          unsigned hi = h2dIdxs[k];
+          unsigned di = d2hIdxs[k];
+          os << "if not np.allclose(" << argNames[hi] << ", "
+             << argNames[di] << ", atol=1e-5, rtol=1e-5):\n";
+          os << "    print(\"MISMATCH (" << argNames[hi] << " vs "
+             << argNames[di] << "):\", file=sys.stderr)\n";
+          os << "    print(f\"  src[:8] = {" << argNames[hi]
+             << "[:min(8, len(" << argNames[hi] << "))]}\","
+             " file=sys.stderr)\n";
+          os << "    print(f\"  dst[:8] = {" << argNames[di]
+             << "[:min(8, len(" << argNames[di] << "))]}\","
+             " file=sys.stderr)\n";
+          os << "    sys.exit(1)\n";
+          os << "print(f\"  " << argNames[di] << "[:8] = {"
+             << argNames[di] << "[:min(8, len(" << argNames[di]
+             << "))].tolist()} (matches " << argNames[hi] << ")\")\n";
+        }
       }
     }
 
