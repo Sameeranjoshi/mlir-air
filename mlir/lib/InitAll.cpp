@@ -9,6 +9,7 @@
 #include "air/InitAll.h"
 
 #include "air/Conversion/Passes.h"
+#include "air/Dialect/CSL/Pipelines/Pipelines.h"
 #include "air/Dialect/CSL/Transforms/Passes.h"
 #include "air/Dialect/AIR/AIRDialect.h"
 #include "air/Dialect/AIR/AIRTransformOps.h"
@@ -35,4 +36,5 @@ void xilinx::air::registerAllPasses() {
   xilinx::air::registerTransformPasses();
   xilinx::air::registerConversionPasses();
   xilinx::air::registerCSLTransformPasses();
+  xilinx::air::registerCSLPipelines();
 }

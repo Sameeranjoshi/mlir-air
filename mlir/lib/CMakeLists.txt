@@ -25,12 +25,14 @@ add_mlir_library(
   AIRConversionPasses
   AIRTransformPasses
   CSLTransforms
+  CSLPipelines
   AIRInterface
 
   LINK_LIBS
   AIRConversionPasses
   AIRTransformPasses
   CSLTransforms
+  CSLPipelines
   AIRTransformOps
   AIRDialect
   AIRRtDialect
