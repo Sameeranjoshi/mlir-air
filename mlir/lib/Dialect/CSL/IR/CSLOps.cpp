@@ -256,3 +256,35 @@ void xilinx::csl::HostOp::print(mlir::OpAsmPrinter &printer) {
       {HostOp::getSymNameAttrName(), "layout"});
   printer.printRegion(getBody(), /*printEntryBlockArgs=*/false);
 }
+
+//===----------------------------------------------------------------------===//
+// csl.get_fab_dsd — verifier: color symbol must resolve in csl.layout body
+//===----------------------------------------------------------------------===//
+
+mlir::LogicalResult xilinx::csl::GetFabDsdOp::verify() {
+  // Walk up to the enclosing csl.wafer; csl.layout is its sibling of csl.program.
+  auto wafer = (*this)->getParentOfType<xilinx::csl::WaferOp>();
+  if (!wafer)
+    return emitOpError("must be inside csl.wafer");
+
+  // Find the csl.layout child by walking the wafer body once.
+  xilinx::csl::LayoutOp layout;
+  for (auto &op : wafer.getBody().front()) {
+    if (auto l = mlir::dyn_cast<xilinx::csl::LayoutOp>(op)) {
+      layout = l;
+      break;
+    }
+  }
+  if (!layout)
+    return emitOpError("no csl.layout found in enclosing csl.wafer");
+
+  auto color = mlir::SymbolTable::lookupSymbolIn(
+      layout, getColorAttr().getAttr());
+  if (!color)
+    return emitOpError("references undefined color symbol '@")
+           << getColorAttr().getValue() << "'";
+  if (!mlir::isa<xilinx::csl::ColorOp>(color))
+    return emitOpError("'@") << getColorAttr().getValue()
+                              << "' is not a csl.color";
+  return mlir::success();
+}

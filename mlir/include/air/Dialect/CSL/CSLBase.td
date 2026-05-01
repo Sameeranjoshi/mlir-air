@@ -118,6 +118,19 @@ def CSL_DsdKindEnum : I32EnumAttr<"DsdKind",
 }
 
 //===----------------------------------------------------------------------===//
+// FabDsdDirection — direction for csl.get_fab_dsd
+//===----------------------------------------------------------------------===//
+
+def CSL_FabDsdDirFabIn  : I32EnumAttrCase<"fabin",  0>;
+def CSL_FabDsdDirFabOut : I32EnumAttrCase<"fabout", 1>;
+
+def CSL_FabDsdDirectionAttr : I32EnumAttr<"FabDsdDirection",
+    "fabric DSD direction (fabin = receive, fabout = send)",
+    [CSL_FabDsdDirFabIn, CSL_FabDsdDirFabOut]> {
+  let cppNamespace = "xilinx::csl";
+}
+
+//===----------------------------------------------------------------------===//
 // Edge enum — used by SdkLayout port creation ops
 // Maps to cerebras.sdk.runtime.sdkruntimepybind.Edge
 //===----------------------------------------------------------------------===//

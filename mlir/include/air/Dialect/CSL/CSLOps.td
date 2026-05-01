@@ -297,6 +297,47 @@ def CSL_GetMemDsdOp : CSL_Op<"get_mem_dsd", []> {
 }
 
 //===----------------------------------------------------------------------===//
+// csl.get_fab_dsd — Fabric DSD on a color (fabin or fabout)
+//===----------------------------------------------------------------------===//
+
+def CSL_GetFabDsdOp : CSL_Op<"get_fab_dsd", []> {
+  let summary = "Build a fabin/fabout DSD on a color";
+  let description = [{
+    Builds a CSL fabric DSD that sends (`fabout`) to or receives (`fabin`)
+    from the fabric on the given color, with a runtime extent in elements.
+
+    The color is referenced by symbol name (FlatSymbolRefAttr) — it must
+    resolve to a `csl.color` op in the enclosing `csl.layout` body.
+
+    Synthesized by `--csl-lower-stream-data` from `csl.stream.put`/`get`.
+
+    ```mlir
+    %n = arith.constant 128 : index
+    %out = csl.get_fab_dsd fabout @send_color extent(%n : index) : !csl.dsd
+    %in  = csl.get_fab_dsd fabin  @send_color extent(%n : index) : !csl.dsd
+    ```
+
+    Emits to CSL:
+    ```csl
+    const out_dsd = @get_dsd(fabout_dsd,
+        .{ .extent = 128, .fabric_color = send_color });
+    ```
+  }];
+
+  let arguments = (ins
+    CSL_FabDsdDirectionAttr:$direction,
+    FlatSymbolRefAttr:$color,
+    Index:$extent
+  );
+  let results = (outs CSL_DsdType:$result);
+
+  let assemblyFormat =
+      "$direction $color `extent` `(` $extent `:` type($extent) `)` "
+      "attr-dict `:` type($result)";
+  let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
 // csl.builtin_call — generic CSL builtin / imported-module member call
 //===----------------------------------------------------------------------===//
 
