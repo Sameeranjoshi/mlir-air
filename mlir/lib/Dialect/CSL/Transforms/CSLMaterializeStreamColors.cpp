@@ -19,6 +19,7 @@
 #include "air/Dialect/CSL/CSLOps.h"
 
 #include "mlir/IR/Builders.h"
+#include "mlir/IR/SymbolTable.h"
 #include "mlir/Pass/Pass.h"
 
 #include "llvm/ADT/SmallVector.h"
@@ -35,6 +36,10 @@ public:
   }
   StringRef getDescription() const final {
     return "Pass 1: synthesize csl.color symbols for csl_layout.stream ops";
+  }
+  void getDependentDialects(::mlir::DialectRegistry &registry) const override {
+    registry.insert<::xilinx::csl::CSLDialect,
+                    ::xilinx::csl_layout::CSLLayoutDialect>();
   }
   void runOnOperation() override;
 };
@@ -58,7 +63,14 @@ void CSLMaterializeStreamColorsPass::runOnOperation() {
       if (stream.getColorAttr())
         continue; // idempotent
 
-      std::string colorName = (stream.getSymName() + "_color").str();
+      // Build a fresh color name. If <stream>_color is already taken in the
+      // layout's SymbolTable, suffix _0, _1, … until a free name is found.
+      std::string baseName = (stream.getSymName() + "_color").str();
+      std::string colorName = baseName;
+      unsigned suffix = 0;
+      while (mlir::SymbolTable::lookupSymbolIn(layout, colorName)) {
+        colorName = baseName + "_" + std::to_string(suffix++);
+      }
 
       // Insert csl.color at the top of the layout body.
       builder.setInsertionPointToStart(&body);
