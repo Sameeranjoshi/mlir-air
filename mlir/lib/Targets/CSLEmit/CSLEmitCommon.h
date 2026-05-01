@@ -629,10 +629,17 @@ emitFuncBody(mlir::Region &bodyRegion, llvm::raw_ostream &os,
       // csl.get_fab_dsd <dir> @color extent(%n) → fabin/fabout DSD on a color.
       // Emits:
       //   const dN = @get_dsd(<dir>_dsd,
-      //                       .{ .extent = N, .fabric_color = <color> });
+      //                       .{ .extent = N, .fabric_color = <color>,
+      //                          .input_queue|.output_queue = <color>_<dir>_q });
       // Extent resolves to either the SSA name in `nameMap` or, if unresolved,
       // the numeric literal from the defining arith.constant. Synthesized by
       // --csl-lower-stream-data from csl.stream.put/get.
+      //
+      // The queue field is required on WSE-3; the queue itself is declared
+      // at PE file scope (see CSLProgramEmitter), keyed off the same color
+      // symbol + direction. WSE-2 ignores the queue field cleanly so we
+      // emit it unconditionally for both archs (forward-compat). If it ever
+      // becomes a WSE-2 issue, gate the field on a wafer arch check.
       if (auto fab = dyn_cast<xilinx::csl::GetFabDsdOp>(&op)) {
         Value extentVal = fab.getExtent();
         std::string extentStr = resolve(nameMap, extentVal);
@@ -648,9 +655,14 @@ emitFuncBody(mlir::Region &bodyRegion, llvm::raw_ostream &os,
             ::xilinx::csl::stringifyFabDsdDirection(fab.getDirection());
         std::string dname = "d" + std::to_string(tempCount++);
         indent(os, indentLevel);
+        std::string colorName = fab.getColor().str();
+        std::string qField =
+            (dirStr == "fabout") ? ".output_queue = " + colorName + "_out_q"
+                                 : ".input_queue = " + colorName + "_in_q";
         os << "const " << dname << " = @get_dsd(" << dirStr
            << "_dsd, .{ .extent = " << extentStr
-           << ", .fabric_color = " << fab.getColor()
+           << ", .fabric_color = " << colorName
+           << ", " << qField
            << " });\n";
         nameMap[fab.getResult()] = dname;
         continue;

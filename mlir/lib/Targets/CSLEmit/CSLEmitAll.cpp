@@ -32,6 +32,7 @@
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Tools/mlir-translate/Translation.h"
+#include "llvm/ADT/StringSet.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Path.h"
@@ -58,6 +59,9 @@ LogicalResult runLayoutEmitter(xilinx::csl::WaferOp wafer,
                                llvm::raw_ostream &os);
 LogicalResult runHostEmitter(xilinx::csl::WaferOp wafer,
                              llvm::raw_ostream &os);
+// Program-scoped emitter for one specific csl.program inside a wafer.
+LogicalResult runProgramEmitter(xilinx::csl::ProgramOp prog,
+                                llvm::raw_ostream &os);
 
 // Forward-declare the individual registration entry points.
 void registerCSLProgramTranslation();
@@ -129,49 +133,65 @@ struct ExportInfo {
 
 /// Walk csl.program ops to collect the (alias, type, direction) for each
 /// host-visible export (var aliases + function exports).
+///
+/// Multi-program: returns ALL exports across ALL programs in the wafer, but
+/// deduplicates on the alias (the host-visible name). When two programs both
+/// export e.g. an internal `@compute` with the same alias `"compute"` (kind=func),
+/// only the first is emitted as `@export_name` in layout.csl. Var-kind exports
+/// MUST have unique aliases — verified upstream via csl_layout.export uniqueness.
 static llvm::SmallVector<ExportInfo, 4>
 collectExports(xilinx::csl::WaferOp wafer) {
   llvm::SmallVector<ExportInfo, 4> out;
-  // Map var sym-name -> element type (within the first program).
-  llvm::DenseMap<StringRef, Type> varElt;
-  xilinx::csl::ProgramOp prog;
-  wafer.walk([&](xilinx::csl::ProgramOp p) {
-    if (!prog) prog = p;
-  });
-  if (!prog) return out;
-  prog.walk([&](xilinx::csl::VarOp v) {
-    if (auto memTy = dyn_cast<MemRefType>(v.getResult().getType()))
-      varElt[v.getSymName()] = memTy.getElementType();
-  });
-  prog.walk([&](xilinx::csl::ExportOp e) {
-    ExportInfo info;
-    std::optional<StringRef> kind = e.getKind();
-    info.isFunc = (kind.has_value() && *kind == "func");
-    if (auto alias = e.getAlias())
-      info.alias = alias->str();
-    else
-      info.alias = e.getSym().str();
+  llvm::StringSet<> seenAliases;
 
-    if (!info.isFunc) {
-      StringRef dir;
-      if (auto d = e.getDirection())
-        dir = *d;
-      // "in" = host -> device = writable from host.
-      // "out" = device -> host = readable only.
-      info.writable = (dir != "out");
-      Type eltTy;
-      auto it = varElt.find(e.getSym());
-      if (it != varElt.end())
-        eltTy = it->second;
-      info.eltName = eltTy ? cslEltName(eltTy).str() : std::string("f32");
-    }
-    out.push_back(std::move(info));
+  wafer.walk([&](xilinx::csl::ProgramOp prog) {
+    // Map per-program var sym-name -> element type.
+    llvm::DenseMap<StringRef, Type> varElt;
+    prog.walk([&](xilinx::csl::VarOp v) {
+      if (auto memTy = dyn_cast<MemRefType>(v.getResult().getType()))
+        varElt[v.getSymName()] = memTy.getElementType();
+    });
+    prog.walk([&](xilinx::csl::ExportOp e) {
+      // Skip "internal" non-func exports — they're not host-visible.
+      // (For func exports, "internal" still means host-launch-able.)
+      std::optional<StringRef> kind = e.getKind();
+      bool isFunc = (kind.has_value() && *kind == "func");
+      auto dir = e.getDirection();
+      if (!isFunc && dir.has_value() && *dir == "internal")
+        return;
+
+      ExportInfo info;
+      info.isFunc = isFunc;
+      if (auto alias = e.getAlias())
+        info.alias = alias->str();
+      else
+        info.alias = e.getSym().str();
+
+      if (!info.isFunc) {
+        StringRef d;
+        if (dir)
+          d = *dir;
+        // "in" = host -> device = writable from host.
+        // "out" = device -> host = readable only.
+        info.writable = (d != "out");
+        Type eltTy;
+        auto it = varElt.find(e.getSym());
+        if (it != varElt.end())
+          eltTy = it->second;
+        info.eltName = eltTy ? cslEltName(eltTy).str() : std::string("f32");
+      }
+      // Dedup on alias to avoid duplicate @export_name declarations.
+      if (!seenAliases.insert(info.alias).second)
+        return;
+      out.push_back(std::move(info));
+    });
   });
   return out;
 }
 
 /// Emit the `@set_tile_code(xE, yE, "<prog>.csl", .{ ... });` body for one
 /// PlaceOp. `xExpr`/`yExpr` are either literal integers or iv names.
+/// `progName` defaults to `p.getProg()` (the program this PlaceOp targets).
 static void emitTileCodeBody(llvm::raw_ostream &os, llvm::StringRef progName,
                              llvm::StringRef xExpr, llvm::StringRef yExpr,
                              xilinx::csl_layout::PlaceOp p, int indent) {
@@ -251,13 +271,16 @@ std::string makeLayoutCsl(xilinx::csl::WaferOp wafer, int64_t width,
   os << "  @set_rectangle(" << width << ", " << height << ");\n";
 
   // Walk PlaceOps inside the wafer's csl.layout region and emit a
-  // @set_tile_code form for each.
+  // @set_tile_code form for each. Each PlaceOp names its own target program
+  // via `getProg()`, so multi-program wafers correctly route each PE to the
+  // right per-program .csl file.
   wafer.walk([&](xilinx::csl_layout::PlaceOp p) {
+    StringRef placeProg = p.getProg();
     // Point form: `at (x, y)`.
     if (p.getPx().has_value() || p.getPy().has_value()) {
       std::string xStr = std::to_string(p.getPx().value_or(0));
       std::string yStr = std::to_string(p.getPy().value_or(0));
-      emitTileCodeBody(os, progName, xStr, yStr, p, /*indent=*/2);
+      emitTileCodeBody(os, placeProg, xStr, yStr, p, /*indent=*/2);
       return;
     }
 
@@ -292,7 +315,7 @@ std::string makeLayoutCsl(xilinx::csl::WaferOp wafer, int64_t width,
       os << "  var " << iName << ": i16 = " << xLo << ";\n";
       os << "  while (" << iName << " < " << xHi << ") : (" << iName
          << " += 1) {\n";
-      emitTileCodeBody(os, progName, iName, yStr, p, /*indent=*/4);
+      emitTileCodeBody(os, placeProg, iName, yStr, p, /*indent=*/4);
       os << "  }\n";
       return;
     }
@@ -306,7 +329,7 @@ std::string makeLayoutCsl(xilinx::csl::WaferOp wafer, int64_t width,
     os << "    var " << iName << ": i16 = " << xLo << ";\n";
     os << "    while (" << iName << " < " << xHi << ") : (" << iName
        << " += 1) {\n";
-    emitTileCodeBody(os, progName, iName, jName, p, /*indent=*/6);
+    emitTileCodeBody(os, placeProg, iName, jName, p, /*indent=*/6);
     os << "    }\n";
     os << "  }\n";
   });
@@ -405,17 +428,30 @@ LogicalResult emitOneWafer(ModuleOp module,
     return success();
   };
 
-  // Emit the device kernel and host driver. layout.csl is built below.
-  // (csl_layout.py — the SdkLayout Python form — was dropped 2026-04-20:
-  // nothing in the generated runner imports it, and `--emit-csl-layout`
-  // now emits the cslc-input layout.csl form instead.)
-  std::unique_ptr<llvm::raw_fd_ostream> progOs, hostOs;
-  if (failed(openOut(progName + ".csl", progOs))) return failure();
-  if (failed(openOut("run.py", hostOs))) return failure();
+  // Emit the device kernel — one <progName>.csl file per csl.program.
+  // Multi-program wafers (e.g. ping_2pe with @left_pe / @right_pe) get one
+  // file per program; single-program wafers preserve the legacy single-file
+  // output.
+  llvm::SmallVector<xilinx::csl::ProgramOp, 4> programs;
+  wafer.walk([&](xilinx::csl::ProgramOp p) { programs.push_back(p); });
+  if (programs.empty()) {
+    module.emitError() << "wafer '" << waferName
+                       << "' has no csl.program";
+    return failure();
+  }
+  llvm::SmallVector<std::string, 4> progFiles;
+  for (auto prog : programs) {
+    std::string pname = prog.getSymName().str();
+    progFiles.push_back(pname + ".csl");
+    std::unique_ptr<llvm::raw_fd_ostream> progOs;
+    if (failed(openOut(pname + ".csl", progOs))) return failure();
+    if (failed(runProgramEmitter(prog, *progOs))) return failure();
+  }
 
-  if (failed(runProgramEmitter(wafer, *progOs))) return failure();
+  // Emit host driver (run.py).
+  std::unique_ptr<llvm::raw_fd_ostream> hostOs;
+  if (failed(openOut("run.py", hostOs))) return failure();
   if (failed(runHostEmitter(wafer, *hostOs))) return failure();
-  progOs.reset();
   hostOs.reset();
 
   // Emit layout.csl wrapper.
@@ -457,8 +493,12 @@ LogicalResult emitOneWafer(ModuleOp module,
     return failure();
 
   statusOs << "  " << llvm::StringRef(waferDir.data(), waferDir.size())
-           << "/{" << progName
-           << ".csl, layout.csl, run.py, commands_wse3.sh}\n";
+           << "/{";
+  for (size_t i = 0; i < progFiles.size(); ++i) {
+    if (i) statusOs << ", ";
+    statusOs << progFiles[i];
+  }
+  statusOs << ", layout.csl, run.py, commands_wse3.sh}\n";
   return success();
 }
 

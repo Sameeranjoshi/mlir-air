@@ -78,7 +78,14 @@ enum class Dir { H2D, D2H, Unused };
 struct MemcpyEntry {
   bool isH2d;
   unsigned argIdx;
+  // Host-visible export name (used for runner.get_id) — e.g. "buf_left".
+  // For multi-program wafers two programs may both define an inner var named
+  // `@buf` but each csl_layout.export gives them distinct host-visible names.
   std::string leafSym;
+  // Inner var symbol inside the program (used for ref-compute lookup) — e.g.
+  // "buf". Resolved from csl_layout.export's `from` attribute. Falls back to
+  // leafSym when no layout export aliasing is present.
+  std::string innerSym;
   // Lower-left corner of the source/destination PE rectangle (== place origin).
   int64_t px, py;
   // PE grid extent of the placement (NOT the memref shape).
@@ -139,11 +146,33 @@ findPlaceForProgram(xilinx::csl::WaferOp wafer, StringRef progSym) {
   return match;
 }
 
-/// Resolve the program that contains the var named `leaf` (e.g. `@a`), by
-/// scanning every `csl.program` in the wafer for a matching `csl.var` or
-/// `csl.func`. Returns the empty StringRef if no match (single-program case).
+/// Resolve the program that contains the var/func corresponding to a host
+/// reference `@layout::@<leaf>`. Two lookup strategies (in order):
+///   1. csl_layout.export "<leaf>" from @prog::@inner — when present, the
+///      `from` symbol identifies the owning program directly. This is the
+///      multi-program-safe path: two programs may both define an inner var
+///      `@buf` but their layout exports must use distinct host-visible names
+///      (e.g. "buf_left", "buf_right"), each pointing back at the owner
+///      program.
+///   2. Fallback: scan every csl.program for a matching `csl.var` or
+///      `csl.func` named `leaf`. Used by single-program tests that don't
+///      bother with explicit csl_layout.export ops.
 static StringRef findProgramForLeaf(xilinx::csl::WaferOp wafer, StringRef leaf) {
+  // Strategy 1: csl_layout.export with sym_name == leaf.
   StringRef found;
+  wafer.walk([&](xilinx::csl_layout::ExportOp exp) {
+    if (!found.empty())
+      return;
+    if (exp.getSymName() != leaf)
+      return;
+    SymbolRefAttr fromRef = exp.getFrom();
+    // `from` is `@prog::@inner` — root reference is the program name.
+    found = fromRef.getRootReference().getValue();
+  });
+  if (!found.empty())
+    return found;
+
+  // Strategy 2: scan every csl.program for a matching var or func.
   wafer.walk([&](xilinx::csl::ProgramOp prog) {
     if (!found.empty())
       return;
@@ -160,6 +189,23 @@ static StringRef findProgramForLeaf(xilinx::csl::WaferOp wafer, StringRef leaf) 
     });
   });
   return found;
+}
+
+/// Resolve the leaf inner-symbol name (e.g. `@buf`) for a host reference
+/// `@layout::@<exported>`. Uses csl_layout.export's `from` attr to map the
+/// host-visible export name back to the program-local var symbol. Falls back
+/// to the input string if no matching layout export is found.
+static StringRef findInnerLeaf(xilinx::csl::WaferOp wafer, StringRef leaf) {
+  StringRef inner = leaf;
+  wafer.walk([&](xilinx::csl_layout::ExportOp exp) {
+    if (exp.getSymName() != leaf)
+      return;
+    SymbolRefAttr fromRef = exp.getFrom();
+    // Nested form: @prog::@inner — last nested ref is the inner symbol.
+    if (!fromRef.getNestedReferences().empty())
+      inner = fromRef.getNestedReferences().back().getValue();
+  });
+  return inner;
 }
 
 //===----------------------------------------------------------------------===//
@@ -560,13 +606,15 @@ LogicalResult HostEmitter::emit(xilinx::csl::WaferOp wafer) {
         StringRef leafSym = !symAttr.getNestedReferences().empty()
                                 ? symAttr.getNestedReferences().back().getValue()
                                 : symAttr.getRootReference().getValue();
+        StringRef innerSym = findInnerLeaf(wafer, leafSym);
         Value src = h2dOp.getSrc();
         unsigned idx = 0;
         if (auto barg = dyn_cast<BlockArgument>(src))
           idx = barg.getArgNumber();
         if (idx < argDir.size())
           argDir[idx] = Dir::H2D;
-        MemcpyEntry e{true, idx, leafSym.str(), h2dOp.getPx(), h2dOp.getPy(),
+        MemcpyEntry e{true, idx, leafSym.str(), innerSym.str(),
+                      h2dOp.getPx(), h2dOp.getPy(),
                       /*w=*/1, /*h=*/1, /*l=*/0};
         auto memTy = dyn_cast<MemRefType>(h2dOp.getSrc().getType());
         if (memTy)
@@ -579,13 +627,15 @@ LogicalResult HostEmitter::emit(xilinx::csl::WaferOp wafer) {
         StringRef leafSym = !symAttr.getNestedReferences().empty()
                                 ? symAttr.getNestedReferences().back().getValue()
                                 : symAttr.getRootReference().getValue();
+        StringRef innerSym = findInnerLeaf(wafer, leafSym);
         Value dst = d2hOp.getDst();
         unsigned idx = 0;
         if (auto barg = dyn_cast<BlockArgument>(dst))
           idx = barg.getArgNumber();
         if (idx < argDir.size())
           argDir[idx] = Dir::D2H;
-        MemcpyEntry e{false, idx, leafSym.str(), d2hOp.getPx(), d2hOp.getPy(),
+        MemcpyEntry e{false, idx, leafSym.str(), innerSym.str(),
+                      d2hOp.getPx(), d2hOp.getPy(),
                       /*w=*/1, /*h=*/1, /*l=*/0};
         auto memTy = dyn_cast<MemRefType>(d2hOp.getDst().getType());
         if (memTy)
@@ -867,26 +917,78 @@ LogicalResult HostEmitter::emit(xilinx::csl::WaferOp wafer) {
   } else {
     // Fallback: legacy sanity check (no reference model available for this
     // kernel — e.g. empty compute or unsupported op in body).
-    os << "# Output sanity checks (no reference model available).\n";
-    if (anyFloatOutput) {
-      os << "def _sanity(name, buf):\n";
-      os << "    head = buf[:min(8, len(buf))]\n";
-      os << "    print(f\"  {name}[:{len(head)}] = {list(head)}\")\n";
-      os << "    return bool(np.any(buf != 0))\n\n";
-      os << "print(\"Output buffers:\")\n";
-      os << "any_nonzero = False\n";
-      for (unsigned i = 0; i < argNames.size(); ++i) {
-        if (argDir[i] == Dir::D2H)
-          os << "any_nonzero = _sanity(\"" << argNames[i] << "\", "
-             << argNames[i] << ") or any_nonzero\n";
+    // Stream-passthrough heuristic: if the kernel uses csl.stream.put + get
+    // (or their lowered fmovs+fab DSD form) AND there is exactly one H2D
+    // input and one D2H output, the kernel is almost certainly a fabric
+    // pass-through: input data flows through the network into the output
+    // buffer unchanged. In that case do an element-wise compare and fail
+    // with sys.exit(1) on mismatch — this is what makes the multi-PE ping
+    // milestone test actually verify correctness rather than just
+    // print-and-pass.
+    bool isStreamPassthrough = false;
+    {
+      bool hasFabricOp = false;
+      wafer.walk([&](xilinx::csl::GetFabDsdOp) { hasFabricOp = true; });
+      // Also accept un-lowered stream ops (won't normally happen post
+      // pipeline, but harmless to detect).
+      wafer.walk([&](xilinx::csl::StreamPutOp) { hasFabricOp = true; });
+      wafer.walk([&](xilinx::csl::StreamGetOp) { hasFabricOp = true; });
+
+      unsigned nH2D = 0, nD2H = 0;
+      int h2dIdx = -1, d2hIdx = -1;
+      for (unsigned i = 0; i < argDir.size(); ++i) {
+        if (argDir[i] == Dir::H2D) {
+          ++nH2D;
+          h2dIdx = i;
+        } else if (argDir[i] == Dir::D2H) {
+          ++nD2H;
+          d2hIdx = i;
+        }
       }
-      os << "# Note: all-zero output is OK if the kernel has no stores (e.g. "
-            "empty compute).\n";
-    } else {
-      for (unsigned i = 0; i < argNames.size(); ++i) {
-        if (argDir[i] == Dir::D2H)
-          os << "print(\"" << argNames[i] << "[:8] =\", " << argNames[i]
-             << "[:min(8, len(" << argNames[i] << "))])\n";
+      if (hasFabricOp && nH2D == 1 && nD2H == 1) {
+        isStreamPassthrough = true;
+        os << "# Verification: stream pass-through. The kernel uses fabric\n"
+              "# DSDs to forward the H2D buffer through the network into the\n"
+              "# D2H buffer; expect element-wise equality.\n";
+        os << "if not np.allclose(" << argNames[h2dIdx] << ", "
+           << argNames[d2hIdx] << ", atol=1e-5, rtol=1e-5):\n";
+        os << "    print(\"MISMATCH (" << argNames[h2dIdx] << " vs "
+           << argNames[d2hIdx] << "):\", file=sys.stderr)\n";
+        os << "    print(f\"  src[:8] = {" << argNames[h2dIdx]
+           << "[:min(8, len(" << argNames[h2dIdx] << "))]}\","
+           " file=sys.stderr)\n";
+        os << "    print(f\"  dst[:8] = {" << argNames[d2hIdx]
+           << "[:min(8, len(" << argNames[d2hIdx] << "))]}\","
+           " file=sys.stderr)\n";
+        os << "    sys.exit(1)\n";
+        os << "print(f\"  " << argNames[d2hIdx] << "[:8] = {"
+           << argNames[d2hIdx] << "[:min(8, len(" << argNames[d2hIdx]
+           << "))].tolist()} (matches " << argNames[h2dIdx] << ")\")\n";
+      }
+    }
+
+    if (!isStreamPassthrough) {
+      os << "# Output sanity checks (no reference model available).\n";
+      if (anyFloatOutput) {
+        os << "def _sanity(name, buf):\n";
+        os << "    head = buf[:min(8, len(buf))]\n";
+        os << "    print(f\"  {name}[:{len(head)}] = {list(head)}\")\n";
+        os << "    return bool(np.any(buf != 0))\n\n";
+        os << "print(\"Output buffers:\")\n";
+        os << "any_nonzero = False\n";
+        for (unsigned i = 0; i < argNames.size(); ++i) {
+          if (argDir[i] == Dir::D2H)
+            os << "any_nonzero = _sanity(\"" << argNames[i] << "\", "
+               << argNames[i] << ") or any_nonzero\n";
+        }
+        os << "# Note: all-zero output is OK if the kernel has no stores "
+              "(e.g. empty compute).\n";
+      } else {
+        for (unsigned i = 0; i < argNames.size(); ++i) {
+          if (argDir[i] == Dir::D2H)
+            os << "print(\"" << argNames[i] << "[:8] =\", " << argNames[i]
+               << "[:min(8, len(" << argNames[i] << "))])\n";
+        }
       }
     }
   }
