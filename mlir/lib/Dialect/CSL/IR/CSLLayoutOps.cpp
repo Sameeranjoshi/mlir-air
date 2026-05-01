@@ -6,9 +6,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "air/Dialect/CSL/CSLLayoutOps.h"
+#include "air/Dialect/CSL/CSLOps.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/OpImplementation.h"
+#include "mlir/IR/SymbolTable.h"
 #include "llvm/ADT/DenseSet.h"
 
 using namespace mlir;
@@ -308,4 +310,24 @@ mlir::LogicalResult xilinx::csl_layout::PlaceOp::verify() {
   }
 
   return success();
+}
+
+//===----------------------------------------------------------------------===//
+// csl_layout.set_color_config — verifier
+//===----------------------------------------------------------------------===//
+
+mlir::LogicalResult xilinx::csl_layout::SetColorConfigOp::verify() {
+  // Resolve the @color symbol to a csl.color in the parent csl.layout body.
+  auto layout = (*this)->getParentOfType<::xilinx::csl::LayoutOp>();
+  if (!layout)
+    return emitOpError("must be inside csl.layout body");
+  auto *color = mlir::SymbolTable::lookupSymbolIn(
+      layout, getColorAttr().getAttr());
+  if (!color)
+    return emitOpError("references undefined symbol '@")
+           << getColorAttr().getValue() << "'";
+  if (!mlir::isa<::xilinx::csl::ColorOp>(color))
+    return emitOpError("'@") << getColorAttr().getValue()
+                              << "' is not a csl.color";
+  return mlir::success();
 }

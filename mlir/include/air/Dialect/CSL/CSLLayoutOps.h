@@ -15,6 +15,11 @@
 #include "mlir/Bytecode/BytecodeOpInterface.h"
 #include "mlir/Bytecode/BytecodeImplementation.h"
 
+// Direction enum is generated from CSLBase.td and shared with the csl dialect;
+// CSLOps.h has the full include guard around the .inc, so pulling it in here
+// avoids a duplicate-definition error when both headers end up in the same TU.
+#include "air/Dialect/CSL/CSLOps.h"
+
 #include "air/Dialect/CSL/CSLLayoutOpsDialect.h.inc"
 
 #define GET_OP_CLASSES

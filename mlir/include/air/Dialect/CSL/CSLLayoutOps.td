@@ -17,6 +17,7 @@
 include "mlir/IR/OpBase.td"
 include "mlir/IR/SymbolInterfaces.td"
 include "mlir/IR/BuiltinAttributeInterfaces.td"
+include "air/Dialect/CSL/CSLBase.td"
 
 //===----------------------------------------------------------------------===//
 // CSLLayout Dialect
@@ -118,6 +119,44 @@ def CSLLayout_ExportOp : CSLLayout_Op<"export"> {
   );
 
   let assemblyFormat = "$sym_name `from` $from attr-dict";
+}
+
+//===----------------------------------------------------------------------===//
+// csl_layout.set_color_config — per-PE routing config for a color
+//===----------------------------------------------------------------------===//
+
+def CSLLayout_SetColorConfigOp : CSLLayout_Op<"set_color_config"> {
+  let summary = "Set rx/tx routing for a color at one PE";
+  let description = [{
+    Configures the router on a single PE for a given color. Both `rx` and
+    `tx` carry a single Direction (NORTH/SOUTH/EAST/WEST/RAMP). RAMP is the
+    ingress/egress between the router and the PE's compute element.
+
+    Synthesized by `--csl-lower-stream-routing` from `csl_layout.stream`.
+
+    ```mlir
+    csl_layout.set_color_config @send_color at(0, 0) rx(RAMP) tx(EAST)
+    csl_layout.set_color_config @send_color at(1, 0) rx(WEST) tx(RAMP)
+    ```
+
+    Emits to layout.csl as:
+    ```csl
+    @set_color_config(0, 0, send_color,
+        .{ .routes = .{ .rx = .{RAMP}, .tx = .{EAST} } });
+    ```
+  }];
+
+  let arguments = (ins
+    FlatSymbolRefAttr:$color,
+    I64Attr:$px,
+    I64Attr:$py,
+    CSL_DirectionEnum:$rx,
+    CSL_DirectionEnum:$tx
+  );
+
+  let assemblyFormat =
+      "$color `at` `(` $px `,` $py `)` `rx` `(` $rx `)` `tx` `(` $tx `)` attr-dict";
+  let hasVerifier = 1;
 }
 
 #endif // CSL_LAYOUT_OPS
