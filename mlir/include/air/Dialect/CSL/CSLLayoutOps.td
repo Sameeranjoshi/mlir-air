@@ -163,7 +163,9 @@ def CSLLayout_SetColorConfigOp : CSLLayout_Op<"set_color_config"> {
 // csl_layout.stream — declare an inter-PE dataflow edge
 //===----------------------------------------------------------------------===//
 
-def CSLLayout_StreamOp : CSLLayout_Op<"stream", [Symbol]> {
+def CSLLayout_StreamOp : CSLLayout_Op<"stream", [
+    Symbol,
+    HasParent<"::xilinx::csl::LayoutOp">]> {
   let summary = "Declare a single-hop dataflow edge between two PEs";
   let description = [{
     Declares a typeless point-to-point dataflow edge from PE `(from_x, from_y)`

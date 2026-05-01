@@ -565,4 +565,37 @@ def CSL_HostOp : CSL_Op<"host", [
   let hasCustomAssemblyFormat = 1;
 }
 
+//===----------------------------------------------------------------------===//
+// csl.stream.put — Send a buffer through a declared stream
+//===----------------------------------------------------------------------===//
+
+def CSL_StreamPutOp : CSL_Op<"stream.put", []> {
+  let summary = "Send a memref buffer through an inter-PE stream";
+  let description = [{
+    Sends `extent` elements from `source` through the named stream. The
+    stream symbol must resolve to a `csl_layout.stream` whose `from` coord
+    matches the parent program's placement.
+
+    Sync-looking at the user level; `--csl-lower-stream-data` expands this
+    to fabric DSD + async builtin + completion task.
+
+    ```mlir
+    %n = arith.constant 128 : index
+    csl.stream.put @send_ch source(%buf) extent(%n : index)
+                   : memref<128xf32>
+    ```
+  }];
+
+  let arguments = (ins
+    FlatSymbolRefAttr:$stream,
+    AnyMemRef:$source,
+    Index:$extent
+  );
+
+  let assemblyFormat =
+      "$stream `source` `(` $source `)` `extent` `(` $extent `:` "
+      "type($extent) `)` `:` type($source) attr-dict";
+  let hasVerifier = 1;
+}
+
 #endif // CSL_OPS

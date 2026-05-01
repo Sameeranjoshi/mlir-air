@@ -330,9 +330,8 @@ mlir::LogicalResult xilinx::csl_layout::StreamOp::verify() {
 
   // Optional color must resolve to a csl.color in parent csl.layout.
   if (auto colorAttr = getColorAttr()) {
+    // Parent is guaranteed by HasParent<csl::LayoutOp> trait.
     auto layout = (*this)->getParentOfType<::xilinx::csl::LayoutOp>();
-    if (!layout)
-      return emitOpError("must be inside csl.layout body");
     auto *color =
         mlir::SymbolTable::lookupSymbolIn(layout, colorAttr.getAttr());
     if (!color)

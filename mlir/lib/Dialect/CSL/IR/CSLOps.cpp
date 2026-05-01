@@ -7,6 +7,7 @@
 
 #include "air/Dialect/CSL/CSLOps.h"
 #include "air/Dialect/CSL/CSLDialect.h"
+#include "air/Dialect/CSL/CSLLayoutOps.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/OpImplementation.h"
 #include "air/Dialect/CSL/CSLEnums.cpp.inc"
@@ -324,5 +325,36 @@ mlir::LogicalResult xilinx::csl::GetFabDsdOp::verify() {
 mlir::LogicalResult xilinx::csl::BuiltinCallOp::verify() {
   if (getActivateAttr() && !getAsync())
     return emitOpError("'activate' requires 'async'");
+  return mlir::success();
+}
+
+//===----------------------------------------------------------------------===//
+// csl.stream.put — verifier
+//===----------------------------------------------------------------------===//
+
+mlir::LogicalResult xilinx::csl::StreamPutOp::verify() {
+  // Source memref element type must be f32 this milestone.
+  auto memTy = mlir::cast<mlir::MemRefType>(getSource().getType());
+  if (!memTy.getElementType().isF32())
+    return emitOpError("source memref element type must be f32 (got ")
+           << memTy.getElementType() << ")";
+
+  // Stream symbol must exist in enclosing csl.wafer's csl.layout.
+  auto wafer = (*this)->getParentOfType<xilinx::csl::WaferOp>();
+  if (!wafer)
+    return emitOpError("must be inside csl.wafer");
+  ::xilinx::csl_layout::StreamOp stream;
+  for (auto &op : wafer.getBody().front()) {
+    if (auto layout = mlir::dyn_cast<xilinx::csl::LayoutOp>(op)) {
+      if (auto found = mlir::dyn_cast_or_null<::xilinx::csl_layout::StreamOp>(
+              mlir::SymbolTable::lookupSymbolIn(layout,
+                                                 getStreamAttr().getAttr())))
+        stream = found;
+      break;
+    }
+  }
+  if (!stream)
+    return emitOpError("references undefined stream '@")
+           << getStreamAttr().getValue() << "'";
   return mlir::success();
 }
