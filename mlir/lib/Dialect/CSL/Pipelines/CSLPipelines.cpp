@@ -15,11 +15,11 @@ using namespace mlir;
 namespace {
 
 /// 4-pass chain that lowers user-facing CSL stream ops to emit-ready form.
-void buildStreamsToCSL(OpPassManager &pm) {
-  pm.addPass(::xilinx::air::createCSLMaterializeStreamColorsPass());
+void buildDataflowToCSL(OpPassManager &pm) {
+  pm.addPass(::xilinx::air::createCSLMaterializeDataflowColorsPass());
   pm.addPass(::xilinx::air::createCSLAllocateColorIdsPass());
-  pm.addPass(::xilinx::air::createCSLLowerStreamRoutingPass());
-  pm.addPass(::xilinx::air::createCSLLowerStreamDataPass());
+  pm.addPass(::xilinx::air::createCSLLowerDataflowRoutingPass());
+  pm.addPass(::xilinx::air::createCSLLowerDataflowDataPass());
 }
 
 } // namespace
@@ -31,16 +31,16 @@ void xilinx::air::registerCSLPipelines() {
   registered = true;
 
   PassPipelineRegistration<>(
-      "csl-streams-to-csl",
-      "Lower CSL stream ops to emit-ready form (4-pass chain).",
-      buildStreamsToCSL);
+      "csl-dataflow-to-csl",
+      "Lower CSL dataflow ops to emit-ready form (4-pass chain).",
+      buildDataflowToCSL);
 
   PassPipelineRegistration<>(
       "csl-pipeline",
-      "Full CSL pipeline: infer-exports -> auto-vectorize -> streams-to-csl.",
+      "Full CSL pipeline: infer-exports -> auto-vectorize -> dataflow-to-csl.",
       [](OpPassManager &pm) {
         pm.addPass(::xilinx::air::createCSLInferExportsPass());
         pm.addPass(::xilinx::air::createCSLAutoVectorizePass());
-        buildStreamsToCSL(pm);
+        buildDataflowToCSL(pm);
       });
 }

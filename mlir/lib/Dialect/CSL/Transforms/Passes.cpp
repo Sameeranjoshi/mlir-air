@@ -19,7 +19,7 @@ void xilinx::air::registerCSLTransformPasses() {
       });
   mlir::registerPass(
       []() -> std::unique_ptr<mlir::Pass> {
-        return createCSLMaterializeStreamColorsPass();
+        return createCSLMaterializeDataflowColorsPass();
       });
   mlir::registerPass(
       []() -> std::unique_ptr<mlir::Pass> {
@@ -27,10 +27,10 @@ void xilinx::air::registerCSLTransformPasses() {
       });
   mlir::registerPass(
       []() -> std::unique_ptr<mlir::Pass> {
-        return createCSLLowerStreamRoutingPass();
+        return createCSLLowerDataflowRoutingPass();
       });
   mlir::registerPass(
       []() -> std::unique_ptr<mlir::Pass> {
-        return createCSLLowerStreamDataPass();
+        return createCSLLowerDataflowDataPass();
       });
 }

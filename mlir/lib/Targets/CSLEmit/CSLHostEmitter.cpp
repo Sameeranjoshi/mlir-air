@@ -917,7 +917,7 @@ LogicalResult HostEmitter::emit(xilinx::csl::WaferOp wafer) {
   } else {
     // Fallback: legacy sanity check (no reference model available for this
     // kernel — e.g. empty compute or unsupported op in body).
-    // Stream-passthrough heuristic: if the kernel uses csl.stream.put + get
+    // Stream-passthrough heuristic: if the kernel uses csl.dataflow.put + get
     // (or their lowered fmovs+fab DSD form) AND there is exactly one H2D
     // input and one D2H output, the kernel is almost certainly a fabric
     // pass-through: input data flows through the network into the output
@@ -931,8 +931,8 @@ LogicalResult HostEmitter::emit(xilinx::csl::WaferOp wafer) {
       wafer.walk([&](xilinx::csl::GetFabDsdOp) { hasFabricOp = true; });
       // Also accept un-lowered stream ops (won't normally happen post
       // pipeline, but harmless to detect).
-      wafer.walk([&](xilinx::csl::StreamPutOp) { hasFabricOp = true; });
-      wafer.walk([&](xilinx::csl::StreamGetOp) { hasFabricOp = true; });
+      wafer.walk([&](xilinx::csl::DataflowPutOp) { hasFabricOp = true; });
+      wafer.walk([&](xilinx::csl::DataflowGetOp) { hasFabricOp = true; });
 
       // Collect H2D and D2H arg indices in host-body order (matching the
       // order memcpys appear in csl.host). Pairing is by-position: 1st H2D

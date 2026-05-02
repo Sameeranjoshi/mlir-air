@@ -6,9 +6,9 @@
 //===----------------------------------------------------------------------===//
 //
 // Registration entry point for the named CSL pass pipelines:
-//   --csl-streams-to-csl  : 4-pass stream-lowering chain
+//   --csl-dataflow-to-csl  : 4-pass stream-lowering chain
 //   --csl-pipeline        : full chain (infer-exports + auto-vectorize +
-//                           streams-to-csl)
+//                           dataflow-to-csl)
 //
 //===----------------------------------------------------------------------===//
 

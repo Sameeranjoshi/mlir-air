@@ -1,22 +1,22 @@
-//===- CSLLowerStreamData.cpp ---------------------*- C++ -*-===//
+//===- CSLLowerDataflowData.cpp ---------------------*- C++ -*-===//
 //
 // Part of the air-to-csl project.
 // SPDX-License-Identifier: MIT
 //
 //===----------------------------------------------------------------------===//
 //
-// Pass 4 of csl-streams-to-csl pipeline.
+// Pass 4 of csl-dataflow-to-csl pipeline.
 //
 // Pre:  Stage-3 form (set_color_configs in place; streams + put/get still
 //       present).
-// Post: no csl.stream.put/get/csl_layout.stream remain. Each program has
+// Post: no csl.dataflow.put/get/csl_layout.dataflow remain. Each program has
 //       fabric DSDs + tasks + async builtin calls.
 //
 // Per-program task-id counter starts at 8 (tutorial idiom).
 //
 //===----------------------------------------------------------------------===//
 
-#include "air/Dialect/CSL/Transforms/CSLLowerStreamDataPass.h"
+#include "air/Dialect/CSL/Transforms/CSLLowerDataflowDataPass.h"
 #include "air/Dialect/CSL/CSLLayoutOps.h"
 #include "air/Dialect/CSL/CSLOps.h"
 
@@ -42,13 +42,13 @@ static ::xilinx::csl::LayoutOp findEnclosingLayout(Operation *op) {
   return nullptr;
 }
 
-class CSLLowerStreamDataPass
-    : public PassWrapper<CSLLowerStreamDataPass, OperationPass<>> {
+class CSLLowerDataflowDataPass
+    : public PassWrapper<CSLLowerDataflowDataPass, OperationPass<>> {
 public:
-  StringRef getArgument() const final { return "csl-lower-stream-data"; }
+  StringRef getArgument() const final { return "csl-lower-dataflow-data"; }
   StringRef getDescription() const final {
-    return "Pass 4: expand csl.stream.put/get into fabric DSDs + tasks + "
-           "async builtins; erase csl_layout.stream.";
+    return "Pass 4: expand csl.dataflow.put/get into fabric DSDs + tasks + "
+           "async builtins; erase csl_layout.dataflow.";
   }
   void getDependentDialects(::mlir::DialectRegistry &registry) const override {
     registry.insert<::xilinx::csl::CSLDialect,
@@ -57,21 +57,21 @@ public:
   void runOnOperation() override;
 
 private:
-  LogicalResult expandPut(::xilinx::csl::StreamPutOp put, int32_t &nextTaskId);
-  LogicalResult expandGet(::xilinx::csl::StreamGetOp get, int32_t &nextTaskId);
+  LogicalResult expandPut(::xilinx::csl::DataflowPutOp put, int32_t &nextTaskId);
+  LogicalResult expandGet(::xilinx::csl::DataflowGetOp get, int32_t &nextTaskId);
 };
 
 } // namespace
 
 LogicalResult
-CSLLowerStreamDataPass::expandPut(::xilinx::csl::StreamPutOp put,
+CSLLowerDataflowDataPass::expandPut(::xilinx::csl::DataflowPutOp put,
                                   int32_t &nextTaskId) {
   auto layout = findEnclosingLayout(put);
   if (!layout) {
     put.emitOpError("could not find enclosing csl.layout");
     return failure();
   }
-  auto stream = dyn_cast_or_null<::xilinx::csl_layout::StreamOp>(
+  auto stream = dyn_cast_or_null<::xilinx::csl_layout::DataflowOp>(
       SymbolTable::lookupSymbolIn(layout, put.getStreamAttr().getAttr()));
   if (!stream) {
     put.emitOpError("could not resolve stream '@") << put.getStream() << "'";
@@ -80,7 +80,7 @@ CSLLowerStreamDataPass::expandPut(::xilinx::csl::StreamPutOp put,
   auto colorAttr = stream.getColorAttr();
   if (!colorAttr) {
     put.emitOpError(
-        "stream has no color (run --csl-materialize-stream-colors first)");
+        "stream has no color (run --csl-materialize-dataflow-colors first)");
     return failure();
   }
 
@@ -140,14 +140,14 @@ CSLLowerStreamDataPass::expandPut(::xilinx::csl::StreamPutOp put,
 }
 
 LogicalResult
-CSLLowerStreamDataPass::expandGet(::xilinx::csl::StreamGetOp get,
+CSLLowerDataflowDataPass::expandGet(::xilinx::csl::DataflowGetOp get,
                                   int32_t &nextTaskId) {
   auto layout = findEnclosingLayout(get);
   if (!layout) {
     get.emitOpError("could not find enclosing csl.layout");
     return failure();
   }
-  auto stream = dyn_cast_or_null<::xilinx::csl_layout::StreamOp>(
+  auto stream = dyn_cast_or_null<::xilinx::csl_layout::DataflowOp>(
       SymbolTable::lookupSymbolIn(layout, get.getStreamAttr().getAttr()));
   if (!stream) {
     get.emitOpError("could not resolve stream '@") << get.getStream() << "'";
@@ -156,7 +156,7 @@ CSLLowerStreamDataPass::expandGet(::xilinx::csl::StreamGetOp get,
   auto colorAttr = stream.getColorAttr();
   if (!colorAttr) {
     get.emitOpError(
-        "stream has no color (run --csl-materialize-stream-colors first)");
+        "stream has no color (run --csl-materialize-dataflow-colors first)");
     return failure();
   }
 
@@ -202,19 +202,19 @@ CSLLowerStreamDataPass::expandGet(::xilinx::csl::StreamGetOp get,
   return success();
 }
 
-void CSLLowerStreamDataPass::runOnOperation() {
+void CSLLowerDataflowDataPass::runOnOperation() {
   bool failed = false;
 
   // Per-program task-id counter (restarts at 8 per program).
   getOperation()->walk([&](::xilinx::csl::ProgramOp program) {
     int32_t nextTaskId = 8;
     // Snapshot put/get ops; mutating during walk is unsafe.
-    SmallVector<::xilinx::csl::StreamPutOp> puts;
-    SmallVector<::xilinx::csl::StreamGetOp> gets;
+    SmallVector<::xilinx::csl::DataflowPutOp> puts;
+    SmallVector<::xilinx::csl::DataflowGetOp> gets;
     program->walk([&](Operation *op) {
-      if (auto p = dyn_cast<::xilinx::csl::StreamPutOp>(op))
+      if (auto p = dyn_cast<::xilinx::csl::DataflowPutOp>(op))
         puts.push_back(p);
-      else if (auto g = dyn_cast<::xilinx::csl::StreamGetOp>(op))
+      else if (auto g = dyn_cast<::xilinx::csl::DataflowGetOp>(op))
         gets.push_back(g);
     });
     for (auto p : puts)
@@ -230,14 +230,14 @@ void CSLLowerStreamDataPass::runOnOperation() {
     return;
   }
 
-  // Erase all csl_layout.stream ops (no longer needed).
-  SmallVector<::xilinx::csl_layout::StreamOp> streams;
+  // Erase all csl_layout.dataflow ops (no longer needed).
+  SmallVector<::xilinx::csl_layout::DataflowOp> dataflows;
   getOperation()->walk(
-      [&](::xilinx::csl_layout::StreamOp s) { streams.push_back(s); });
-  for (auto s : streams)
+      [&](::xilinx::csl_layout::DataflowOp s) { dataflows.push_back(s); });
+  for (auto s : dataflows)
     s.erase();
 }
 
-std::unique_ptr<Pass> xilinx::air::createCSLLowerStreamDataPass() {
-  return std::make_unique<CSLLowerStreamDataPass>();
+std::unique_ptr<Pass> xilinx::air::createCSLLowerDataflowDataPass() {
+  return std::make_unique<CSLLowerDataflowDataPass>();
 }

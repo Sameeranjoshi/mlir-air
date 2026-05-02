@@ -1,11 +1,11 @@
-// RUN: air-opt --csl-streams-to-csl %s | FileCheck %s
+// RUN: air-opt --csl-dataflow-to-csl %s | FileCheck %s
 
 csl.wafer @w {arch = "wse3"} {
   csl.program @left {
     %buf = csl.var @buf : memref<32xf32>
     csl.func @c {
       %n = arith.constant 32 : index
-      csl.stream.put @ch source(%buf) extent(%n : index) : memref<32xf32>
+      csl.dataflow.put @ch source(%buf) extent(%n : index) : memref<32xf32>
       csl.return
     }
   }
@@ -13,21 +13,21 @@ csl.wafer @w {arch = "wse3"} {
     %buf = csl.var @buf : memref<32xf32>
     csl.func @c {
       %n = arith.constant 32 : index
-      csl.stream.get @ch target(%buf) extent(%n : index) : memref<32xf32>
+      csl.dataflow.get @ch target(%buf) extent(%n : index) : memref<32xf32>
       csl.return
     }
   }
   csl.layout {width = 2 : i64, height = 1 : i64} @layout {
-    csl_layout.stream @ch from(0, 0) to(1, 0)
+    csl_layout.dataflow @ch from(0, 0) to(1, 0)
     csl_layout.place @left  at (0, 0)
     csl_layout.place @right at (1, 0)
   }
 }
 
 // After full sub-pipeline: streams gone, fabric DSDs + tasks present, set_color_config emitted.
-// CHECK-NOT: csl_layout.stream
-// CHECK-NOT: csl.stream.put
-// CHECK-NOT: csl.stream.get
+// CHECK-NOT: csl_layout.dataflow
+// CHECK-NOT: csl.dataflow.put
+// CHECK-NOT: csl.dataflow.get
 
 // Program @left: fabout DSD + async fmovs + completion task.
 // CHECK-LABEL: csl.program @left

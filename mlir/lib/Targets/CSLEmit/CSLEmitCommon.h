@@ -416,7 +416,7 @@ emitFuncBody(mlir::Region &bodyRegion, llvm::raw_ostream &os,
           os << modName << "." << bc.getCallee();
         } else if (bc.getCallee() == "unblock_cmd_stream") {
           // SDK memcpy builtin lives on the implicitly-imported `sys_mod`
-          // (see ProgramEmitter preamble). The lower-stream-data pass
+          // (see ProgramEmitter preamble). The lower-dataflow-data pass
           // synthesizes csl.builtin_call "unblock_cmd_stream" with no
           // module operand because sys_mod is invented at emit time.
           os << "sys_mod." << bc.getCallee();
@@ -633,7 +633,7 @@ emitFuncBody(mlir::Region &bodyRegion, llvm::raw_ostream &os,
       //                          .input_queue|.output_queue = <color>_<dir>_q });
       // Extent resolves to either the SSA name in `nameMap` or, if unresolved,
       // the numeric literal from the defining arith.constant. Synthesized by
-      // --csl-lower-stream-data from csl.stream.put/get.
+      // --csl-lower-dataflow-data from csl.dataflow.put/get.
       //
       // The queue field is required on WSE-3; the queue itself is declared
       // at PE file scope (see CSLProgramEmitter), keyed off the same color

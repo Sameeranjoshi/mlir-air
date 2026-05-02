@@ -1,7 +1,7 @@
 // REQUIRES: cerebras-sdk
 //
 // RUN: rm -rf %t && mkdir -p %t
-// RUN: air-opt --csl-streams-to-csl %s | air-translate --emit-csl --output-dir=%t
+// RUN: air-opt --csl-dataflow-to-csl %s | air-translate --emit-csl --output-dir=%t
 // RUN: cd %t/ping_2pe_two_streams && bash commands_wse3.sh 2>&1 | FileCheck %s
 //
 // Two independent fabric streams in one wafer. Layout is 2 rows x 2 cols;
@@ -27,7 +27,7 @@ csl.wafer @ping_2pe_two_streams {arch = "wse3"} {
     %buf = csl.var @buf : memref<64xf32>
     csl.func @compute {
       %n = arith.constant 64 : index
-      csl.stream.put @ch_a source(%buf) extent(%n : index) : memref<64xf32>
+      csl.dataflow.put @ch_a source(%buf) extent(%n : index) : memref<64xf32>
       csl.return
     }
     csl.export @buf {alias = "buf_l0", direction = "in"}
@@ -37,7 +37,7 @@ csl.wafer @ping_2pe_two_streams {arch = "wse3"} {
     %buf = csl.var @buf : memref<64xf32>
     csl.func @compute {
       %n = arith.constant 64 : index
-      csl.stream.get @ch_a target(%buf) extent(%n : index) : memref<64xf32>
+      csl.dataflow.get @ch_a target(%buf) extent(%n : index) : memref<64xf32>
       csl.return
     }
     csl.export @buf {alias = "buf_r0", direction = "out"}
@@ -47,7 +47,7 @@ csl.wafer @ping_2pe_two_streams {arch = "wse3"} {
     %buf = csl.var @buf : memref<64xf32>
     csl.func @compute {
       %n = arith.constant 64 : index
-      csl.stream.put @ch_b source(%buf) extent(%n : index) : memref<64xf32>
+      csl.dataflow.put @ch_b source(%buf) extent(%n : index) : memref<64xf32>
       csl.return
     }
     csl.export @buf {alias = "buf_l1", direction = "in"}
@@ -57,15 +57,15 @@ csl.wafer @ping_2pe_two_streams {arch = "wse3"} {
     %buf = csl.var @buf : memref<64xf32>
     csl.func @compute {
       %n = arith.constant 64 : index
-      csl.stream.get @ch_b target(%buf) extent(%n : index) : memref<64xf32>
+      csl.dataflow.get @ch_b target(%buf) extent(%n : index) : memref<64xf32>
       csl.return
     }
     csl.export @buf {alias = "buf_r1", direction = "out"}
     csl.export @compute {kind = "func", direction = "internal"}
   }
   csl.layout {width = 2 : i64, height = 2 : i64} @layout {
-    csl_layout.stream @ch_a from(0, 0) to(1, 0)
-    csl_layout.stream @ch_b from(0, 1) to(1, 1)
+    csl_layout.dataflow @ch_a from(0, 0) to(1, 0)
+    csl_layout.dataflow @ch_b from(0, 1) to(1, 1)
     csl_layout.place  @l0 at (0, 0)
     csl_layout.place  @r0 at (1, 0)
     csl_layout.place  @l1 at (0, 1)

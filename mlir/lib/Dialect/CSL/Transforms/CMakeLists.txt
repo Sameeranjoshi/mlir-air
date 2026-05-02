@@ -5,10 +5,10 @@ add_mlir_library(
   CSLTransforms
   CSLInferExports.cpp
   CSLAutoVectorize.cpp
-  CSLMaterializeStreamColors.cpp
+  CSLMaterializeDataflowColors.cpp
   CSLAllocateColorIds.cpp
-  CSLLowerStreamRouting.cpp
-  CSLLowerStreamData.cpp
+  CSLLowerDataflowRouting.cpp
+  CSLLowerDataflowData.cpp
   LoopIdiomAnalysis.cpp
   Passes.cpp
   Patterns/ElementwisePatterns.cpp

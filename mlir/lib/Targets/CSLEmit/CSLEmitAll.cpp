@@ -255,7 +255,7 @@ std::string makeLayoutCsl(xilinx::csl::WaferOp wafer, int64_t width,
   // Emit `const <sym> = @get_color(N);` for every csl.color in the wafer's
   // csl.layout body. Colors live at file scope (above the `layout {}` block),
   // so they're declared here before @set_rectangle. Synthesized by
-  // --csl-materialize-stream-colors / --csl-allocate-color-ids.
+  // --csl-materialize-dataflow-colors / --csl-allocate-color-ids.
   bool anyColor = false;
   wafer.walk([&](xilinx::csl::ColorOp c) {
     auto idAttr = c.getIdAttr();
@@ -337,7 +337,7 @@ std::string makeLayoutCsl(xilinx::csl::WaferOp wafer, int64_t width,
 
   // Emit `@set_color_config(x, y, color, .{ .routes = .{ .rx = ..., .tx = ... } });`
   // for every csl_layout.set_color_config in the wafer's csl.layout body.
-  // Synthesized by --csl-lower-stream-routing.
+  // Synthesized by --csl-lower-dataflow-routing.
   bool anyCfg = false;
   wafer.walk([&](xilinx::csl_layout::SetColorConfigOp cfg) {
     if (!anyCfg) anyCfg = true;

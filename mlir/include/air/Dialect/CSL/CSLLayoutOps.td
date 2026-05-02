@@ -132,7 +132,7 @@ def CSLLayout_SetColorConfigOp : CSLLayout_Op<"set_color_config"> {
     `tx` carry a single Direction (NORTH/SOUTH/EAST/WEST/RAMP). RAMP is the
     ingress/egress between the router and the PE's compute element.
 
-    Synthesized by `--csl-lower-stream-routing` from `csl_layout.stream`.
+    Synthesized by `--csl-lower-dataflow-routing` from `csl_layout.dataflow`.
 
     ```mlir
     csl_layout.set_color_config @send_color at(0, 0) rx(RAMP) tx(EAST)
@@ -160,10 +160,10 @@ def CSLLayout_SetColorConfigOp : CSLLayout_Op<"set_color_config"> {
 }
 
 //===----------------------------------------------------------------------===//
-// csl_layout.stream — declare an inter-PE dataflow edge
+// csl_layout.dataflow — declare an inter-PE dataflow edge
 //===----------------------------------------------------------------------===//
 
-def CSLLayout_StreamOp : CSLLayout_Op<"stream", [
+def CSLLayout_DataflowOp : CSLLayout_Op<"dataflow", [
     Symbol,
     HasParent<"::xilinx::csl::LayoutOp">]> {
   let summary = "Declare a single-hop dataflow edge between two PEs";
@@ -174,14 +174,14 @@ def CSLLayout_StreamOp : CSLLayout_Op<"stream", [
 
     The optional `color` attribute references a `csl.color` symbol declared
     in the same `csl.layout` body. Users do not write the `color` attribute
-    directly — `--csl-materialize-stream-colors` synthesizes one per stream.
+    directly — `--csl-materialize-dataflow-colors` synthesizes one per stream.
 
     ```mlir
     // user-facing form (no color)
-    csl_layout.stream @send_ch from(0, 0) to(1, 0)
+    csl_layout.dataflow @send_ch from(0, 0) to(1, 0)
 
     // post-Pass-1 form (color materialized)
-    csl_layout.stream @send_ch from(0, 0) to(1, 0) {color = @send_ch_color}
+    csl_layout.dataflow @send_ch from(0, 0) to(1, 0) {color = @send_ch_color}
     ```
   }];
 

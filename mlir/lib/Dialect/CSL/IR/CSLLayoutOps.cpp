@@ -313,10 +313,10 @@ mlir::LogicalResult xilinx::csl_layout::PlaceOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
-// csl_layout.stream — verifier
+// csl_layout.dataflow — verifier
 //===----------------------------------------------------------------------===//
 
-mlir::LogicalResult xilinx::csl_layout::StreamOp::verify() {
+mlir::LogicalResult xilinx::csl_layout::DataflowOp::verify() {
   int64_t dx = getToX() - getFromX();
   int64_t dy = getToY() - getFromY();
   // Cardinal multi-hop: must lie strictly along one axis (the other delta

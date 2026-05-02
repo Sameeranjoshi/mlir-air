@@ -17,9 +17,9 @@
 #include "air/Dialect/CSL/Transforms/CSLAllocateColorIdsPass.h"
 #include "air/Dialect/CSL/Transforms/CSLAutoVectorizePass.h"
 #include "air/Dialect/CSL/Transforms/CSLInferExportsPass.h"
-#include "air/Dialect/CSL/Transforms/CSLLowerStreamDataPass.h"
-#include "air/Dialect/CSL/Transforms/CSLLowerStreamRoutingPass.h"
-#include "air/Dialect/CSL/Transforms/CSLMaterializeStreamColorsPass.h"
+#include "air/Dialect/CSL/Transforms/CSLLowerDataflowDataPass.h"
+#include "air/Dialect/CSL/Transforms/CSLLowerDataflowRoutingPass.h"
+#include "air/Dialect/CSL/Transforms/CSLMaterializeDataflowColorsPass.h"
 
 namespace xilinx {
 namespace air {

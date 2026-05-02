@@ -1,7 +1,7 @@
 // REQUIRES: cerebras-sdk
 //
 // RUN: rm -rf %t && mkdir -p %t
-// RUN: air-opt --csl-streams-to-csl %s | air-translate --emit-csl --output-dir=%t
+// RUN: air-opt --csl-dataflow-to-csl %s | air-translate --emit-csl --output-dir=%t
 // RUN: cd %t/ping_2pe && bash commands_wse3.sh 2>&1 | FileCheck %s
 //
 // MILESTONE: 2-PE inter-PE dataflow via a CSL fabric stream, end-to-end on the
@@ -10,8 +10,8 @@
 //   left_pe ─── send_ch ──▶ right_pe
 //   (0,0)                   (1,0)
 //
-// `csl.stream.put` on the producer side and `csl.stream.get` on the consumer
-// side are lowered by the --csl-streams-to-csl pipeline into a fabric DSD +
+// `csl.dataflow.put` on the producer side and `csl.dataflow.get` on the consumer
+// side are lowered by the --csl-dataflow-to-csl pipeline into a fabric DSD +
 // async fmovs + completion task triplet. The emitter then writes one
 // per-program .csl file, a layout.csl wrapping the placement and routing,
 // and a host run.py that does:
@@ -28,7 +28,7 @@ csl.wafer @ping_2pe {arch = "wse3"} {
     %buf = csl.var @buf : memref<128xf32>
     csl.func @compute {
       %n = arith.constant 128 : index
-      csl.stream.put @send_ch source(%buf) extent(%n : index) : memref<128xf32>
+      csl.dataflow.put @send_ch source(%buf) extent(%n : index) : memref<128xf32>
       csl.return
     }
     csl.export @buf {alias = "buf_left", direction = "in"}
@@ -38,14 +38,14 @@ csl.wafer @ping_2pe {arch = "wse3"} {
     %buf = csl.var @buf : memref<128xf32>
     csl.func @compute {
       %n = arith.constant 128 : index
-      csl.stream.get @send_ch target(%buf) extent(%n : index) : memref<128xf32>
+      csl.dataflow.get @send_ch target(%buf) extent(%n : index) : memref<128xf32>
       csl.return
     }
     csl.export @buf {alias = "buf_right", direction = "out"}
     csl.export @compute {kind = "func", direction = "internal"}
   }
   csl.layout {width = 2 : i64, height = 1 : i64} @layout {
-    csl_layout.stream @send_ch from(0, 0) to(1, 0)
+    csl_layout.dataflow @send_ch from(0, 0) to(1, 0)
     csl_layout.place  @left_pe  at (0, 0)
     csl_layout.place  @right_pe at (1, 0)
     csl_layout.export "buf_left"  from @left_pe::@buf

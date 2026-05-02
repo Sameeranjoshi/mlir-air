@@ -1,13 +1,13 @@
-//===- CSLLowerStreamRouting.cpp ---------------------------*- C++ -*-===//
+//===- CSLLowerDataflowRouting.cpp ---------------------------*- C++ -*-===//
 //
 // Part of the air-to-csl project.
 // SPDX-License-Identifier: MIT
 //
 //===----------------------------------------------------------------------===//
 //
-// Pass 3 of csl-streams-to-csl pipeline.
+// Pass 3 of csl-dataflow-to-csl pipeline.
 //
-// Pre:  every csl_layout.stream has {color = @<x>}; color has an `id`.
+// Pre:  every csl_layout.dataflow has {color = @<x>}; color has an `id`.
 // Post: each stream has two csl_layout.set_color_config siblings (one at
 //       `from` coord, one at `to` coord); stream op is kept (still needed
 //       by Pass 4 for put/get symbol resolution).
@@ -20,7 +20,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "air/Dialect/CSL/Transforms/CSLLowerStreamRoutingPass.h"
+#include "air/Dialect/CSL/Transforms/CSLLowerDataflowRoutingPass.h"
 #include "air/Dialect/CSL/CSLLayoutOps.h"
 #include "air/Dialect/CSL/CSLOps.h"
 
@@ -51,12 +51,12 @@ static InferredDirs inferDirs(int64_t dx, int64_t dy) {
   return {Direction::NORTH, Direction::SOUTH};
 }
 
-class CSLLowerStreamRoutingPass
-    : public PassWrapper<CSLLowerStreamRoutingPass, OperationPass<>> {
+class CSLLowerDataflowRoutingPass
+    : public PassWrapper<CSLLowerDataflowRoutingPass, OperationPass<>> {
 public:
-  StringRef getArgument() const final { return "csl-lower-stream-routing"; }
+  StringRef getArgument() const final { return "csl-lower-dataflow-routing"; }
   StringRef getDescription() const final {
-    return "Pass 3: emit per-PE set_color_config from each csl_layout.stream";
+    return "Pass 3: emit per-PE set_color_config from each csl_layout.dataflow";
   }
   void getDependentDialects(::mlir::DialectRegistry &registry) const override {
     registry.insert<::xilinx::csl::CSLDialect,
@@ -67,21 +67,21 @@ public:
 
 } // namespace
 
-void CSLLowerStreamRoutingPass::runOnOperation() {
+void CSLLowerDataflowRoutingPass::runOnOperation() {
   getOperation()->walk([&](::xilinx::csl::LayoutOp layout) {
-    // Snapshot the stream ops before mutating siblings.
-    SmallVector<::xilinx::csl_layout::StreamOp> streams;
+    // Snapshot the dataflow ops before mutating siblings.
+    SmallVector<::xilinx::csl_layout::DataflowOp> dataflows;
     for (Operation &nested : layout.getBody().front()) {
-      if (auto s = dyn_cast<::xilinx::csl_layout::StreamOp>(&nested))
-        streams.push_back(s);
+      if (auto s = dyn_cast<::xilinx::csl_layout::DataflowOp>(&nested))
+        dataflows.push_back(s);
     }
 
     OpBuilder b(layout.getContext());
-    for (auto stream : streams) {
+    for (auto stream : dataflows) {
       auto colorAttr = stream.getColorAttr();
       if (!colorAttr) {
         stream.emitOpError("Pass 3 requires a {color = ...} attribute "
-                           "(run --csl-materialize-stream-colors first)");
+                           "(run --csl-materialize-dataflow-colors first)");
         signalPassFailure();
         return;
       }
@@ -108,7 +108,7 @@ void CSLLowerStreamRoutingPass::runOnOperation() {
       // PE strictly between the endpoints. The intermediate's rx is the
       // opposite of the step direction (data arrives from there), its tx
       // is the step direction (data continues toward dst). Verifier on
-      // csl_layout.stream guarantees the path is purely horizontal or
+      // csl_layout.dataflow guarantees the path is purely horizontal or
       // purely vertical.
       int64_t stepX = (dx > 0) ? 1 : (dx < 0) ? -1 : 0;
       int64_t stepY = (dy > 0) ? 1 : (dy < 0) ? -1 : 0;
@@ -143,6 +143,6 @@ void CSLLowerStreamRoutingPass::runOnOperation() {
   });
 }
 
-std::unique_ptr<Pass> xilinx::air::createCSLLowerStreamRoutingPass() {
-  return std::make_unique<CSLLowerStreamRoutingPass>();
+std::unique_ptr<Pass> xilinx::air::createCSLLowerDataflowRoutingPass() {
+  return std::make_unique<CSLLowerDataflowRoutingPass>();
 }

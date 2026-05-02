@@ -337,10 +337,10 @@ mlir::LogicalResult xilinx::csl::BuiltinCallOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
-// csl.stream.put — verifier
+// csl.dataflow.put — verifier
 //===----------------------------------------------------------------------===//
 
-mlir::LogicalResult xilinx::csl::StreamPutOp::verify() {
+mlir::LogicalResult xilinx::csl::DataflowPutOp::verify() {
   // Source memref element type must be f32 this milestone.
   auto memTy = mlir::cast<mlir::MemRefType>(getSource().getType());
   if (!memTy.getElementType().isF32())
@@ -356,7 +356,7 @@ mlir::LogicalResult xilinx::csl::StreamPutOp::verify() {
   auto layout = findEnclosingLayout(*this);
   if (!layout)
     return emitOpError("must be inside csl.wafer with a csl.layout");
-  auto stream = mlir::dyn_cast_or_null<::xilinx::csl_layout::StreamOp>(
+  auto stream = mlir::dyn_cast_or_null<::xilinx::csl_layout::DataflowOp>(
       mlir::SymbolTable::lookupSymbolIn(layout, getStreamAttr().getAttr()));
   if (!stream)
     return emitOpError("references undefined stream '@")
@@ -365,10 +365,10 @@ mlir::LogicalResult xilinx::csl::StreamPutOp::verify() {
 }
 
 //===----------------------------------------------------------------------===//
-// csl.stream.get — verifier
+// csl.dataflow.get — verifier
 //===----------------------------------------------------------------------===//
 
-mlir::LogicalResult xilinx::csl::StreamGetOp::verify() {
+mlir::LogicalResult xilinx::csl::DataflowGetOp::verify() {
   auto memTy = mlir::cast<mlir::MemRefType>(getTarget().getType());
   if (!memTy.getElementType().isF32())
     return emitOpError("target memref element type must be f32 (got ")
@@ -382,7 +382,7 @@ mlir::LogicalResult xilinx::csl::StreamGetOp::verify() {
   auto layout = findEnclosingLayout(*this);
   if (!layout)
     return emitOpError("must be inside csl.wafer with a csl.layout");
-  auto stream = mlir::dyn_cast_or_null<::xilinx::csl_layout::StreamOp>(
+  auto stream = mlir::dyn_cast_or_null<::xilinx::csl_layout::DataflowOp>(
       mlir::SymbolTable::lookupSymbolIn(layout, getStreamAttr().getAttr()));
   if (!stream)
     return emitOpError("references undefined stream '@")

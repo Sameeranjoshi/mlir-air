@@ -45,8 +45,8 @@ def CSL_ColorOp : CSL_Op<"color", [
     primitive on the WSE fabric. A color symbol is shared across all PE
     programs that reference it (via csl.get_fab_dsd / csl_layout.set_color_config).
 
-    The op is **synthesized** by --csl-materialize-stream-colors from
-    csl_layout.stream ops; users do not write it directly.
+    The op is **synthesized** by --csl-materialize-dataflow-colors from
+    csl_layout.dataflow ops; users do not write it directly.
 
     When `id` is absent, the color is "virtual" and the
     --csl-allocate-color-ids pass assigns one. When present, the color is
@@ -322,7 +322,7 @@ def CSL_GetFabDsdOp : CSL_Op<"get_fab_dsd", []> {
     The color is referenced by symbol name (FlatSymbolRefAttr) — it must
     resolve to a `csl.color` op in the enclosing `csl.layout` body.
 
-    Synthesized by `--csl-lower-stream-data` from `csl.stream.put`/`get`.
+    Synthesized by `--csl-lower-dataflow-data` from `csl.dataflow.put`/`get`.
 
     ```mlir
     %n = arith.constant 128 : index
@@ -566,22 +566,22 @@ def CSL_HostOp : CSL_Op<"host", [
 }
 
 //===----------------------------------------------------------------------===//
-// csl.stream.put — Send a buffer through a declared stream
+// csl.dataflow.put — Send a buffer through a declared stream
 //===----------------------------------------------------------------------===//
 
-def CSL_StreamPutOp : CSL_Op<"stream.put", []> {
+def CSL_DataflowPutOp : CSL_Op<"dataflow.put", []> {
   let summary = "Send a memref buffer through an inter-PE stream";
   let description = [{
     Sends `extent` elements from `source` through the named stream. The
-    stream symbol must resolve to a `csl_layout.stream` whose `from` coord
+    stream symbol must resolve to a `csl_layout.dataflow` whose `from` coord
     matches the parent program's placement.
 
-    Sync-looking at the user level; `--csl-lower-stream-data` expands this
+    Sync-looking at the user level; `--csl-lower-dataflow-data` expands this
     to fabric DSD + async builtin + completion task.
 
     ```mlir
     %n = arith.constant 128 : index
-    csl.stream.put @send_ch source(%buf) extent(%n : index)
+    csl.dataflow.put @send_ch source(%buf) extent(%n : index)
                    : memref<128xf32>
     ```
   }];
@@ -599,22 +599,22 @@ def CSL_StreamPutOp : CSL_Op<"stream.put", []> {
 }
 
 //===----------------------------------------------------------------------===//
-// csl.stream.get — Receive a buffer through a declared stream
+// csl.dataflow.get — Receive a buffer through a declared stream
 //===----------------------------------------------------------------------===//
 
-def CSL_StreamGetOp : CSL_Op<"stream.get", []> {
+def CSL_DataflowGetOp : CSL_Op<"dataflow.get", []> {
   let summary = "Receive into a memref buffer through an inter-PE stream";
   let description = [{
     Receives `extent` elements through the named stream into `target`. The
-    stream symbol must resolve to a `csl_layout.stream` whose `to` coord
+    stream symbol must resolve to a `csl_layout.dataflow` whose `to` coord
     matches the parent program's placement.
 
-    Sync-looking at the user level; `--csl-lower-stream-data` expands this
+    Sync-looking at the user level; `--csl-lower-dataflow-data` expands this
     to fabric DSD + async builtin + completion task.
 
     ```mlir
     %n = arith.constant 128 : index
-    csl.stream.get @send_ch target(%buf) extent(%n : index)
+    csl.dataflow.get @send_ch target(%buf) extent(%n : index)
                    : memref<128xf32>
     ```
   }];

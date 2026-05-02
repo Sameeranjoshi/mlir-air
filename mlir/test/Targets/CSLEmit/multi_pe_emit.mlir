@@ -1,5 +1,5 @@
 // RUN: rm -rf %t && mkdir -p %t
-// RUN: air-opt %s -csl-infer-exports --csl-streams-to-csl \
+// RUN: air-opt %s -csl-infer-exports --csl-dataflow-to-csl \
 // RUN:   | air-translate --emit-csl --output-dir=%t
 // RUN: FileCheck --check-prefix=LAYOUT  %s < %t/w/layout.csl
 // RUN: FileCheck --check-prefix=LEFT    %s < %t/w/left.csl
@@ -50,7 +50,7 @@ csl.wafer @w {arch = "wse3"} {
     %buf = csl.var @buf : memref<32xf32>
     csl.func @c {
       %n = arith.constant 32 : index
-      csl.stream.put @ch source(%buf) extent(%n : index) : memref<32xf32>
+      csl.dataflow.put @ch source(%buf) extent(%n : index) : memref<32xf32>
       csl.return
     }
     csl.export @buf {alias = "buf"}
@@ -59,13 +59,13 @@ csl.wafer @w {arch = "wse3"} {
     %buf = csl.var @buf : memref<32xf32>
     csl.func @c {
       %n = arith.constant 32 : index
-      csl.stream.get @ch target(%buf) extent(%n : index) : memref<32xf32>
+      csl.dataflow.get @ch target(%buf) extent(%n : index) : memref<32xf32>
       csl.return
     }
     csl.export @buf {alias = "buf"}
   }
   csl.layout {width = 2 : i64, height = 1 : i64} @layout {
-    csl_layout.stream @ch from(0, 0) to(1, 0)
+    csl_layout.dataflow @ch from(0, 0) to(1, 0)
     csl_layout.place @left  at (0, 0)
     csl_layout.place @right at (1, 0)
   }

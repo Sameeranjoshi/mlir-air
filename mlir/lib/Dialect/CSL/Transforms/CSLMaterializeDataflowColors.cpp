@@ -1,20 +1,20 @@
-//===- CSLMaterializeStreamColors.cpp -------------------------*- C++ -*-===//
+//===- CSLMaterializeDataflowColors.cpp -------------------------*- C++ -*-===//
 //
 // Part of the air-to-csl project.
 // SPDX-License-Identifier: MIT
 //
 //===----------------------------------------------------------------------===//
 //
-// Pass 1 of csl-streams-to-csl pipeline.
-// Pre:  every csl_layout.stream has no `color` attr.
-// Post: every csl_layout.stream has {color = @<sym>}; matching csl.color
+// Pass 1 of csl-dataflow-to-csl pipeline.
+// Pre:  every csl_layout.dataflow has no `color` attr.
+// Post: every csl_layout.dataflow has {color = @<sym>}; matching csl.color
 //       @<sym> exists in same csl.layout body (no id yet).
 //
 // Naming: each stream @S gets a color symbol named "@S_color".
 //
 //===----------------------------------------------------------------------===//
 
-#include "air/Dialect/CSL/Transforms/CSLMaterializeStreamColorsPass.h"
+#include "air/Dialect/CSL/Transforms/CSLMaterializeDataflowColorsPass.h"
 #include "air/Dialect/CSL/CSLLayoutOps.h"
 #include "air/Dialect/CSL/CSLOps.h"
 
@@ -28,14 +28,14 @@ using namespace mlir;
 
 namespace {
 
-class CSLMaterializeStreamColorsPass
-    : public PassWrapper<CSLMaterializeStreamColorsPass, OperationPass<>> {
+class CSLMaterializeDataflowColorsPass
+    : public PassWrapper<CSLMaterializeDataflowColorsPass, OperationPass<>> {
 public:
   StringRef getArgument() const final {
-    return "csl-materialize-stream-colors";
+    return "csl-materialize-dataflow-colors";
   }
   StringRef getDescription() const final {
-    return "Pass 1: synthesize csl.color symbols for csl_layout.stream ops";
+    return "Pass 1: synthesize csl.color symbols for csl_layout.dataflow ops";
   }
   void getDependentDialects(::mlir::DialectRegistry &registry) const override {
     registry.insert<::xilinx::csl::CSLDialect,
@@ -46,20 +46,20 @@ public:
 
 } // namespace
 
-void CSLMaterializeStreamColorsPass::runOnOperation() {
+void CSLMaterializeDataflowColorsPass::runOnOperation() {
   Operation *op = getOperation();
   op->walk([&](::xilinx::csl::LayoutOp layout) {
     Block &body = layout.getBody().front();
 
-    // Snapshot the stream ops before mutating siblings.
-    SmallVector<::xilinx::csl_layout::StreamOp> streams;
+    // Snapshot the dataflow ops before mutating siblings.
+    SmallVector<::xilinx::csl_layout::DataflowOp> dataflows;
     for (Operation &nested : body) {
-      if (auto s = dyn_cast<::xilinx::csl_layout::StreamOp>(&nested))
-        streams.push_back(s);
+      if (auto s = dyn_cast<::xilinx::csl_layout::DataflowOp>(&nested))
+        dataflows.push_back(s);
     }
 
     OpBuilder builder(&body, body.begin());
-    for (auto stream : streams) {
+    for (auto stream : dataflows) {
       if (stream.getColorAttr())
         continue; // idempotent
 
@@ -86,6 +86,6 @@ void CSLMaterializeStreamColorsPass::runOnOperation() {
   });
 }
 
-std::unique_ptr<Pass> xilinx::air::createCSLMaterializeStreamColorsPass() {
-  return std::make_unique<CSLMaterializeStreamColorsPass>();
+std::unique_ptr<Pass> xilinx::air::createCSLMaterializeDataflowColorsPass() {
+  return std::make_unique<CSLMaterializeDataflowColorsPass>();
 }

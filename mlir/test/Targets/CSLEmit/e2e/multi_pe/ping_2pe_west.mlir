@@ -1,7 +1,7 @@
 // REQUIRES: cerebras-sdk
 //
 // RUN: rm -rf %t && mkdir -p %t
-// RUN: air-opt --csl-streams-to-csl %s | air-translate --emit-csl --output-dir=%t
+// RUN: air-opt --csl-dataflow-to-csl %s | air-translate --emit-csl --output-dir=%t
 // RUN: cd %t/ping_2pe_west && bash commands_wse3.sh 2>&1 | FileCheck %s
 //
 // 2-PE westward variant of ping_2pe:
@@ -18,7 +18,7 @@ csl.wafer @ping_2pe_west {arch = "wse3"} {
     %buf = csl.var @buf : memref<128xf32>
     csl.func @compute {
       %n = arith.constant 128 : index
-      csl.stream.put @send_ch source(%buf) extent(%n : index) : memref<128xf32>
+      csl.dataflow.put @send_ch source(%buf) extent(%n : index) : memref<128xf32>
       csl.return
     }
     csl.export @buf {alias = "buf_right", direction = "in"}
@@ -28,14 +28,14 @@ csl.wafer @ping_2pe_west {arch = "wse3"} {
     %buf = csl.var @buf : memref<128xf32>
     csl.func @compute {
       %n = arith.constant 128 : index
-      csl.stream.get @send_ch target(%buf) extent(%n : index) : memref<128xf32>
+      csl.dataflow.get @send_ch target(%buf) extent(%n : index) : memref<128xf32>
       csl.return
     }
     csl.export @buf {alias = "buf_left", direction = "out"}
     csl.export @compute {kind = "func", direction = "internal"}
   }
   csl.layout {width = 2 : i64, height = 1 : i64} @layout {
-    csl_layout.stream @send_ch from(1, 0) to(0, 0)
+    csl_layout.dataflow @send_ch from(1, 0) to(0, 0)
     csl_layout.place  @right_pe at (1, 0)
     csl_layout.place  @left_pe  at (0, 0)
     csl_layout.export "buf_right" from @right_pe::@buf

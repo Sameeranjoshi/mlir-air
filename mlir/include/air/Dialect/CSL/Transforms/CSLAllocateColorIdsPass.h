@@ -7,7 +7,7 @@
 //
 // Declares the -csl-allocate-color-ids pass factory.
 //
-// Pass 2 of csl-streams-to-csl pipeline.
+// Pass 2 of csl-dataflow-to-csl pipeline.
 // Pre:  every csl.color exists (with or without `id`).
 // Post: every csl.color has an `id` attribute.
 //
