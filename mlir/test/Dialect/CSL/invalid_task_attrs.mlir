@@ -28,7 +28,7 @@ csl.wafer @w2 {arch = "wse3"} {
 csl.wafer @w3 {arch = "wse3"} {
   csl.program @p {
     csl.func @c { csl.return }
-    // CHECK: error: 'csl.task' op trigger_kind must be "local_task_id" or "color" (got "wavelet")
+    // CHECK: error: 'csl.task' op trigger_kind must be "local_task_id", "color", or "data_task" (got "wavelet")
     csl.task @t attributes {trigger_kind = "wavelet"} { csl.return }
   }
   csl.layout {width = 1 : i64, height = 1 : i64} @layout { csl_layout.place @p at (0,0) }
