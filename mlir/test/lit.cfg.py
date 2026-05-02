@@ -96,3 +96,8 @@ def _cslc_available():
 
 if _cslc_available():
     config.available_features.add("cerebras-sdk")
+
+# Limit how many Cerebras SDK simulator tests run concurrently; running too
+# many parallel cslc/cs_python invocations overwhelms the Singularity-hosted
+# simulator and causes intermittent failures.
+lit_config.parallelism_groups["cerebras-sim"] = 4
