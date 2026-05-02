@@ -23,6 +23,7 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Operation.h"
+#include "mlir/IR/SymbolTable.h"
 #include "mlir/Tools/mlir-translate/Translation.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/Support/raw_ostream.h"
@@ -37,6 +38,28 @@ namespace xilinx {
 namespace csl {
 
 namespace {
+
+// Resolve a symbol reference to its CSL color name. The `symRef` may be:
+//   - A direct reference to a `csl.color` op → return sym_name as-is.
+//   - A reference to a `csl_layout.dataflow` op → follow its `color` attr.
+// Returns empty string on failure.
+static std::string
+resolveColorName(StringRef symRef, xilinx::csl::LayoutOp layout) {
+  if (!layout)
+    return "";
+  auto *sym = mlir::SymbolTable::lookupSymbolIn(layout, symRef);
+  if (!sym)
+    return "";
+  // Direct color reference.
+  if (auto color = mlir::dyn_cast<xilinx::csl::ColorOp>(sym))
+    return color.getSymName().str();
+  // Dataflow stream reference — follow to its color attr.
+  if (auto df = mlir::dyn_cast<xilinx::csl_layout::DataflowOp>(sym)) {
+    if (auto colorAttr = df.getColorAttr())
+      return colorAttr.getValue().str();
+  }
+  return "";
+}
 
 class ProgramEmitter {
 public:
@@ -122,6 +145,10 @@ LogicalResult ProgramEmitter::emitProgram(xilinx::csl::ProgramOp prog) {
     unsigned outQId = 2; // 0 and 1 reserved by memcpy internals on WSE-3
     unsigned inQId = 2;
     bool anyQ = false;
+
+    // Collect queue names already declared to avoid duplicates.
+    llvm::SmallVector<std::string, 4> declaredQueues;
+
     prog.walk([&](cslns::GetFabDsdOp fab) {
       StringRef dirStr =
           ::xilinx::csl::stringifyFabDsdDirection(fab.getDirection());
@@ -137,8 +164,44 @@ LogicalResult ProgramEmitter::emitProgram(xilinx::csl::ProgramOp prog) {
            << "@get_input_queue(" << inQId++ << ");\n";
       }
       queueColorPairs.emplace_back(queueName, colorName);
+      declaredQueues.push_back(queueName);
       anyQ = true;
     });
+
+    // Data tasks: declare an input queue for each data task's color (WSE-3
+    // requires @get_data_task_id to take an input_queue, not a color).
+    // The task's `color` attribute may reference either the color directly
+    // (@ch01_color) or the dataflow stream (@ch01). Both are resolved via
+    // resolveColorName().
+    {
+      xilinx::csl::LayoutOp layout;
+      if (auto waferOp = prog->getParentOfType<cslns::WaferOp>()) {
+        for (Operation &child : waferOp.getBody().front())
+          if (auto l = dyn_cast<cslns::LayoutOp>(&child)) { layout = l; break; }
+      }
+      for (Operation &op : prog.getBody().front()) {
+        auto taskOp = dyn_cast<cslns::TaskOp>(&op);
+        if (!taskOp) continue;
+        if (taskOp.getTriggerKind() != "data_task") continue;
+        auto colorAttr = taskOp.getColorAttr();
+        if (!colorAttr) continue;
+        std::string colorName = resolveColorName(colorAttr.getValue(), layout);
+        if (colorName.empty())
+          colorName = colorAttr.getValue().str(); // fallback: use as-is
+        std::string queueName = colorName + "_in_q";
+        // Skip if already declared (e.g., a get_fab_dsd on same color).
+        bool alreadyDeclared = false;
+        for (auto &q : declaredQueues)
+          if (q == queueName) { alreadyDeclared = true; break; }
+        if (alreadyDeclared) continue;
+        os << "const " << queueName << ": input_queue = "
+           << "@get_input_queue(" << inQId++ << ");\n";
+        queueColorPairs.emplace_back(queueName, colorName);
+        declaredQueues.push_back(queueName);
+        anyQ = true;
+      }
+    }
+
     if (anyQ)
       os << "\n";
   }
@@ -317,11 +380,14 @@ LogicalResult ProgramEmitter::emitProgram(xilinx::csl::ProgramOp prog) {
     os << "}\n\n";
   }
 
-  // 3.5 Emit csl.task ops. Two trigger forms:
+  // 3.5 Emit csl.task ops. Three trigger forms:
   //   - "local_task_id" + id : emit a `<sym>_id: local_task_id` const, the
-  //     task body, then a comptime block binding the task to the id.
-  //   - "color"             : emit just the task body + a comptime block
-  //     binding the task to the named color.
+  //     task body (no args), then a comptime block binding via @bind_local_task.
+  //   - "color"             : emit just the task body (no args) + a comptime
+  //     block binding via @bind_local_task with the named color.
+  //   - "data_task" + color : emit a `<sym>_id: data_task_id` const (from
+  //     @get_data_task_id on the input queue), the task body WITH block args
+  //     (wavelet payload), then a comptime block binding via @bind_data_task.
   for (Operation &op : prog.getBody().front()) {
     auto taskOp = dyn_cast<cslns::TaskOp>(&op);
     if (!taskOp) continue;
@@ -339,16 +405,53 @@ LogicalResult ProgramEmitter::emitProgram(xilinx::csl::ProgramOp prog) {
       }
       os << "const " << sym << "_id: local_task_id = @get_local_task_id("
          << idAttr.getInt() << ");\n";
+    } else if (triggerKind == "data_task") {
+      auto colorAttr = taskOp.getColorAttr();
+      if (!colorAttr) {
+        taskOp.emitOpError(
+            "CSLEmit: csl.task with trigger_kind \"data_task\" "
+            "requires a `color` symbol attribute");
+        return failure();
+      }
+      // Resolve color name through stream lookup (color attr may reference
+      // either the color directly or the dataflow stream name).
+      xilinx::csl::LayoutOp layout;
+      if (auto waferOp = prog->getParentOfType<cslns::WaferOp>()) {
+        for (Operation &child : waferOp.getBody().front())
+          if (auto l = dyn_cast<cslns::LayoutOp>(&child)) { layout = l; break; }
+      }
+      std::string resolvedColor =
+          resolveColorName(colorAttr.getValue(), layout);
+      if (resolvedColor.empty())
+        resolvedColor = colorAttr.getValue().str();
+      std::string qName = resolvedColor + "_in_q";
+      os << "const " << sym << "_id: data_task_id = @get_data_task_id("
+         << qName << ");\n";
     } else if (triggerKind != "color") {
       taskOp.emitOpError("CSLEmit: csl.task has unknown trigger_kind '")
           << triggerKind << "'";
       return failure();
     }
 
-    os << "task " << sym << "() void {\n";
+    // Build nameMap for the body, pre-populating block argument names so
+    // that uses of the wavelet payload resolve correctly.
     llvm::DenseMap<Value, std::string> nameMap;
     for (auto &kv : outerMap)
       nameMap[kv.first] = kv.second;
+
+    // Emit task signature with optional block args (data_task gets payload arg).
+    os << "task " << sym << "(";
+    if (!taskOp.getBody().empty()) {
+      Block &taskEntryBlock = taskOp.getBody().front();
+      for (auto it : llvm::enumerate(taskEntryBlock.getArguments())) {
+        if (it.index()) os << ", ";
+        std::string argName = "a" + std::to_string(it.index());
+        nameMap[it.value()] = argName;
+        os << argName << ": " << cslTypeName(it.value().getType());
+      }
+    }
+    os << ") void {\n";
+
     unsigned tempCount = 0;
     if (failed(emitFuncBody(taskOp.getBody(), os, /*indentLevel=*/1,
                             outerMap, nameMap, tempCount)))
@@ -379,7 +482,11 @@ LogicalResult ProgramEmitter::emitProgram(xilinx::csl::ProgramOp prog) {
     if (triggerKind == "local_task_id") {
       os << "comptime { @bind_local_task(" << sym << ", " << sym
          << "_id); }\n\n";
+    } else if (triggerKind == "data_task") {
+      os << "comptime { @bind_data_task(" << sym << ", " << sym
+         << "_id); }\n\n";
     } else {
+      // "color" trigger
       auto colorAttr = taskOp.getColorAttr();
       if (!colorAttr) {
         taskOp.emitOpError(

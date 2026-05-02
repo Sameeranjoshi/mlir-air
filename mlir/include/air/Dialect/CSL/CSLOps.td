@@ -143,6 +143,14 @@ def CSL_TaskOp : CSL_Op<"task", [
       send/recv completion.
     - `trigger_kind = "color"`: must also set `color` (FlatSymbolRefAttr
       to a csl.color). The task fires when a wavelet arrives on that color.
+      Used for control tasks (no body arguments).
+
+    - `trigger_kind = "data_task"`: must also set `color` (FlatSymbolRefAttr
+      to a csl.color). The task fires when a wavelet arrives on that color
+      and the wavelet payload is delivered as the task body's first block
+      argument. The body must have at least one block argument (the f32
+      payload). On WSE-3 the task ID comes from `@get_data_task_id(input_queue)`.
+      Use `csl.dataflow.send_wavelet` inside the body to forward wavelets.
 
     The emitter generates the corresponding CSL triplet (id const, task
     body, comptime bind) automatically.
@@ -153,6 +161,11 @@ def CSL_TaskOp : CSL_Op<"task", [
       csl.return
     }
     csl.task @recv attributes {trigger_kind = "color", color = @send_color} {
+      csl.return
+    }
+    csl.task @relay attributes {trigger_kind = "data_task", color = @ch01_color} {
+    ^bb0(%val: f32):
+      csl.dataflow.send_wavelet @ch12 value(%val) : f32
       csl.return
     }
     ```
@@ -628,6 +641,38 @@ def CSL_DataflowGetOp : CSL_Op<"dataflow.get", []> {
       "$stream `target` `(` $target `)` `extent` `(` $extent `:` "
       "type($extent) `)` `:` type($target) attr-dict";
   let hasVerifier = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// csl.dataflow.send_wavelet — Forward a single scalar value per-wavelet
+//===----------------------------------------------------------------------===//
+
+def CSL_DataflowSendWaveletOp : CSL_Op<"dataflow.send_wavelet", []> {
+  let summary = "Send a single wavelet on a dataflow channel (used inside data tasks)";
+  let description = [{
+    Sends a single scalar value as one wavelet on the named dataflow channel.
+    Must be used inside a `csl.task` with `trigger_kind = "data_task"`.
+    The stream symbol must resolve to a `csl_layout.dataflow` op.
+
+    Lowered by `--csl-lower-dataflow-data` to a 1-element fabout DSD and a
+    synchronous `@fmovs` call (no async, no activate task).
+
+    ```mlir
+    csl.task @relay attributes {trigger_kind = "data_task", color = @ch01_color} {
+    ^bb0(%val: f32):
+      %delta = arith.constant -100.0 : f32
+      %nv = arith.addf %val, %delta : f32
+      csl.dataflow.send_wavelet @ch12 value(%nv) : f32
+      csl.return
+    }
+    ```
+  }];
+  let arguments = (ins
+    FlatSymbolRefAttr:$stream,
+    AnyType:$value
+  );
+  let assemblyFormat =
+      "$stream `value` `(` $value `)` `:` type($value) attr-dict";
 }
 
 #endif // CSL_OPS

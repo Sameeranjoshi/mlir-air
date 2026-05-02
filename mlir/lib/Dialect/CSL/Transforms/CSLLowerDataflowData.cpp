@@ -472,8 +472,123 @@ CSLLowerDataflowDataPass::expandRelayProgram(
   return success();
 }
 
+// Resolve a symbol reference to the actual color symbol name in the layout.
+// The symRef may reference either:
+//   - a csl.color directly (return sym_name as-is), or
+//   - a csl_layout.dataflow whose `color` attr points to the actual color.
+// Returns empty string on failure.
+static std::string
+resolveColorNameInLayout(StringRef symRef,
+                         ::xilinx::csl::LayoutOp layout) {
+  if (!layout)
+    return "";
+  auto *sym = mlir::SymbolTable::lookupSymbolIn(layout, symRef);
+  if (!sym)
+    return "";
+  if (auto color = mlir::dyn_cast<::xilinx::csl::ColorOp>(sym))
+    return color.getSymName().str();
+  if (auto df = mlir::dyn_cast<::xilinx::csl_layout::DataflowOp>(sym)) {
+    if (auto colorAttr = df.getColorAttr())
+      return colorAttr.getValue().str();
+  }
+  return "";
+}
+
+// Update data task `color` attributes that reference a stream name to the
+// resolved color name. Must be called BEFORE dataflow ops are erased.
+static void updateDataTaskColors(Operation *root) {
+  root->walk([&](::xilinx::csl::TaskOp taskOp) {
+    if (taskOp.getTriggerKind() != "data_task")
+      return;
+    auto colorAttr = taskOp.getColorAttr();
+    if (!colorAttr)
+      return;
+    auto layout = findEnclosingLayout(taskOp);
+    if (!layout)
+      return;
+    std::string resolved =
+        resolveColorNameInLayout(colorAttr.getValue(), layout);
+    if (!resolved.empty() && resolved != colorAttr.getValue().str()) {
+      taskOp.setColorAttr(mlir::FlatSymbolRefAttr::get(
+          taskOp.getContext(), resolved));
+    }
+  });
+}
+
+// Expand csl.dataflow.send_wavelet to a 1-element fabout DSD + sync @fmovs.
+// The color is resolved from the dataflow stream symbol in the enclosing layout.
+// Unlike put/get expansions, there is NO completion task and NO async — the
+// wavelet is sent synchronously from within the data task body.
+static LogicalResult
+expandSendWavelet(::xilinx::csl::DataflowSendWaveletOp sendOp) {
+  auto layout = findEnclosingLayout(sendOp);
+  if (!layout) {
+    sendOp.emitOpError("could not find enclosing csl.layout");
+    return failure();
+  }
+  auto stream = dyn_cast_or_null<::xilinx::csl_layout::DataflowOp>(
+      SymbolTable::lookupSymbolIn(layout, sendOp.getStreamAttr().getAttr()));
+  if (!stream) {
+    sendOp.emitOpError("could not resolve stream '@")
+        << sendOp.getStream() << "'";
+    return failure();
+  }
+  auto colorAttr = stream.getColorAttr();
+  if (!colorAttr) {
+    sendOp.emitOpError(
+        "stream has no color (run --csl-materialize-dataflow-colors first)");
+    return failure();
+  }
+
+  OpBuilder b(sendOp);
+  Location loc = sendOp.getLoc();
+  auto dsdTy = ::xilinx::csl::DsdType::get(b.getContext());
+
+  // 1-element extent constant.
+  auto c1 = b.create<arith::ConstantIndexOp>(loc, 1);
+
+  // fabout DSD with extent=1.
+  auto outDsd = b.create<::xilinx::csl::GetFabDsdOp>(
+      loc, dsdTy,
+      /*direction=*/::xilinx::csl::FabDsdDirection::fabout,
+      /*color=*/colorAttr.getValue(),
+      /*extent=*/c1.getResult());
+
+  // Synchronous @fmovs(outDsd, value) — no async, no activate.
+  b.create<::xilinx::csl::BuiltinCallOp>(
+      loc,
+      /*results=*/TypeRange{},
+      /*callee=*/b.getStringAttr("fmovs"),
+      /*module=*/Value{},
+      /*args=*/ValueRange{outDsd.getResult(), sendOp.getValue()},
+      /*async=*/UnitAttr{},
+      /*activate=*/FlatSymbolRefAttr{});
+
+  sendOp.erase();
+  return success();
+}
+
 void CSLLowerDataflowDataPass::runOnOperation() {
   bool failed = false;
+
+  // Resolve data task `color` attributes that may reference a stream name
+  // (e.g., @ch01) to the actual color name (e.g., @ch01_color). Must be done
+  // before csl_layout.dataflow ops are erased at the end of this pass.
+  updateDataTaskColors(getOperation());
+
+  // Expand csl.dataflow.send_wavelet ops first (inside data task bodies).
+  // These are independent of the put/get relay detection below.
+  SmallVector<::xilinx::csl::DataflowSendWaveletOp> sendWavelets;
+  getOperation()->walk([&](::xilinx::csl::DataflowSendWaveletOp op) {
+    sendWavelets.push_back(op);
+  });
+  for (auto op : sendWavelets)
+    if (::mlir::failed(expandSendWavelet(op)))
+      failed = true;
+  if (failed) {
+    signalPassFailure();
+    return;
+  }
 
   // Per-program task-id counter (restarts at 8 per program).
   getOperation()->walk([&](::xilinx::csl::ProgramOp program) {

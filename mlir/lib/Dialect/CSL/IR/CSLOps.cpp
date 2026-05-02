@@ -289,13 +289,34 @@ mlir::LogicalResult xilinx::csl::TaskOp::verify() {
     if (hasColor)
       return emitOpError(
           "trigger_kind = \"local_task_id\" must not set `color`");
+    // local_task_id tasks fire with no wavelet payload — no block args allowed.
+    if (!getBody().empty() && !getBody().front().getArguments().empty())
+      return emitOpError(
+          "trigger_kind = \"local_task_id\" body must not have block arguments");
   } else if (kind == "color") {
     if (!hasColor)
       return emitOpError("trigger_kind = \"color\" requires `color` attribute");
     if (hasId)
       return emitOpError("trigger_kind = \"color\" must not set `id`");
+    // color tasks fire with no wavelet payload — no block args allowed.
+    if (!getBody().empty() && !getBody().front().getArguments().empty())
+      return emitOpError(
+          "trigger_kind = \"color\" body must not have block arguments");
+  } else if (kind == "data_task") {
+    if (!hasColor)
+      return emitOpError(
+          "trigger_kind = \"data_task\" requires `color` attribute");
+    if (hasId)
+      return emitOpError("trigger_kind = \"data_task\" must not set `id`");
+    // data_task fires with wavelet payload — body must have at least one arg.
+    if (getBody().empty() || getBody().front().getArguments().empty())
+      return emitOpError(
+          "trigger_kind = \"data_task\" body must have at least one block "
+          "argument (the wavelet payload)");
   } else {
-    return emitOpError("trigger_kind must be \"local_task_id\" or \"color\"")
+    return emitOpError(
+               "trigger_kind must be \"local_task_id\", \"color\", or "
+               "\"data_task\"")
            << " (got \"" << kind << "\")";
   }
   return mlir::success();
