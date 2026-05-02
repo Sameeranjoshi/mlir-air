@@ -353,6 +353,27 @@ LogicalResult ProgramEmitter::emitProgram(xilinx::csl::ProgramOp prog) {
     if (failed(emitFuncBody(taskOp.getBody(), os, /*indentLevel=*/1,
                             outerMap, nameMap, tempCount)))
       return failure();
+    // Multi-op barrier: when the task has barrier_total attribute, emit a
+    // countdown counter decrement + conditional unblock instead of the bare
+    // unblock_cmd_stream already emitted by emitFuncBody (which the pass
+    // leaves empty for multi-op tasks).
+    if (auto barrierAttr =
+            taskOp->getAttrOfType<IntegerAttr>("barrier_total")) {
+      std::string t0 = "t" + std::to_string(tempCount++);
+      std::string t1 = "t" + std::to_string(tempCount++);
+      detail::indent(os, 1);
+      os << "var " << t0 << ": i16 = _barrier_ctr[0];\n";
+      detail::indent(os, 1);
+      os << "var " << t1 << ": i16 = " << t0 << " - 1;\n";
+      detail::indent(os, 1);
+      os << "_barrier_ctr[0] = " << t1 << ";\n";
+      detail::indent(os, 1);
+      os << "if (" << t1 << " == 0) {\n";
+      detail::indent(os, 2);
+      os << "sys_mod.unblock_cmd_stream();\n";
+      detail::indent(os, 1);
+      os << "}\n";
+    }
     os << "}\n";
 
     if (triggerKind == "local_task_id") {

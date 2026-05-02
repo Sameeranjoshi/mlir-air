@@ -14,12 +14,22 @@
 //
 // Per-program task-id counter starts at 8 (tutorial idiom).
 //
+// Multi-op barrier: when a program has N > 1 stream ops (puts + gets), each
+// completion task gets a `barrier_total = N : i32` attribute and does NOT
+// call unblock_cmd_stream directly. Instead the emitter emits a countdown
+// counter that calls unblock_cmd_stream only when the last transfer
+// completes. The counter itself is a `csl.var @_barrier_ctr : memref<1xi16>`
+// inserted at program scope, and `csl.func @compute` resets it to N at the
+// start of each invocation.
+//
 //===----------------------------------------------------------------------===//
 
 #include "air/Dialect/CSL/Transforms/CSLLowerDataflowDataPass.h"
 #include "air/Dialect/CSL/CSLLayoutOps.h"
 #include "air/Dialect/CSL/CSLOps.h"
 
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/SymbolTable.h"
 #include "mlir/Pass/Pass.h"
@@ -52,20 +62,31 @@ public:
   }
   void getDependentDialects(::mlir::DialectRegistry &registry) const override {
     registry.insert<::xilinx::csl::CSLDialect,
-                    ::xilinx::csl_layout::CSLLayoutDialect>();
+                    ::xilinx::csl_layout::CSLLayoutDialect,
+                    ::mlir::arith::ArithDialect,
+                    ::mlir::memref::MemRefDialect>();
   }
   void runOnOperation() override;
 
 private:
-  LogicalResult expandPut(::xilinx::csl::DataflowPutOp put, int32_t &nextTaskId);
-  LogicalResult expandGet(::xilinx::csl::DataflowGetOp get, int32_t &nextTaskId);
+  // barrierCtr is valid (non-null) only when barrierCount > 1.
+  LogicalResult expandPut(::xilinx::csl::DataflowPutOp put,
+                          int32_t &nextTaskId,
+                          Value barrierCtr,
+                          int32_t barrierCount);
+  LogicalResult expandGet(::xilinx::csl::DataflowGetOp get,
+                          int32_t &nextTaskId,
+                          Value barrierCtr,
+                          int32_t barrierCount);
 };
 
 } // namespace
 
 LogicalResult
 CSLLowerDataflowDataPass::expandPut(::xilinx::csl::DataflowPutOp put,
-                                  int32_t &nextTaskId) {
+                                    int32_t &nextTaskId,
+                                    Value barrierCtr,
+                                    int32_t barrierCount) {
   auto layout = findEnclosingLayout(put);
   if (!layout) {
     put.emitOpError("could not find enclosing csl.layout");
@@ -111,18 +132,30 @@ CSLLowerDataflowDataPass::expandPut(::xilinx::csl::DataflowPutOp put,
       /*trigger_kind=*/pb.getStringAttr("local_task_id"),
       /*id=*/pb.getI32IntegerAttr(id),
       /*color=*/FlatSymbolRefAttr());
+
   // Build the task body.
   Block &taskBody = task.getBody().emplaceBlock();
   OpBuilder bb(&taskBody, taskBody.begin());
-  bb.create<::xilinx::csl::BuiltinCallOp>(
-      loc,
-      /*results=*/TypeRange{},
-      /*callee=*/bb.getStringAttr("unblock_cmd_stream"),
-      /*module=*/Value{},
-      /*args=*/ValueRange{},
-      /*async=*/UnitAttr{},
-      /*activate=*/FlatSymbolRefAttr{});
+
+  if (barrierCount <= 1) {
+    // Single-op case: call unblock_cmd_stream directly.
+    bb.create<::xilinx::csl::BuiltinCallOp>(
+        loc,
+        /*results=*/TypeRange{},
+        /*callee=*/bb.getStringAttr("unblock_cmd_stream"),
+        /*module=*/Value{},
+        /*args=*/ValueRange{},
+        /*async=*/UnitAttr{},
+        /*activate=*/FlatSymbolRefAttr{});
+  }
+  // Multi-op case: task body is empty (just csl.return); emitter adds
+  // the countdown logic via the barrier_total attribute.
   bb.create<::xilinx::csl::ReturnOp>(loc);
+
+  if (barrierCount > 1) {
+    task->setAttr("barrier_total",
+                  pb.getI32IntegerAttr(barrierCount));
+  }
 
   // Replace the put with the async builtin call.
   auto activateRef = FlatSymbolRefAttr::get(b.getContext(), taskName);
@@ -141,7 +174,9 @@ CSLLowerDataflowDataPass::expandPut(::xilinx::csl::DataflowPutOp put,
 
 LogicalResult
 CSLLowerDataflowDataPass::expandGet(::xilinx::csl::DataflowGetOp get,
-                                  int32_t &nextTaskId) {
+                                    int32_t &nextTaskId,
+                                    Value barrierCtr,
+                                    int32_t barrierCount) {
   auto layout = findEnclosingLayout(get);
   if (!layout) {
     get.emitOpError("could not find enclosing csl.layout");
@@ -184,12 +219,21 @@ CSLLowerDataflowDataPass::expandGet(::xilinx::csl::DataflowGetOp get,
       /*trigger_kind=*/pb.getStringAttr("local_task_id"),
       /*id=*/pb.getI32IntegerAttr(id),
       /*color=*/FlatSymbolRefAttr());
+
   Block &taskBody = task.getBody().emplaceBlock();
   OpBuilder bb(&taskBody, taskBody.begin());
-  bb.create<::xilinx::csl::BuiltinCallOp>(
-      loc, TypeRange{}, bb.getStringAttr("unblock_cmd_stream"), Value{},
-      ValueRange{}, UnitAttr{}, FlatSymbolRefAttr{});
+
+  if (barrierCount <= 1) {
+    bb.create<::xilinx::csl::BuiltinCallOp>(
+        loc, TypeRange{}, bb.getStringAttr("unblock_cmd_stream"), Value{},
+        ValueRange{}, UnitAttr{}, FlatSymbolRefAttr{});
+  }
   bb.create<::xilinx::csl::ReturnOp>(loc);
+
+  if (barrierCount > 1) {
+    task->setAttr("barrier_total",
+                  pb.getI32IntegerAttr(barrierCount));
+  }
 
   // For get: target DSD is destination (first arg), in_dsd is source (second).
   auto activateRef = FlatSymbolRefAttr::get(b.getContext(), taskName);
@@ -208,6 +252,7 @@ void CSLLowerDataflowDataPass::runOnOperation() {
   // Per-program task-id counter (restarts at 8 per program).
   getOperation()->walk([&](::xilinx::csl::ProgramOp program) {
     int32_t nextTaskId = 8;
+
     // Snapshot put/get ops; mutating during walk is unsafe.
     SmallVector<::xilinx::csl::DataflowPutOp> puts;
     SmallVector<::xilinx::csl::DataflowGetOp> gets;
@@ -217,11 +262,44 @@ void CSLLowerDataflowDataPass::runOnOperation() {
       else if (auto g = dyn_cast<::xilinx::csl::DataflowGetOp>(op))
         gets.push_back(g);
     });
+
+    int32_t totalOps = static_cast<int32_t>(puts.size() + gets.size());
+
+    // Multi-op barrier: insert _barrier_ctr var + reset in compute().
+    Value barrierCtr;
+    if (totalOps > 1) {
+      Block &programBody = program.getBody().front();
+      Location loc = program.getLoc();
+
+      // Create csl.var @_barrier_ctr : memref<1xi16> at the START of the
+      // program body, before any existing ops.
+      OpBuilder pb(&programBody, programBody.begin());
+      auto i16Ty = pb.getIntegerType(16);
+      auto ctrTy = MemRefType::get({1}, i16Ty);
+      auto ctrVar = pb.create<::xilinx::csl::VarOp>(
+          loc, ctrTy, "_barrier_ctr");
+      barrierCtr = ctrVar.getResult();
+
+      // In csl.func @compute: insert counter reset at the VERY BEGINNING of
+      // the entry block. csl.func bodies CAN reference program-body SSA
+      // values (no IsolatedFromAbove), so %barrierCtr is in scope.
+      program.walk([&](::xilinx::csl::FuncOp func) {
+        if (func.getSymName() != "compute")
+          return;
+        Block &funcBody = func.getBody().front();
+        OpBuilder fb(&funcBody, funcBody.begin());
+        auto c0 = fb.create<arith::ConstantIndexOp>(loc, 0);
+        auto cN = fb.create<arith::ConstantIntOp>(loc, totalOps, 16);
+        fb.create<memref::StoreOp>(loc, cN.getResult(), barrierCtr,
+                                   ValueRange{c0.getResult()});
+      });
+    }
+
     for (auto p : puts)
-      if (::mlir::failed(expandPut(p, nextTaskId)))
+      if (::mlir::failed(expandPut(p, nextTaskId, barrierCtr, totalOps)))
         failed = true;
     for (auto g : gets)
-      if (::mlir::failed(expandGet(g, nextTaskId)))
+      if (::mlir::failed(expandGet(g, nextTaskId, barrierCtr, totalOps)))
         failed = true;
   });
 
