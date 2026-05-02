@@ -22,6 +22,13 @@
 // inserted at program scope, and `csl.func @compute` resets it to N at the
 // start of each invocation.
 //
+// Relay PE: when a program has exactly 1 get AND 1 put with middle ops
+// between them (scf.for etc.), this is a relay pattern. The pass generates:
+//   - In compute(): async GET fmovs that activates @_relay_N task
+//   - @_relay_N task: runs middle transform ops, then async PUT fmovs
+//     that activates @put_done_M task (no IsolatedFromAbove needed now)
+//   - @put_done_M task: calls unblock_cmd_stream
+//
 //===----------------------------------------------------------------------===//
 
 #include "air/Dialect/CSL/Transforms/CSLLowerDataflowDataPass.h"
@@ -31,6 +38,7 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/IR/Builders.h"
+#include "mlir/IR/IRMapping.h"
 #include "mlir/IR/SymbolTable.h"
 #include "mlir/Pass/Pass.h"
 
@@ -78,6 +86,15 @@ private:
                           int32_t &nextTaskId,
                           Value barrierCtr,
                           int32_t barrierCount);
+  // Relay-specific expansion: handles the get→transform→put chain.
+  // activateRef is the symbol that the GET fmovs will activate.
+  // When activateRef is non-null, it overrides the default get_done task name.
+  LogicalResult expandGetWithActivate(::xilinx::csl::DataflowGetOp get,
+                                      FlatSymbolRefAttr activateRef);
+  LogicalResult expandRelayProgram(::xilinx::csl::ProgramOp program,
+                                   SmallVector<::xilinx::csl::DataflowGetOp> &gets,
+                                   SmallVector<::xilinx::csl::DataflowPutOp> &puts,
+                                   int32_t &nextTaskId);
 };
 
 } // namespace
@@ -246,6 +263,215 @@ CSLLowerDataflowDataPass::expandGet(::xilinx::csl::DataflowGetOp get,
   return success();
 }
 
+// Expand a GET op with a custom activation symbol (for relay: activates the
+// relay task instead of a get_done task).
+LogicalResult
+CSLLowerDataflowDataPass::expandGetWithActivate(
+    ::xilinx::csl::DataflowGetOp get,
+    FlatSymbolRefAttr activateRef) {
+  auto layout = findEnclosingLayout(get);
+  if (!layout) {
+    get.emitOpError("could not find enclosing csl.layout");
+    return failure();
+  }
+  auto stream = dyn_cast_or_null<::xilinx::csl_layout::DataflowOp>(
+      SymbolTable::lookupSymbolIn(layout, get.getStreamAttr().getAttr()));
+  if (!stream) {
+    get.emitOpError("could not resolve stream '@") << get.getStream() << "'";
+    return failure();
+  }
+  auto colorAttr = stream.getColorAttr();
+  if (!colorAttr) {
+    get.emitOpError(
+        "stream has no color (run --csl-materialize-dataflow-colors first)");
+    return failure();
+  }
+
+  OpBuilder b(get);
+  Location loc = get.getLoc();
+  auto dsdTy = ::xilinx::csl::DsdType::get(b.getContext());
+  auto tgtDsd =
+      b.create<::xilinx::csl::GetMemDsdOp>(loc, dsdTy, get.getTarget());
+  auto inDsd = b.create<::xilinx::csl::GetFabDsdOp>(
+      loc, dsdTy,
+      /*direction=*/::xilinx::csl::FabDsdDirection::fabin,
+      /*color=*/colorAttr.getValue(),
+      /*extent=*/get.getExtent());
+
+  b.create<::xilinx::csl::BuiltinCallOp>(
+      loc, TypeRange{}, b.getStringAttr("fmovs"), Value{},
+      ValueRange{tgtDsd.getResult(), inDsd.getResult()},
+      UnitAttr::get(b.getContext()), activateRef);
+
+  get.erase();
+  return success();
+}
+
+// Relay expansion: exactly 1 get and 1 put with middle ops between them.
+// Structure generated:
+//   compute(): async GET fmovs → activates @_relay_N
+//   csl.task @_relay_N: cloned middle ops + async PUT fmovs → activates @_put_done_M
+//   csl.task @_put_done_M: unblock_cmd_stream
+LogicalResult
+CSLLowerDataflowDataPass::expandRelayProgram(
+    ::xilinx::csl::ProgramOp program,
+    SmallVector<::xilinx::csl::DataflowGetOp> &gets,
+    SmallVector<::xilinx::csl::DataflowPutOp> &puts,
+    int32_t &nextTaskId) {
+  assert(gets.size() == 1 && puts.size() == 1 &&
+         "expandRelayProgram: expected exactly 1 get and 1 put");
+
+  auto getOp = gets[0];
+  auto putOp = puts[0];
+  Location loc = program.getLoc();
+  MLIRContext *ctx = program.getContext();
+
+  // Allocate task IDs.
+  int32_t relayId = nextTaskId++;
+  int32_t putDoneId = nextTaskId++;
+  std::string relayName = "_relay_" + std::to_string(relayId - 8);
+
+  // Look up PUT stream name for naming the put_done task.
+  auto layout = findEnclosingLayout(putOp);
+  if (!layout) {
+    putOp.emitOpError("could not find enclosing csl.layout");
+    return failure();
+  }
+  auto putStream = dyn_cast_or_null<::xilinx::csl_layout::DataflowOp>(
+      SymbolTable::lookupSymbolIn(layout, putOp.getStreamAttr().getAttr()));
+  if (!putStream) {
+    putOp.emitOpError("could not resolve stream '@") << putOp.getStream() << "'";
+    return failure();
+  }
+  auto putColorAttr = putStream.getColorAttr();
+  if (!putColorAttr) {
+    putOp.emitOpError(
+        "stream has no color (run --csl-materialize-dataflow-colors first)");
+    return failure();
+  }
+  std::string putDoneName =
+      (putStream.getSymName() + "_put_done_" + Twine(putDoneId - 8)).str();
+
+  // Find compute() function.
+  ::xilinx::csl::FuncOp computeFunc;
+  program.walk([&](::xilinx::csl::FuncOp f) {
+    if (f.getSymName() == "compute")
+      computeFunc = f;
+  });
+  if (!computeFunc) {
+    program.emitOpError("relay expansion: could not find csl.func @compute");
+    return failure();
+  }
+
+  Block &computeBody = computeFunc.getBody().front();
+
+  // Collect middle ops (between GET and PUT, exclusive).
+  // Must be done before erasing anything.
+  SmallVector<Operation *> middleOps;
+  bool inMiddle = false;
+  for (Operation &op : computeBody) {
+    if (&op == getOp.getOperation()) {
+      inMiddle = true;
+      continue;
+    }
+    if (&op == putOp.getOperation())
+      break;
+    if (inMiddle)
+      middleOps.push_back(&op);
+  }
+
+  // Create the relay task at end of program body.
+  Block &programBody = program.getBody().front();
+  OpBuilder pb(&programBody, programBody.end());
+  auto relayTask = pb.create<::xilinx::csl::TaskOp>(
+      loc,
+      /*sym_name=*/pb.getStringAttr(relayName),
+      /*trigger_kind=*/pb.getStringAttr("local_task_id"),
+      /*id=*/pb.getI32IntegerAttr(relayId),
+      /*color=*/FlatSymbolRefAttr());
+  Block &relayBody = relayTask.getBody().emplaceBlock();
+  OpBuilder rb(&relayBody, relayBody.begin());
+
+  // Build an IRMapping: clone arith.constant ops from compute() into relay
+  // body so that middle ops' operands (which reference these constants) can
+  // be substituted. Buffer refs (%buf etc.) are NOT in the mapping, so they
+  // pass through as cross-region references (valid without IsolatedFromAbove).
+  IRMapping mapping;
+  for (Operation &op : computeBody) {
+    if (auto cst = dyn_cast<arith::ConstantOp>(&op)) {
+      auto *clone = rb.clone(op, mapping);
+      mapping.map(op.getResult(0), clone->getResult(0));
+    }
+  }
+
+  // Clone middle ops into relay body using the mapping.
+  for (Operation *op : middleOps) {
+    if (isa<arith::ConstantOp>(op))
+      continue; // already cloned above
+    rb.clone(*op, mapping);
+  }
+
+  // Expand the PUT inside relay body: create mem+fab DSDs then async fmovs.
+  {
+    auto dsdTy = ::xilinx::csl::DsdType::get(ctx);
+
+    // Use extent from PUT op; if it's in the mapping use the mapped value,
+    // otherwise use the original value (it may be a cross-region ref or a
+    // constant that's already in the relay body via mapping).
+    Value putExtent = putOp.getExtent();
+    Value mappedExtent = mapping.lookupOrNull(putExtent);
+    if (!mappedExtent)
+      mappedExtent = putExtent;
+
+    auto srcDsd = rb.create<::xilinx::csl::GetMemDsdOp>(
+        loc, dsdTy, putOp.getSource());
+    auto outDsd = rb.create<::xilinx::csl::GetFabDsdOp>(
+        loc, dsdTy,
+        /*direction=*/::xilinx::csl::FabDsdDirection::fabout,
+        /*color=*/putColorAttr.getValue(),
+        /*extent=*/mappedExtent);
+
+    auto putDoneRef = FlatSymbolRefAttr::get(ctx, putDoneName);
+    rb.create<::xilinx::csl::BuiltinCallOp>(
+        loc, TypeRange{}, rb.getStringAttr("fmovs"), Value{},
+        ValueRange{outDsd.getResult(), srcDsd.getResult()},
+        UnitAttr::get(ctx), putDoneRef);
+  }
+
+  // Add csl.return to relay body.
+  rb.create<::xilinx::csl::ReturnOp>(loc);
+
+  // Create put_done task (unblock_cmd_stream + return).
+  {
+    auto putDoneTask = pb.create<::xilinx::csl::TaskOp>(
+        loc,
+        /*sym_name=*/pb.getStringAttr(putDoneName),
+        /*trigger_kind=*/pb.getStringAttr("local_task_id"),
+        /*id=*/pb.getI32IntegerAttr(putDoneId),
+        /*color=*/FlatSymbolRefAttr());
+    Block &pdBody = putDoneTask.getBody().emplaceBlock();
+    OpBuilder pdb(&pdBody, pdBody.begin());
+    pdb.create<::xilinx::csl::BuiltinCallOp>(
+        loc, TypeRange{}, pdb.getStringAttr("unblock_cmd_stream"), Value{},
+        ValueRange{}, UnitAttr{}, FlatSymbolRefAttr{});
+    pdb.create<::xilinx::csl::ReturnOp>(loc);
+  }
+
+  // Erase middle ops from compute() (in reverse order to preserve def-use).
+  for (auto it = middleOps.rbegin(); it != middleOps.rend(); ++it)
+    (*it)->erase();
+
+  // Erase PUT from compute().
+  putOp.erase();
+
+  // Expand GET in compute() with activate = relayName.
+  auto relayRef = FlatSymbolRefAttr::get(ctx, relayName);
+  if (failed(expandGetWithActivate(getOp, relayRef)))
+    return failure();
+
+  return success();
+}
+
 void CSLLowerDataflowDataPass::runOnOperation() {
   bool failed = false;
 
@@ -263,7 +489,16 @@ void CSLLowerDataflowDataPass::runOnOperation() {
         gets.push_back(g);
     });
 
-    int32_t totalOps = static_cast<int32_t>(puts.size() + gets.size());
+    int32_t numPuts = static_cast<int32_t>(puts.size());
+    int32_t numGets = static_cast<int32_t>(gets.size());
+    int32_t totalOps = numPuts + numGets;
+
+    // Relay pattern: exactly 1 get AND 1 put.
+    if (numGets == 1 && numPuts == 1) {
+      if (::mlir::failed(expandRelayProgram(program, gets, puts, nextTaskId)))
+        failed = true;
+      return;
+    }
 
     // Multi-op barrier: insert _barrier_ctr var + reset in compute().
     Value barrierCtr;

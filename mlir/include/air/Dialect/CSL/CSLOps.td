@@ -131,7 +131,6 @@ def CSL_FuncOp : CSL_Op<"func", [
 //===----------------------------------------------------------------------===//
 
 def CSL_TaskOp : CSL_Op<"task", [
-    IsolatedFromAbove,
     Symbol
   ]> {
   let summary = "PE task with attribute-driven trigger binding";
