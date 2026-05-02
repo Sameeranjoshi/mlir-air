@@ -14,6 +14,7 @@
 #include "mlir/IR/SymbolTable.h"
 #include "mlir/Bytecode/BytecodeOpInterface.h"
 #include "mlir/Bytecode/BytecodeImplementation.h"
+#include "mlir/Interfaces/SideEffectInterfaces.h"
 
 #include "air/Dialect/CSL/CSLDialect.h"
 

@@ -696,6 +696,41 @@ emitFuncBody(mlir::Region &bodyRegion, llvm::raw_ostream &os,
         continue;
       }
 
+      // csl.get_x_coord → const tN: u16 = layout_mod.get_x_coord();
+      // Note: the SDK's layout_mod.get_x_coord() returns u16, so we declare
+      // the CSL local as u16 regardless of the MLIR result type (i16).
+      if (auto gx = dyn_cast<xilinx::csl::GetXCoordOp>(&op)) {
+        std::string tname = "t" + std::to_string(tempCount++);
+        indent(os, indentLevel);
+        os << "const " << tname << ": u16 = layout_mod.get_x_coord();\n";
+        nameMap[gx.getResult()] = tname;
+        continue;
+      }
+
+      // csl.get_y_coord → const tN: u16 = layout_mod.get_y_coord();
+      if (auto gy = dyn_cast<xilinx::csl::GetYCoordOp>(&op)) {
+        std::string tname = "t" + std::to_string(tempCount++);
+        indent(os, indentLevel);
+        os << "const " << tname << ": u16 = layout_mod.get_y_coord();\n";
+        nameMap[gy.getResult()] = tname;
+        continue;
+      }
+
+      // arith.select (bool ? T : F) → CSL `if (cond) T else F` expression.
+      // Emits as `var tN: <ty> = if (cond) true_val else false_val;`
+      if (auto sel = dyn_cast<arith::SelectOp>(&op)) {
+        std::string c = resolve(nameMap, sel.getCondition());
+        std::string t = resolve(nameMap, sel.getTrueValue());
+        std::string f = resolve(nameMap, sel.getFalseValue());
+        std::string tname = "t" + std::to_string(tempCount++);
+        indent(os, indentLevel);
+        os << "var " << tname << ": "
+           << cslTypeName(sel.getResult().getType()) << " = if (" << c
+           << ") " << t << " else " << f << ";\n";
+        nameMap[sel.getResult()] = tname;
+        continue;
+      }
+
       // Unknown op
       op.emitOpError("CSLEmit: unsupported op in function body: ");
       return failure();

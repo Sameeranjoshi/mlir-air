@@ -578,6 +578,42 @@ def CSL_HostOp : CSL_Op<"host", [
 }
 
 //===----------------------------------------------------------------------===//
+// csl.get_x_coord / csl.get_y_coord — Query PE's physical coordinates
+//===----------------------------------------------------------------------===//
+
+def CSL_GetXCoordOp : CSL_Op<"get_x_coord", [Pure]> {
+  let summary = "Get this PE's x coordinate (calls layout_mod.get_x_coord)";
+  let description = [{
+    Returns the executing PE's x coordinate as an i16. Lowers to
+    `layout_mod.get_x_coord()` in CSL. The `<layout>` module is auto-imported
+    as `layout_mod` by the program emitter, so this op needs no operand.
+
+    Example:
+    ```mlir
+    %x = csl.get_x_coord : i16
+    ```
+  }];
+  let results = (outs I16:$result);
+  let assemblyFormat = "attr-dict `:` type($result)";
+}
+
+def CSL_GetYCoordOp : CSL_Op<"get_y_coord", [Pure]> {
+  let summary = "Get this PE's y coordinate (calls layout_mod.get_y_coord)";
+  let description = [{
+    Returns the executing PE's y coordinate as an i16. Lowers to
+    `layout_mod.get_y_coord()` in CSL. The `<layout>` module is auto-imported
+    as `layout_mod` by the program emitter, so this op needs no operand.
+
+    Example:
+    ```mlir
+    %y = csl.get_y_coord : i16
+    ```
+  }];
+  let results = (outs I16:$result);
+  let assemblyFormat = "attr-dict `:` type($result)";
+}
+
+//===----------------------------------------------------------------------===//
 // csl.dataflow.put — Send a buffer through a declared stream
 //===----------------------------------------------------------------------===//
 
