@@ -97,6 +97,7 @@ jobs:
             -DLLVM_EXTERNAL_LIT=$LIT_PATH \
             -DAIR_ENABLE_AIE=OFF \
             -DAIR_ENABLE_GPU=OFF \
+            -DAIE_ENABLE_BINDINGS_PYTHON=OFF \
             -DBUILD_SHARED_LIBS=OFF \
             -DLLVM_ENABLE_ASSERTIONS=ON
           ninja install
