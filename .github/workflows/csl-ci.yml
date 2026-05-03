@@ -156,6 +156,136 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  # ── macOS arm64 build ─────────────────────────────────────────────────────────
+  # Produces air-tools-macos-arm64.tar.gz so users can run CE locally on Apple Silicon.
+  # No lld on macOS; use the default Apple linker.  SDK simulator tests are skipped
+  # (Singularity/Cerebras SDK is Linux-only).
+  csl-macos:
+    name: CSL build + package (macOS arm64)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system packages
+        run: |
+          brew install ninja ccache cmake
+          pip3 install --user pybind11 'nanobind>=2.9' lit numpy
+
+      - name: Resolve LLVM commit
+        id: llvm
+        run: |
+          hash=$(grep '^export commithash=' utils/clone-llvm.sh | cut -d= -f2)
+          echo "hash=$hash" >> "$GITHUB_OUTPUT"
+
+      - name: Cache llvm/install
+        id: llvm-cache
+        uses: actions/cache@v4
+        with:
+          path: llvm/install
+          key: llvm-install-${{ runner.os }}-${{ steps.llvm.outputs.hash }}-slim
+
+      - name: ccache
+        uses: hendrikmuhs/ccache-action@v1
+        with:
+          key: air-ccache-${{ runner.os }}-${{ steps.llvm.outputs.hash }}
+
+      - name: Build LLVM (cache miss only — slim CI config)
+        if: steps.llvm-cache.outputs.cache-hit != 'true'
+        run: |
+          bash utils/clone-llvm.sh
+          mkdir -p llvm/build llvm/install
+          cd llvm/build
+          cmake ../llvm -GNinja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_INSTALL_PREFIX=$PWD/../install \
+            -DLLVM_ENABLE_PROJECTS=mlir \
+            -DLLVM_TARGETS_TO_BUILD="X86;AArch64" \
+            -DLLVM_BUILD_EXAMPLES=OFF \
+            -DLLVM_INCLUDE_EXAMPLES=OFF \
+            -DLLVM_INCLUDE_BENCHMARKS=OFF \
+            -DLLVM_INCLUDE_DOCS=OFF \
+            -DLLVM_INCLUDE_TESTS=OFF \
+            -DMLIR_INCLUDE_TESTS=OFF \
+            -DLLVM_ENABLE_ASSERTIONS=OFF \
+            -DLLVM_ENABLE_RTTI=OFF \
+            -DLLVM_BUILD_LLVM_DYLIB=OFF \
+            -DLLVM_LINK_LLVM_DYLIB=OFF \
+            -DMLIR_BUILD_MLIR_DYLIB=OFF \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DLLVM_INSTALL_UTILS=ON \
+            -DLLVM_ENABLE_ZSTD=OFF \
+            -DLLVM_ENABLE_ZLIB=FORCE_OFF \
+            -DLLVM_ENABLE_TERMINFO=OFF \
+            -DLLVM_ENABLE_LIBXML2=OFF \
+            -DMLIR_ENABLE_BINDINGS_PYTHON=OFF \
+            -DMLIR_ENABLE_ROCM_RUNNER=OFF \
+            -DMLIR_ENABLE_CUDA_RUNNER=OFF \
+            -DMLIR_ENABLE_ROCDL=OFF \
+            -DMLIR_ENABLE_VULKAN_RUNNER=OFF \
+            -DMLIR_ENABLE_SPIRV_CPU_RUNNER=OFF \
+            -DMLIR_ENABLE_EXECUTION_ENGINE=OFF
+          ninja install
+
+      - name: Cache build/
+        uses: actions/cache@v4
+        with:
+          path: build
+          key: air-build-${{ runner.os }}-${{ steps.llvm.outputs.hash }}-${{ github.sha }}
+          restore-keys: |
+            air-build-${{ runner.os }}-${{ steps.llvm.outputs.hash }}-
+
+      - name: Configure + build AIR
+        run: |
+          LIT_PATH=$(python3 -c 'import lit, os; print(os.path.join(os.path.dirname(lit.__file__), "..", "..", "..", "bin", "lit"))')
+          mkdir -p build && cd build
+          cmake .. -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=$PWD/../install \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DLLVM_DIR=$PWD/../llvm/install/lib/cmake/llvm \
+            -DMLIR_DIR=$PWD/../llvm/install/lib/cmake/mlir \
+            -DLLVM_EXTERNAL_LIT=$LIT_PATH \
+            -DAIR_ENABLE_AIE=OFF \
+            -DAIR_ENABLE_GPU=OFF \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DLLVM_ENABLE_ASSERTIONS=ON
+          ninja install
+
+      - name: Run CSL lit suite (Tier 1 only — no SDK on macOS)
+        run: |
+          export PATH="$PWD/install/bin:$PWD/build/bin:$PWD/llvm/install/bin:$HOME/.local/bin:$PATH"
+          lit -v \
+            build/mlir/test/Dialect/CSL \
+            build/mlir/test/Conversion/AIRToCSL \
+            build/mlir/test/Targets/CSLEmit
+
+      - name: Package binaries
+        run: |
+          tar -czf air-tools-macos-arm64.tar.gz \
+            -C install/bin air-opt air-translate air-runner
+          echo "sha256: $(shasum -a 256 air-tools-macos-arm64.tar.gz)"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: air-tools-macos-arm64
+          path: air-tools-macos-arm64.tar.gz
+          retention-days: 90
+
+      - name: Publish GitHub Release (main branch only)
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/air-to-fire'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: nightly-${{ github.ref_name }}
+          name: "Nightly — ${{ github.ref_name }} @ ${{ github.sha }}"
+          prerelease: true
+          files: air-tools-macos-arm64.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   # ── Tier 2: Cerebras SDK simulator ────────────────────────────────────────────
   # Runs on the CHPC self-hosted runner where Singularity + the SDK SIF live.
   # find_free_cpu.sh picks a free compute node; srun executes tests there.

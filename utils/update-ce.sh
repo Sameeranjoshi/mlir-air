@@ -18,13 +18,26 @@ BRANCH="${2:-air-to-fire}"
 TMPDIR_DL=$(mktemp -d)
 trap 'rm -rf "$TMPDIR_DL"' EXIT
 
+# Detect platform
+OS="$(uname -s)"
+ARCH="$(uname -m)"
+case "${OS}-${ARCH}" in
+  Linux-x86_64)   PLATFORM="linux-x64"   ;;
+  Darwin-arm64)   PLATFORM="macos-arm64" ;;
+  Darwin-x86_64)  PLATFORM="macos-arm64" ;;  # Rosetta 2 — use arm64 build
+  *) echo "ERROR: unsupported platform ${OS}-${ARCH}" >&2; exit 1 ;;
+esac
+ARTIFACT_NAME="air-tools-${PLATFORM}"
+TARBALL_NAME="${ARTIFACT_NAME}.tar.gz"
+echo "Platform: ${OS} ${ARCH} → using ${TARBALL_NAME}"
+
 case "${1:-}" in
   --artifact)
     RUN_ID="$2"
     echo "=== Downloading artifact from run $RUN_ID ==="
     gh run download "$RUN_ID" \
       --repo "$REPO" \
-      --name air-tools-linux-x64 \
+      --name "$ARTIFACT_NAME" \
       --dir "$TMPDIR_DL"
     ;;
   --branch)
@@ -33,7 +46,7 @@ case "${1:-}" in
     echo "=== Downloading latest release for branch: $BRANCH ==="
     gh release download "$TAG" \
       --repo "$REPO" \
-      --pattern "air-tools-linux-x64.tar.gz" \
+      --pattern "$TARBALL_NAME" \
       --dir "$TMPDIR_DL"
     ;;
   *)
@@ -42,12 +55,12 @@ case "${1:-}" in
     echo "=== Downloading latest nightly release ($TAG) ==="
     gh release download "$TAG" \
       --repo "$REPO" \
-      --pattern "air-tools-linux-x64.tar.gz" \
+      --pattern "$TARBALL_NAME" \
       --dir "$TMPDIR_DL" 2>/dev/null || {
         echo "Release tag $TAG not found — falling back to latest release"
         gh release download \
           --repo "$REPO" \
-          --pattern "air-tools-linux-x64.tar.gz" \
+          --pattern "$TARBALL_NAME" \
           --dir "$TMPDIR_DL"
       }
     ;;
@@ -67,4 +80,9 @@ ls -lh "$INSTALL_DIR"/air-opt "$INSTALL_DIR"/air-translate "$INSTALL_DIR"/air-ru
 
 echo ""
 echo "CE is hot-swapped — next compilation in the browser uses the new binary."
-echo "CE URL (via SSH tunnel): http://localhost:10245"
+if [[ "$OS" == "Darwin" ]]; then
+  echo ""
+  echo "To run CE locally on macOS:"
+  echo "  cd /path/to/ce && node --import=tsx app.ts --port 10245"
+  echo "  Then open http://localhost:10245"
+fi
