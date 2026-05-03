@@ -614,7 +614,8 @@ LogicalResult HostEmitter::emit(xilinx::csl::WaferOp wafer) {
         if (idx < argDir.size())
           argDir[idx] = Dir::H2D;
         MemcpyEntry e{true, idx, leafSym.str(), innerSym.str(),
-                      h2dOp.getPx(), h2dOp.getPy(),
+                      static_cast<int64_t>(h2dOp.getPx()),
+                      static_cast<int64_t>(h2dOp.getPy()),
                       /*w=*/1, /*h=*/1, /*l=*/0};
         auto memTy = dyn_cast<MemRefType>(h2dOp.getSrc().getType());
         if (memTy)
@@ -635,7 +636,8 @@ LogicalResult HostEmitter::emit(xilinx::csl::WaferOp wafer) {
         if (idx < argDir.size())
           argDir[idx] = Dir::D2H;
         MemcpyEntry e{false, idx, leafSym.str(), innerSym.str(),
-                      d2hOp.getPx(), d2hOp.getPy(),
+                      static_cast<int64_t>(d2hOp.getPx()),
+                      static_cast<int64_t>(d2hOp.getPy()),
                       /*w=*/1, /*h=*/1, /*l=*/0};
         auto memTy = dyn_cast<MemRefType>(d2hOp.getDst().getType());
         if (memTy)
