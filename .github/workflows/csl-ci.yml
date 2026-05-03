@@ -131,3 +131,20 @@ jobs:
             build/mlir/test/Dialect/CSL \
             build/mlir/test/Conversion/AIRToCSL \
             build/mlir/test/Targets/CSLEmit
+
+  # ── Tier 2: Cerebras SDK simulator ────────────────────────────────────────────
+  # Runs on the CHPC self-hosted runner where Singularity + the SDK SIF live.
+  # find_free_cpu.sh picks a free compute node; srun executes tests there.
+  # Skip this job by pushing with [skip-sim] in the commit message.
+  csl-simulator:
+    name: CSL simulator (CHPC)
+    runs-on: [self-hosted, chpc]
+    timeout-minutes: 30
+    if: "!contains(github.event.head_commit.message, '[skip-sim]')"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run simulator on compute node
+        run: bash infra/chpc/run_on_chpc.sh bash utils/run_csl_ci.sh --no-build -j 8
