@@ -1,0 +1,11 @@
+{
+  "rpc_symbols": [
+    {
+      "id": 1,
+      "kind": "Func",
+      "name": "compute",
+      "sym_name": "compute",
+      "type": "void"
+    }
+  ]
+}

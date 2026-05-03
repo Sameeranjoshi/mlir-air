@@ -1,0 +1,19 @@
+{
+  "rpc_symbols": [
+    {
+      "id": 1,
+      "immutable": 1,
+      "kind": "Var",
+      "name": "y",
+      "sym_name": "y_ptr",
+      "type": "[*]f32"
+    },
+    {
+      "id": 2,
+      "kind": "Func",
+      "name": "compute",
+      "sym_name": "compute",
+      "type": "void"
+    }
+  ]
+}

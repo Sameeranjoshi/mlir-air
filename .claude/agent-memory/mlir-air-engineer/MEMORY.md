@@ -110,11 +110,26 @@ from cerebras.sdk.runtime.sdkruntimepybind import (
 - `mlir/test/Dialect/CSL/layout_stress.mlir` — fails with `invalid kind of attribute specified`
   on `csl.kernel` custom op parsing (unrelated to emitter work).
 
+## CSL Data Tasks (trigger_kind = "data_task")
+
+- `csl.task @name attributes {trigger_kind = "data_task", color = @stream_or_color} { ^bb0(%val: f32): ... }`
+- `color` attr may reference the stream name (`@ch01`) OR the color name (`@ch01_color`)
+- `updateDataTaskColors()` in `CSLLowerDataflowData.cpp` resolves stream→color before erasure
+- `csl.dataflow.send_wavelet @stream value(%v) : f32` — 1-element fabout DSD + sync @fmovs
+- Emitter declares `<color>_in_q: input_queue = @get_input_queue(N)` for each data task
+- Emitter emits: `const sym_id: data_task_id = @get_data_task_id(<color>_in_q)` + `@bind_data_task`
+- Task body args use names `a0, a1, ...`; must be populated in nameMap BEFORE emitFuncBody
+
 ## Build Pattern
 After source changes to `mlir/lib/Targets/` or `mlir/include/air/Dialect/CSL/`:
 ```bash
 cd build && ninja AIRTargets   # fast build check
 cd build && ninja install      # full install
+```
+
+If ninja thinks CSLTransforms is up-to-date despite source changes:
+```bash
+touch mlir/lib/Dialect/CSL/Transforms/TheFile.cpp && cd build && ninja install
 ```
 
 ## Test Pattern (lit has config issue — use FileCheck directly)
@@ -123,3 +138,16 @@ air-translate --emit-csl --csl-output-dir=/tmp/out input.mlir
 FileCheck input.mlir --input-file=/tmp/out/file.csl --check-prefix=PREFIX
 FileCheck input.mlir --input-file=/tmp/out/run.py   --check-prefix=RUN_PY
 ```
+
+## New Kernel Ops: csl.get_x_coord / csl.get_y_coord + arith.select
+
+Added in commit `6fcae473`.
+
+- `csl.get_x_coord : i16` / `csl.get_y_coord : i16` in CSLOps.td, carry `[Pure]` trait
+- Emitter emits `const tN: u16 = layout_mod.get_x_coord()` — note **u16** not i16!
+  (SDK's layout_mod.get_x_coord() returns u16; i16 causes type mismatch on WSE-3)
+- To use in arithmetic: cast via `arith.index_cast %x_i16 : i16 to index` then use
+  `arith.remui %x, %two : index` (index maps to u16 in CSL)
+- `arith.select` now supported in emitFuncBody: emits `var tN: T = if (cond) t else f;`
+- Adding `[Pure]` trait to CSL ops requires `mlir/Interfaces/SideEffectInterfaces.h`
+  in `CSLOps.h` — without it, `mlir::ConditionallySpeculatable` is undefined at compile time
