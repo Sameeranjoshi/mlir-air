@@ -778,7 +778,9 @@ AIRRunner::AIRRunner(llvm::raw_ostream &trace_stream,
       trace_stream, json_model, sim_granularity, launch_iterations, verbose);
   if (verbose) {
     llvm::DebugFlag = true;
+#ifndef NDEBUG
     llvm::setCurrentDebugType(DEBUG_TYPE);
+#endif
   }
 }
 
