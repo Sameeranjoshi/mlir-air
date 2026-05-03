@@ -132,6 +132,30 @@ jobs:
             build/mlir/test/Conversion/AIRToCSL \
             build/mlir/test/Targets/CSLEmit
 
+      - name: Package binaries
+        run: |
+          tar -czf air-tools-linux-x64.tar.gz \
+            -C install/bin air-opt air-translate air-runner
+          echo "sha256: $(sha256sum air-tools-linux-x64.tar.gz)"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: air-tools-linux-x64
+          path: air-tools-linux-x64.tar.gz
+          retention-days: 90
+
+      - name: Publish GitHub Release (main branch only)
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/air-to-fire'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: nightly-${{ github.ref_name }}
+          name: "Nightly — ${{ github.ref_name }} @ ${{ github.sha }}"
+          prerelease: true
+          files: air-tools-linux-x64.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   # ── Tier 2: Cerebras SDK simulator ────────────────────────────────────────────
   # Runs on the CHPC self-hosted runner where Singularity + the SDK SIF live.
   # find_free_cpu.sh picks a free compute node; srun executes tests there.
