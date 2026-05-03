@@ -3005,6 +3005,7 @@ DiagnosedSilenceableFailure transform::ConvertDivfSqrtToRsqrtOp::apply(
 
   LLVM_DEBUG(llvm::dbgs() << "Converted " << numTransformations
                           << " divf(1.0, sqrt(x)) patterns to rsqrt(x)\n");
+  (void)numTransformations;
 
   results.set(llvm::cast<OpResult>(getResult()), transformedOps);
   return DiagnosedSilenceableFailure::success();
@@ -3156,6 +3157,7 @@ transform::BroadcastBeforeUnaryOp::apply(transform::TransformRewriter &rewriter,
 
   LLVM_DEBUG(llvm::dbgs() << "Moved " << numTransformations
                           << " vector.broadcast operations before unary ops\n");
+  (void)numTransformations;
 
   results.set(llvm::cast<OpResult>(getResult()), transformedOps);
   return DiagnosedSilenceableFailure::success();
