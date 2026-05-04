@@ -576,10 +576,13 @@ emitFuncBody(mlir::Region &bodyRegion, llvm::raw_ostream &os,
         // `@increment_dsd_offset` does the elements→words conversion for us.
         // Pointer arithmetic `&buf + N` is also forbidden (Types.md:508).
         std::string offsetStr;
+        bool offsetIsDynamic = false; // true when offset is a runtime SSA value
         if (offset != ShapedType::kDynamic && offset != 0) {
           offsetStr = std::to_string(offset);
         } else if (offset == ShapedType::kDynamic && !mOffs.empty()) {
           offsetStr = foldToStr(mOffs[0]);
+          // A dynamic offset comes from an SSA value (not a folded Attribute).
+          offsetIsDynamic = !dyn_cast<Attribute>(mOffs[0]);
         }
         bool hasOffset = !offsetStr.empty() && offsetStr != "0";
 
@@ -618,8 +621,14 @@ emitFuncBody(mlir::Region &bodyRegion, llvm::raw_ostream &os,
         if (hasOffset) {
           std::string elemTy = cslTypeName(memTy.getElementType());
           indent(os, indentLevel);
+          // @increment_dsd_offset expects the offset in i16. CSL while-loop
+          // counters are emitted as u16; cast dynamic (runtime) offsets so
+          // the CSL compiler does not raise a type mismatch.
+          std::string emitOffset = offsetIsDynamic
+              ? "@as(i16, " + offsetStr + ")"
+              : offsetStr;
           os << "const " << dname << " = @increment_dsd_offset("
-             << baseName << ", " << offsetStr << ", " << elemTy << ");\n";
+             << baseName << ", " << emitOffset << ", " << elemTy << ");\n";
         }
 
         nameMap[dsdOp.getResult()] = dname;
