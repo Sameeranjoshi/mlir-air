@@ -43,4 +43,3 @@ libadf.a
 # local experiment outputs and scratch dirs
 out/
 tmp*/
-ppt/
