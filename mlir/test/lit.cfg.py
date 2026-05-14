@@ -83,3 +83,21 @@ tool_dirs = [config.air_tools_dir, config.aie_tools_dir, config.llvm_tools_dir]
 tools = ["air-opt", "air-translate", "air-runner", "aie-opt"]
 
 llvm_config.add_tool_substitutions(tools, tool_dirs)
+
+# Detect Cerebras SDK. Tests that drive cslc + cs_python (simulator e2e) gate
+# themselves with `// REQUIRES: cerebras-sdk` so they're skipped on machines
+# without the SDK installed.
+def _cslc_available():
+    for path in os.environ.get("PATH", "").split(os.pathsep):
+        if os.path.isfile(os.path.join(path, "cslc")) and \
+           os.path.isfile(os.path.join(path, "cs_python")):
+            return True
+    return False
+
+if _cslc_available():
+    config.available_features.add("cerebras-sdk")
+
+# Limit how many Cerebras SDK simulator tests run concurrently; running too
+# many parallel cslc/cs_python invocations overwhelms the Singularity-hosted
+# simulator and causes intermittent failures.
+lit_config.parallelism_groups["cerebras-sim"] = 4

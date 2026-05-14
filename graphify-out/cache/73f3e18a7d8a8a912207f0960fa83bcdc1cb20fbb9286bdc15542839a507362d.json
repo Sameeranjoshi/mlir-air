@@ -1,0 +1,1 @@
+{"nodes": [{"id": "mlir_include_air_c_dialects_h", "label": "Dialects.h", "file_type": "code", "source_file": "mlir/include/air-c/Dialects.h", "source_location": "L1"}], "edges": [{"source": "mlir_include_air_c_dialects_h", "target": "ir", "relation": "imports", "confidence": "EXTRACTED", "source_file": "mlir/include/air-c/Dialects.h", "source_location": "L12", "weight": 1.0}]}

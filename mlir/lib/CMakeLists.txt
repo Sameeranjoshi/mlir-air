@@ -20,17 +20,23 @@ add_mlir_library(
   DEPENDS
   AIRDialect
   AIRRtDialect
+  CSLDialect
   AIRTransformOpsIncGen
   AIRConversionPasses
   AIRTransformPasses
+  CSLTransforms
+  CSLPipelines
   AIRInterface
 
   LINK_LIBS
   AIRConversionPasses
   AIRTransformPasses
+  CSLTransforms
+  CSLPipelines
   AIRTransformOps
   AIRDialect
   AIRRtDialect
+  CSLDialect
   AIRUtil
   AIRInterface
   MLIRSupport

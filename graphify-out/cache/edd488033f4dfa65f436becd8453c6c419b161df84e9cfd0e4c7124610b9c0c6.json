@@ -1,0 +1,1 @@
+{"nodes": [{"id": "mlir_air_project", "label": "MLIR-AIR", "type": "project", "description": "Repository containing tools and libraries for building AIR platforms, runtimes, and compilers. Copyright Xilinx/AMD.", "source_file": "README.md"}], "edges": [], "hyperedges": []}

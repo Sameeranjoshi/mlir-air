@@ -8,6 +8,7 @@
 
 #include "air/Dialect/AIR/AIRDialect.h"
 #include "air/Dialect/AIRRt/AIRRtDialect.h"
+#include "air/Dialect/CSL/CSLDialect.h"
 
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/MLIRContext.h"
@@ -30,6 +31,10 @@ int main(int argc, char **argv) {
 
   registerAllTranslations();
   xilinx::air::registerAIRRtTranslations();
+  // CSL v2 dialect: emit program.csl, csl_layout.py, run.py directly.
+  // Registers --emit-csl-program / --emit-csl-layout / --emit-csl-host plus
+  // the unified --emit-csl command.
+  xilinx::csl::registerCSLEmitTranslations();
 
   return failed(mlirTranslateMain(argc, argv, "AIR MLIR Translation Tool"));
 }

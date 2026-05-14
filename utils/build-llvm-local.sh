@@ -23,7 +23,7 @@ LLVM_DIR=${1:-"llvm"}
 BUILD_DIR=${2:-"build"}
 INSTALL_DIR=${3:-"install"}
 
-PYTHON_ROOT=`pip3 show pybind11 | grep Location | awk '{print $2}'`
+PYTHON_ROOT=`python3 -m pip show pybind11 | grep Location | awk '{print $2}'`
 
 mkdir -p $LLVM_DIR/$BUILD_DIR
 mkdir -p $LLVM_DIR/$INSTALL_DIR
@@ -37,23 +37,24 @@ set -e
 
 CMAKE_CONFIGS="\
     -GNinja \
-    -DCMAKE_C_COMPILER=/opt/rocm/llvm/bin/clang \
-    -DCMAKE_CXX_COMPILER=/opt/rocm/llvm/bin/clang++ \
-    -DPython3_FIND_VIRTUALENV=ONLY \
+    -DCMAKE_C_COMPILER=${CC:-/usr/bin/clang} \
+    -DCMAKE_CXX_COMPILER=${CXX:-/usr/bin/clang++} \
+    -DPython3_EXECUTABLE=${PYTHON3_EXECUTABLE:-$(command -v python3)} \
+    -DPython_EXECUTABLE=${PYTHON3_EXECUTABLE:-$(command -v python3)} \
     -DLLVM_BUILD_EXAMPLES=OFF \
     -DLLVM_BUILD_UTILS=ON \
-    -DMLIR_ENABLE_ROCM_RUNNER=ON \
+    -DMLIR_ENABLE_ROCM_RUNNER=OFF \
     -DLLVM_ENABLE_RTTI=$LLVM_ENABLE_RTTI \
     -DLLVM_INSTALL_UTILS=ON \
     -DCMAKE_INSTALL_PREFIX=../$INSTALL_DIR \
-    -DLLVM_ENABLE_PROJECTS=llvm;clang;lld;mlir \
+    -DLLVM_ENABLE_PROJECTS=mlir \
     -DCOMPILER_RT_BUILD_BUILTINS=ON \
     -DCOMPILER_RT_DEFAULT_TARGET_TRIPLE=amdgcn-amd-amdhsa \
     -DCMAKE_BUILD_TYPE=Release \
     -DMLIR_ENABLE_LLVM_DIALECT=ON \
     -DMLIR_ENABLE_ROCDL=ON \
     -DMLIR_ENABLE_GPU=ON \
-    -DLLVM_TARGETS_TO_BUILD:STRING=X86;ARM;AArch64;AMDGPU \
+    -DLLVM_TARGETS_TO_BUILD:STRING=X86;AMDGPU \
     -DLLVM_BUILD_LLVM_DYLIB=OFF \
     -DLLVM_LINK_LLVM_DYLIB=OFF \
     -DCLANG_LINK_CLANG_DYLIB=OFF \
@@ -64,6 +65,10 @@ CMAKE_CONFIGS="\
     -DLLVM_ENABLE_ASSERTIONS=ON \
     -DLLVM_OPTIMIZED_TABLEGEN=OFF \
     -DMLIR_ENABLE_BINDINGS_PYTHON=ON \
+    -DLLVM_ENABLE_ZSTD=OFF \
+    -DLLVM_ENABLE_ZLIB=FORCE_OFF \
+    -DLLVM_ENABLE_TERMINFO=OFF \
+    -DLLVM_ENABLE_LIBXML2=OFF \
     -Dpybind11_DIR=${PYTHON_ROOT}/pybind11/share/cmake/pybind11"
 
 if [ -x "$(command -v lld)" ]; then

@@ -143,6 +143,74 @@ def run_gpu_compilation(opts):
             print(f.read())
 
 
+def run_csl_compilation(opts):
+    """
+    CSL compilation pipeline for Cerebras WSE targets.
+
+    Pipeline:
+    1. air-opt -csl-auto-vectorize  — promote scalar scf.for to DSD builtins
+    2. air-opt -csl-infer-exports   — derive csl.export ops from csl.host
+    3. air-translate --emit-csl     — emit pe.csl, layout.csl, run.py per wafer
+    """
+    input_file = opts.air_mlir_file
+
+    # Find tools
+    air_opt = shutil.which("air-opt")
+    air_translate = shutil.which("air-translate")
+
+    if not air_opt:
+        print("Error: could not find air-opt in PATH")
+        sys.exit(1)
+    if not air_translate:
+        print("Error: could not find air-translate in PATH")
+        sys.exit(1)
+
+    output_dir = opts.csl_output_dir
+    try:
+        os.makedirs(output_dir, exist_ok=True)
+    except OSError as e:
+        print(f"Error creating CSL output directory {output_dir}: {e}")
+        sys.exit(1)
+
+    if opts.verbose:
+        print(f"CSL compilation for {input_file}")
+        print(f"  Output dir: {output_dir}")
+
+    # Run the combined pass pipeline then translate.
+    # air-opt applies both passes and pipes stdout into air-translate.
+    import subprocess
+    opt_proc = subprocess.Popen(
+        [air_opt, input_file,
+         "-csl-auto-vectorize",
+         "-csl-infer-exports"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    translate_proc = subprocess.Popen(
+        [air_translate,
+         "--emit-csl",
+         f"--output-dir={output_dir}"],
+        stdin=opt_proc.stdout,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    opt_proc.stdout.close()
+    translate_out, translate_err = translate_proc.communicate()
+    opt_proc.wait()
+
+    if opts.verbose and translate_out:
+        print(translate_out.decode())
+    if translate_err:
+        print(translate_err.decode(), file=sys.stderr)
+
+    if opt_proc.returncode != 0 or translate_proc.returncode != 0:
+        print("Error: CSL compilation failed.")
+        sys.exit(1)
+
+    if opts.verbose:
+        print(f"\nCSL compilation complete! Files in: {output_dir}")
+
+
 def run_aie_compilation(opts):
     """
     AIE compilation pipeline using Python bindings.
@@ -729,6 +797,8 @@ def main():
     # Dispatch based on target
     if opts.target == "gpu":
         run_gpu_compilation(opts)
+    elif opts.target == "csl":
+        run_csl_compilation(opts)
     else:
         run_aie_compilation(opts)
 

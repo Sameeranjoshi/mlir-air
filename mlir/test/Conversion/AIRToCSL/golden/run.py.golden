@@ -1,0 +1,74 @@
+#!/usr/bin/env cs_python
+"""Golden reference run.py for the AIR → CSL vecadd milestone.
+
+Hand-written and verified to run on CS-3. The HostEmitter in
+CSLRuntimeToPy.cpp must produce output equivalent to this.
+"""
+
+import argparse
+import sys
+import numpy as np
+
+from cerebras.sdk.runtime.sdkruntimepybind import (  # pylint: disable=no-name-in-module
+    SdkRuntime,
+    MemcpyDataType,
+    MemcpyOrder,
+)
+
+N = 256
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--name", help="compiled artifact directory (output of cslc)")
+parser.add_argument("--cmaddr", default=None, help="IP:port for CS system")
+parser.add_argument("--check", action="store_true", help="validate result and exit 0/1")
+args = parser.parse_args()
+
+# Build host arrays.
+a = np.arange(N, dtype=np.float32)
+b = np.arange(N, dtype=np.float32) * 2.0
+c = np.zeros(N, dtype=np.float32)
+expected = a + b
+
+# Create runtime and load compiled artifacts.
+runner = SdkRuntime(args.name, cmaddr=args.cmaddr)
+
+id_a = runner.get_id("a")
+id_b = runner.get_id("b")
+id_c = runner.get_id("c")
+
+runner.load()
+runner.run()
+
+# Copy inputs to device.
+runner.memcpy_h2d(id_a, a, 0, 0, 1, 1, N,
+                  streaming=False,
+                  order=MemcpyOrder.ROW_MAJOR,
+                  data_type=MemcpyDataType.MEMCPY_32BIT,
+                  nonblock=False)
+runner.memcpy_h2d(id_b, b, 0, 0, 1, 1, N,
+                  streaming=False,
+                  order=MemcpyOrder.ROW_MAJOR,
+                  data_type=MemcpyDataType.MEMCPY_32BIT,
+                  nonblock=False)
+
+# Launch the compute kernel.
+runner.launch("compute", nonblock=False)
+
+# Copy result back from device.
+runner.memcpy_d2h(c, id_c, 0, 0, 1, 1, N,
+                  streaming=False,
+                  order=MemcpyOrder.ROW_MAJOR,
+                  data_type=MemcpyDataType.MEMCPY_32BIT,
+                  nonblock=False)
+
+runner.stop()
+
+if args.check:
+    if not np.array_equal(c, expected):
+        mismatches = np.where(c != expected)[0]
+        print(f"FAIL: {len(mismatches)} mismatches", file=sys.stderr)
+        for i in mismatches[:8]:
+            print(f"  c[{i}] = {c[i]}  expected {expected[i]}", file=sys.stderr)
+        sys.exit(1)
+    print("PASS")
+sys.exit(0)

@@ -1,0 +1,1 @@
+{"nodes": [{"id": "air_runner", "label": "air-runner", "type": "tool", "description": "Performance simulator modeling concurrent execution of MLIR-AIR programs. Returns simulated time traces as JSON for Chrome Tracing visualization.", "source_file": "docs/AIRRunner.md"}], "edges": [], "hyperedges": []}

@@ -39,7 +39,7 @@ set(PEANO_INSTALL_DIR
     CACHE STRING "Location of Peano compiler")
 
 # Option to enable/disable AIE support (for GPU-only builds)
-option(AIR_ENABLE_AIE "Enable AIE support (requires mlir-aie)" ON)
+option(AIR_ENABLE_AIE "Enable AIE support (requires mlir-aie)" OFF)
 # Option to enable/disable GPU/ROCDL support
 option(AIR_ENABLE_GPU "Enable GPU/ROCDL backend support" ON)
 
@@ -95,7 +95,7 @@ include(HandleLLVMOptions)
 
 # setup python
 include(MLIRDetectPythonEnv)
-mlir_configure_python_dev_packages()
+# mlir_configure_python_dev_packages()  # Temporarily disabled due to Python dev headers issue
 
 # python build directory
 if(NOT AIR_PYTHON_PACKAGES_DIR)
@@ -163,6 +163,10 @@ add_custom_target(check-all)
 add_custom_target(air-headers)
 set_target_properties(air-headers PROPERTIES FOLDER "Misc")
 add_dependencies(air-headers mlir-headers)
+
+add_custom_target(csl-headers)
+set_target_properties(csl-headers PROPERTIES FOLDER "Misc")
+add_dependencies(csl-headers mlir-headers)
 
 # Make sure we build the docs
 add_custom_target(docs ALL)

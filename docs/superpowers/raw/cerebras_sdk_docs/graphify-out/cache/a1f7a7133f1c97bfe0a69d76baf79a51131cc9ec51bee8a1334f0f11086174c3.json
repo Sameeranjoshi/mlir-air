@@ -1,0 +1,1 @@
+{"nodes": [{"id": "bench_fft3d", "label": "Benchmark: FFT 3D", "file_type": "document", "source_file": "csl/code-examples/benchmark-fft-3d.md", "source_location": null, "source_url": "https://sdk.cerebras.net/csl/code-examples/benchmark-fft-3d.html", "captured_at": null, "author": null, "contributor": null}], "edges": [], "hyperedges": []}

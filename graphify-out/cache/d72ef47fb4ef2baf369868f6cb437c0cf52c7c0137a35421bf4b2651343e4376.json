@@ -1,0 +1,1 @@
+{"nodes": [{"id": "tools_aircc_aircc_py", "label": "aircc.py", "file_type": "code", "source_file": "tools/aircc/aircc.py", "source_location": "L1"}], "edges": [{"source": "tools_aircc_aircc_py", "target": "air_compiler_aircc_main", "relation": "imports_from", "confidence": "EXTRACTED", "source_file": "tools/aircc/aircc.py", "source_location": "L10", "weight": 1.0}]}

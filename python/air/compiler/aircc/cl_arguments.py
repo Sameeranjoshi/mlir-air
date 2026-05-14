@@ -132,10 +132,10 @@ def parse_args(args=None):
     parser.add_argument(
         "--target",
         type=str,
-        choices=["aie", "gpu"],
+        choices=["aie", "gpu", "csl"],
         dest="target",
         default="aie",
-        help="Target backend: 'aie' for AIE/NPU devices (default), 'gpu' for AMD GPU via ROCDL",
+        help="Target backend: 'aie' for AIE/NPU devices (default), 'gpu' for AMD GPU via ROCDL, 'csl' for Cerebras WSE via air-translate --emit-csl",
     )
     parser.add_argument(
         "--gpu-arch",
@@ -243,6 +243,14 @@ def parse_args(args=None):
         dest="xclbin_input",
         default=None,
         help="Generate kernel into existing xclbin file",
+    )
+
+    parser.add_argument(
+        "--csl-output-dir",
+        type=str,
+        dest="csl_output_dir",
+        default="csl_output",
+        help="Output directory for CSL files emitted by --target csl (default: csl_output)",
     )
 
     opts = parser.parse_args(args)

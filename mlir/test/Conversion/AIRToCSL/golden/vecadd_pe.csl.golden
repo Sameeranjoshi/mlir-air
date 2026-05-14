@@ -1,0 +1,35 @@
+// Golden reference CSL kernel for the AIR → CSL vecadd milestone.
+// This file is hand-written and verified to compile and run on CS-3.
+// The KernelEmitter in CSLRuntimeToPy.cpp must produce output equivalent to this.
+
+param memcpy_params: comptime_struct;
+
+// memcpy module provides infrastructure for copying data
+// and launching functions from the host.
+const sys_mod = @import_module("<memcpy/memcpy>", memcpy_params);
+
+const N: i32 = 256;
+
+var a_buf: [N]f32;
+var b_buf: [N]f32;
+var c_buf: [N]f32;
+
+// Pointers advertised as symbols to the host.
+// a_ptr and b_ptr are writable from host (h2d), c_ptr is read-only from host (d2h).
+var a_ptr: [*]f32 = &a_buf;
+var b_ptr: [*]f32 = &b_buf;
+const c_ptr: [*]f32 = &c_buf;
+
+fn compute() void {
+  for (@range(i32, N)) |i| {
+    c_buf[i] = a_buf[i] + b_buf[i];
+  }
+  sys_mod.unblock_cmd_stream();
+}
+
+comptime {
+  @export_symbol(a_ptr, "a");
+  @export_symbol(b_ptr, "b");
+  @export_symbol(c_ptr, "c");
+  @export_symbol(compute);
+}

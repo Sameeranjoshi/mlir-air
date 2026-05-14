@@ -64,4 +64,14 @@ void xilinx::air::registerConversionPasses() {
   registerAIRRtToNpu();
   registerAIRSplitDevices();
 #endif
+
+  // CSL dialect lowering passes
+  mlir::registerPass(
+      []() -> std::unique_ptr<mlir::Pass> {
+        return createAIRToCSLPass();
+      });
+  mlir::registerPass(
+      []() -> std::unique_ptr<mlir::Pass> {
+        return createCSLVerifyParamsPass();
+      });
 }

@@ -1,0 +1,121 @@
+name: CSL CI
+
+on:
+  pull_request:
+    branches: [main, air-to-fire]
+  push:
+    branches: [air-to-fire]
+
+jobs:
+  build:
+    name: Build + test + package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ninja-build clang lld ccache cmake python3-pip
+          pip3 install --user pybind11 'nanobind>=2.9' lit numpy
+
+      - name: Resolve LLVM commit
+        id: llvm
+        run: |
+          hash=$(grep '^export commithash=' utils/clone-llvm.sh | cut -d= -f2)
+          echo "hash=$hash" >> "$GITHUB_OUTPUT"
+
+      - name: Cache llvm/install
+        id: llvm-cache
+        uses: actions/cache@v4
+        with:
+          path: llvm/install
+          key: llvm-install-${{ runner.os }}-${{ steps.llvm.outputs.hash }}
+
+      - name: ccache
+        uses: hendrikmuhs/ccache-action@v1
+        with:
+          key: air-ccache-${{ runner.os }}-${{ steps.llvm.outputs.hash }}
+
+      - name: Build LLVM (cache miss only)
+        if: steps.llvm-cache.outputs.cache-hit != 'true'
+        run: |
+          bash utils/clone-llvm.sh
+          mkdir -p llvm/build llvm/install
+          cd llvm/build
+          cmake ../llvm -GNinja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DLLVM_USE_LINKER=lld \
+            -DCMAKE_INSTALL_PREFIX=$PWD/../install \
+            -DLLVM_ENABLE_PROJECTS=mlir \
+            -DLLVM_TARGETS_TO_BUILD=X86 \
+            -DLLVM_BUILD_EXAMPLES=OFF \
+            -DLLVM_INCLUDE_EXAMPLES=OFF \
+            -DLLVM_INCLUDE_BENCHMARKS=OFF \
+            -DLLVM_INCLUDE_DOCS=OFF \
+            -DLLVM_INCLUDE_TESTS=OFF \
+            -DMLIR_INCLUDE_TESTS=OFF \
+            -DLLVM_ENABLE_ASSERTIONS=OFF \
+            -DLLVM_ENABLE_RTTI=OFF \
+            -DLLVM_BUILD_LLVM_DYLIB=OFF \
+            -DLLVM_LINK_LLVM_DYLIB=OFF \
+            -DMLIR_BUILD_MLIR_DYLIB=OFF \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DLLVM_INSTALL_UTILS=ON \
+            -DLLVM_ENABLE_ZSTD=OFF \
+            -DLLVM_ENABLE_ZLIB=FORCE_OFF \
+            -DLLVM_ENABLE_TERMINFO=OFF \
+            -DLLVM_ENABLE_LIBXML2=OFF \
+            -DMLIR_ENABLE_BINDINGS_PYTHON=OFF \
+            -DMLIR_ENABLE_ROCM_RUNNER=OFF \
+            -DMLIR_ENABLE_CUDA_RUNNER=OFF \
+            -DMLIR_ENABLE_ROCDL=OFF \
+            -DMLIR_ENABLE_VULKAN_RUNNER=OFF \
+            -DMLIR_ENABLE_SPIRV_CPU_RUNNER=OFF \
+            -DMLIR_ENABLE_EXECUTION_ENGINE=OFF
+          ninja install
+
+      - name: Build AIR
+        run: |
+          LIT_PATH=$(python3 -c 'import lit, os; print(os.path.join(os.path.dirname(lit.__file__), "..", "..", "..", "bin", "lit"))')
+          mkdir -p build && cd build
+          cmake .. -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=$PWD/../install \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DLLVM_USE_LINKER=lld \
+            -DLLVM_DIR=$PWD/../llvm/install/lib/cmake/llvm \
+            -DMLIR_DIR=$PWD/../llvm/install/lib/cmake/mlir \
+            -DLLVM_EXTERNAL_LIT=$LIT_PATH \
+            -DAIR_ENABLE_AIE=OFF \
+            -DAIR_ENABLE_GPU=OFF \
+            -DAIE_ENABLE_BINDINGS_PYTHON=OFF \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DLLVM_ENABLE_ASSERTIONS=ON
+          ninja install
+
+      - name: Run CSL lit tests
+        run: |
+          export PATH="$PWD/install/bin:$PWD/build/bin:$PWD/llvm/install/bin:$HOME/.local/bin:$PATH"
+          lit -v \
+            build/mlir/test/Dialect/CSL \
+            build/mlir/test/Conversion/AIRToCSL \
+            build/mlir/test/Targets/CSLEmit
+
+      - name: Package install/
+        run: tar -czf air-install-linux-x64.tar.gz install/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: air-install-linux-x64
+          path: air-install-linux-x64.tar.gz
+          retention-days: 90

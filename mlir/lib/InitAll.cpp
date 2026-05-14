@@ -9,16 +9,25 @@
 #include "air/InitAll.h"
 
 #include "air/Conversion/Passes.h"
+#include "air/Dialect/CSL/Pipelines/Pipelines.h"
+#include "air/Dialect/CSL/Transforms/Passes.h"
 #include "air/Dialect/AIR/AIRDialect.h"
 #include "air/Dialect/AIR/AIRTransformOps.h"
 #include "air/Dialect/AIRRt/AIRRtDialect.h"
+#include "air/Dialect/CSL/CSLDialect.h"
+#include "air/Dialect/CSL/CSLOps.h"
+#include "air/Dialect/CSL/CSLLayoutOps.h"
+#include "air/Dialect/CSL/CSLHostOps.h"
 #include "air/Interfaces/AIRInterfaces.h"
 #include "air/Transform/Passes.h"
 #include "mlir/IR/Dialect.h"
 #include "mlir/InitAllPasses.h"
 
 void xilinx::air::registerAllDialects(mlir::DialectRegistry &registry) {
-  registry.insert<xilinx::air::airDialect, xilinx::airrt::AIRRtDialect>();
+  registry.insert<xilinx::air::airDialect, xilinx::airrt::AIRRtDialect,
+                  xilinx::csl::CSLDialect,
+                  xilinx::csl_layout::CSLLayoutDialect,
+                  xilinx::csl_host::CSLHostDialect>();
   xilinx::air::registerTransformDialectExtension(registry);
   xilinx::air::registerCodegenInterfaces(registry);
 }
@@ -26,4 +35,6 @@ void xilinx::air::registerAllDialects(mlir::DialectRegistry &registry) {
 void xilinx::air::registerAllPasses() {
   xilinx::air::registerTransformPasses();
   xilinx::air::registerConversionPasses();
+  xilinx::air::registerCSLTransformPasses();
+  xilinx::air::registerCSLPipelines();
 }

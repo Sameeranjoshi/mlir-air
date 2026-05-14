@@ -5,14 +5,18 @@
 set(CONVERSION_SOURCES
   ConvertToAIRPass.cpp
   AIRToAsyncPass.cpp
+  AIRToCSLPass.cpp
+  CSLVerifyParams.cpp
   Passes.cpp
 )
 
 set(CONVERSION_LINK_LIBS
   AIRDialect
   AIRRtDialect
+  CSLDialect
   AIRUtil
   MLIRIR
+  MLIRFuncDialect
   MLIRLinalgUtils
   MLIRLinalgTransforms
   MLIRSupport

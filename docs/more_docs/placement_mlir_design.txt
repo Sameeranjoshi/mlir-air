@@ -1,0 +1,168 @@
+
+// CSL Dialect which mimics the SDKLayout APIs, 
+// We have a mapping 1 to 1, but on higher level we will hide a few details from programmer.
+xilinx::csl::CodeRegionOp,
+xilinx::csl::ColorOp,
+xilinx::csl::ComptimeOp,
+xilinx::csl::ConnectOp,
+xilinx::csl::CreateInputPortOp,
+xilinx::csl::CreateInputStreamOp,
+xilinx::csl::CreateOutputPortOp,
+xilinx::csl::CreateOutputStreamOp,
+xilinx::csl::ExportNameOp,
+xilinx::csl::ExportSymbolOp,
+xilinx::csl::FuncOp,
+xilinx::csl::GetFabDsdOp,
+xilinx::csl::GetMemDsdOp,
+xilinx::csl::HstackOp,
+xilinx::csl::ImportModuleOp,
+xilinx::csl::LayoutOp,
+xilinx::csl::ModuleOp,
+xilinx::csl::MovOp,
+xilinx::csl::PaintAllOp,
+xilinx::csl::PaintOp,
+xilinx::csl::PaintRangeOp,
+xilinx::csl::ParamOp,
+xilinx::csl::PlaceOp,
+xilinx::csl::ReturnOp,
+xilinx::csl::RouteOp,
+xilinx::csl::RoutingPositionOp,
+xilinx::csl::ScopedColorOp,
+xilinx::csl::SdkLayoutOp,
+xilinx::csl::SetParamAllOp,
+xilinx::csl::SetParamOp,
+xilinx::csl::SetRectangleOp,
+xilinx::csl::SetTileCodeOp,
+xilinx::csl::SymColorOp,
+xilinx::csl::TaskOp,
+xilinx::csl::VarOp,
+xilinx::csl::VstackOp
+
+
+Mapping from Python SdkLayout API to MLIR CSL op:
+Refer: https://sdk.cerebras.net/api-docs/sdklayout-api
+Python SdkLayout API	MLIR CSL op
+SdkLayout(platform)	csl.sdk_layout { ... }
+layout.create_code_region(src, name, w, h)	%r = csl.code_region "..." name("...") width(W) height(H)
+region.place(x, y)	csl.place %r at(x, y)
+layout.hstack([r1, r2])	csl.hstack[%r1, %r2]
+layout.vstack([r1, r2], origin=...)	csl.vstack[%r1, %r2] origin(ox, oy)
+Color('name')	%c = csl.sym_color "name" : !csl.color
+region.color('name')	%c = csl.scoped_color %r "name" : !csl.color
+RoutingPosition().set_input([...]).set_output([...])	%rp = csl.routing_position inputs([4 : i32]) outputs([2 : i32]) : i32
+region.paint(IntVector(x,y), c, [rp])	csl.paint %r at(x, y) color(%c) routing(%rp)
+region.paint_all(c, [rp])	csl.paint_all %r color(%c) routing(%rp)
+region.paint_range(rect, c, [rp])	csl.paint_range %r rect(ox, oy, w, h) color(%c) routing(%rp)
+region.set_param_all('name', val)	csl.set_param_all %r param("name") value(V)
+region.set_param_all(color_obj)	csl.set_param_all %r color(%c)
+region.set_param(IntVector(x,y), 'name', val)	csl.set_param %r at(x, y) param("name") value(V)
+region.create_output_port(c, Edge.RIGHT, [rp], size)	%p = csl.create_output_port %r color(%c) edge(RIGHT) routing(%rp) size(N)
+region.create_input_port(c, Edge.LEFT, [rp], size)	%p = csl.create_input_port %r color(%c) edge(LEFT) routing(%rp) size(N)
+layout.connect(tx, rx)	csl.connect %tx -> %rx
+layout.create_input_stream(port)	%s = csl.create_input_stream %port : !csl.stream
+layout.create_output_stream(port)	%s = csl.create_output_stream %port 
+
+
+NEW:only layout ops
+Op	From	Purpose
+csl.sdk_layout	SdkLayoutOps	Top-level SdkLayout container
+csl.code_region	SdkLayoutOps	Create CodeRegion handle
+csl.place	SdkLayoutOps	Place region at coordinate
+csl.hstack / csl.vstack	SdkLayoutOps	Stacking regions
+csl.sym_color / csl.scoped_color	SdkLayoutOps	Symbolic colors
+csl.routing_position	SdkLayoutOps	Routing position builder
+csl.paint / csl.paint_all / csl.paint_range	SdkLayoutOps	Painting PEs
+csl.set_param_all / csl.set_param	SdkLayoutOps	Compile-time params
+csl.create_output_port / csl.create_input_port	SdkLayoutOps	Port creation
+csl.connect	SdkLayoutOps	Port connections
+csl.create_input_stream / csl.create_output_stream	SdkLayoutOps	I/O streams
+csl.spatial_placement	NEW	Top-level spatial placement container
+csl.dataflow	NEW	Connect ports across regions (%src -> %dst)
+
+
+
+# targetinfo = WSE3 .. or something similar
+
+
+
+# global: colors, routes, kernels
+# COLORS
+%red = csl.color(): !csl.color
+%green = csl.color() : !csl.color
+%blue = csl.color() : !csl.color
+listofcolors = [%red, %green, %blue]
+
+#ROUTES
+%route1 = csl.route in(RAMP), out(WEST)
+%route2 = csl.route in(RAMP), out(EAST)
+%route3 = csl.route in(RAMP), out(NORTH)
+%route4 = csl.route in(RAMP), out(SOUTH)
+listofroutes = [%route1, %route2, %route3, %route4]
+
+# parameters are associated with kernels, not regions so makes sense to have them here.
+%kernel1 = csl.kernel("k1.csl", params({%param1: 100}, {%param2: 200}, {%param3: 300}))
+%kernel2 = csl.kernel("k2.csl", params({%param1: 100}, {%param2: 200}, {%param3: 300}))
+%kernel3 = csl.kernel("k3.csl", params({%param1: 100}, {%param2: 200}, {%param3: 300}))
+%kernel4 = csl.kernel("k4.csl", params({%param1: 100}, {%param2: 200}, {%param3: 300}))
+listofkernels = [%kernel1, %kernel2, %kernel3, %kernel4]
+
+
+// This construct talks about placement, routing, coloring(inter and intra) and then dataflow across regions.
+// This construct generates layout.csl file in CSL, the emitter here will be the air-translate.
+csl.spatial_placement on #targetinfo {
+
+    %regionA = csl.code_region in_routes(%route1, %route2, %route3, %route4) 
+                            in_colors(%red, %green, %blue) 
+                            outs_ports(%port1, %port2, %port3, %port4) {shape = {10,10}}
+        {
+
+        // paint inside use routes, colors and paint on a specific PE and params.
+        csl.paint %PE(x,y) with %route1 and color %red
+        csl.paint %PE(x,y) with %route2 and color %green
+        csl.paint %PE(x,y) with %route3 and color %blue
+        csl.paint %PE(x,y) with %route4 and color %red
+
+        // Attach ports to this region.
+        %port1 = csl.port {type="input",[which PEs? or can specify edges], route=%route1, size=10}
+        %port2 = csl.port {type="output",[which PEs? or can specify edges], route=%route2, size=10}
+        %port3 = csl.port {type="input",[which PEs? or can specify edges], route=%route3, size=10}
+        %port4 = csl.port {type="output",[which PEs? or can specify edges], route=%route4, size=10}
+
+        // Attach streams
+        // TODO: Implement this in future.
+    }
+
+    // similarly for regionB
+    %regionB = csl.code_region in_routes(%route1, %route2, %route3, %route4) 
+                            in_colors(%red, %green, %blue) 
+                            outs_ports(%port1, %port2, %port3, %port4) {shape = {10,10}}
+        {
+
+        // paint inside use routes, colors and paint on a specific PE and params.
+        csl.paint %PE(x,y) with %route1 and color %red and params({%param1: 100}, {%param2: 200}, {%param3: 300})
+        csl.paint %PE(x,y) with %route2 and color %green and params({%param1: 100}, {%param2: 200}, {%param3: 300})
+        csl.paint %PE(x,y) with %route3 and color %blue and params({%param1: 100}, {%param2: 200}, {%param3: 300})
+        csl.paint %PE(x,y) with %route4 and color %red and params({%param1: 100}, {%param2: 200}, {%param3: 300})
+
+        // Attach ports to this region.
+        %port1 = csl.port {type="input",[which PEs? or can specify edges], route=%route1, size=10}
+        %port2 = csl.port {type="output",[which PEs? or can specify edges], route=%route2, size=10}
+        %port3 = csl.port {type="input",[which PEs? or can specify edges], route=%route3, size=10}
+        %port4 = csl.port {type="output",[which PEs? or can specify edges], route=%route4, size=10}
+
+        // Attach streams
+        // TODO: Implement this in future.
+    }
+
+    # place regions on the wafer, decouple the kernel and region so that we can place any kernel on any region.
+    %r1 = csl.place %regionA at coord(0,0) with kernel %kernel1
+    %r2 = csl.place %regionB at coord(10,10) with kernel %kernel2
+
+    # connect regions and let cslc compiler automatically find optimal routes across them.
+    # syntax: csl.connect sender_port, receiver_port
+    csl.dataflow %regionA.port1 -> %regionB.port2
+    csl.dataflow %regionA.port3 -> %regionB.port4
+    csl.dataflow %regionB.port1 -> %regionA.port2   // motivated from aie.flow() operation
+    csl.dataflow %regionB.port3 -> %regionA.port4
+
+} // spatial_placement

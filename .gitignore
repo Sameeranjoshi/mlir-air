@@ -1,3 +1,5 @@
+llvm/*
+
 # make artifacts
 CMakeFiles/
 CMakeCache.txt
@@ -36,3 +38,8 @@ sandbox
 libadf.a
 *.elf
 *.elf.*
+/uufs/chpc.utah.edu/common/home/u1418973/other/amd-air/mlir-air-gpu/llvm/
+
+# local experiment outputs and scratch dirs
+out/
+tmp*/
