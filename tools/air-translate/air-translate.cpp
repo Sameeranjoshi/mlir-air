@@ -30,6 +30,7 @@ int main(int argc, char **argv) {
 
   registerAllTranslations();
   xilinx::air::registerAIRRtTranslations();
+  xilinx::air::registerAIRToSpadaTranslation();
 
   return failed(mlirTranslateMain(argc, argv, "AIR MLIR Translation Tool"));
 }

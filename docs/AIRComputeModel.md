@@ -118,15 +118,24 @@ form of the op.
 
 #### Token consumption — the three attribute lists
 
-Tokens are consumed by including them in named attribute lists on hierarchy and
-data-movement ops. An op may carry any combination of the three lists:
+Tokens are consumed by including them in named lists on hierarchy ops. An op may
+carry any combination of the three lists. The implemented syntax follows the
+existing `async [...]` form: the dependency list is the operand list after
+`async`, and the two other lists are introduced by keywords:
 
 ```
-air.segment @bar [dependency = [%t0, %t1]]
-                 [affinity   = [%ta]]
-                 [concurrency = [%tc]]
-                 { … }
+%ta = air.token.alloc : !air.async.token
+%tc = air.token.alloc : !air.async.token
+%t  = air.segment @bar async [%t0, %t1] affinity [%ta] concurrency [%tc] { … }
+      air.herd @h affinity [%ta] concurrency [%tc] tile (%x, %y) in (%sx=%c4, %sy=%c4) { … }
+      air.launch affinity [%ta] (%lx) in (%lsx=%c1) { … }      // no concurrency list
 ```
+
+`air.token.alloc` is the explicit allocation of §"Token creation"; its result is
+never signaled and the verifier rejects its use as a dependency. The token type is
+`!air.async.token` for all three kinds (the kind is decided by the list, not the
+type). Placement on a 2D tile fabric honouring these lists is done by
+`-air-place-herds-by-token` (§6).
 
 | Attribute list | Constraint imposed | Effect on resource lifespan | Effect on execution lifespan |
 |----------------|-------------------|----------------------------|------------------------------|
@@ -1095,3 +1104,66 @@ See [buildingGPU.md](buildingGPU.md) for build instructions and the complete
 | `air.symmetric` memref alloc | n/a | `mgpuSymmetricAlloc` (planned) |
 | Synchronization | AIE locks | `gpu.barrier` (intra-rank), `mgpuBarrier` (cross-rank) |
 | `!air.token` (dependency) | AIE runtime completion signals | GPU stream/event dependencies |
+
+---
+
+## 6. Distributed-memory mapping (Cerebras WSE via SpaDA)
+
+A wafer-scale engine has no shared memory: every byte lives in some PE's local
+memory and PEs communicate only over routed streams. The model above still applies,
+with two additions that make ownership explicit.
+
+### 6.1 Partitioned L2: the herd's collective L1
+
+An L2 `memref.alloc` may carry
+
+```
+%A2 = memref.alloc() {air.partition = #air.partition<block = [8, 8],
+          owner = affine_map<(r, c) -> (c, r)>>} : memref<32x32xf32, 1>
+```
+
+meaning the buffer is cut into `block`-sized blocks and block `b` lives in the L1 of
+herd tile `owner(b)`. `block` is the partitioning function and `owner` the
+colour-to-processor map (DISTAL's two-stage distribution). Per-PE persistent state
+is the case where the block grid equals the herd grid.
+
+Rules:
+
+* Inside a herd, a partitioned memref may only be touched by `air.dma_memcpy_nd`
+  whose region, evaluated tile by tile (enclosing `affine.if` conditions on the
+  tile ids are honoured), lies in the block that tile owns. A non-owner access is a
+  compile-time error: communication is an explicit `air.channel`.
+* A segment-level `air.dma_memcpy_nd` between L3 and a partitioned buffer is a
+  scatter/gather: every owner moves exactly its block.
+
+Unannotated L2 buffers keep their shared-memory meaning on NPU/GPU; a
+distributed-memory backend rejects them.
+
+### 6.2 Affinity and concurrency on a tile fabric (`-air-place-herds-by-token`)
+
+* Herds sharing an `affinity` token form a class: same shape, same
+  `x_loc`/`y_loc`, executed one after another on the same tiles. Partitioned L2
+  data therefore stays resident across the herds of a class.
+* Herds sharing a `concurrency` token, or connected by an `air.channel`, must be
+  live at the same time and get disjoint rectangles. A channel between two herds
+  of one affinity class can never make progress and is reported as a deadlock.
+
+### 6.3 Mapping to SpaDA
+
+| AIR concept                                   | SpaDA (Spatial IR, `.sptl`)                         |
+|-----------------------------------------------|-----------------------------------------------------|
+| `air.launch` / `air.segment`                  | `kernel @name<>(...)` and its body                  |
+| `air.herd` at `(x_loc, y_loc)`, size `(sx, sy)` | `compute i16 x, i16 y in [x_loc:x_loc+sx, y_loc:y_loc+sy]` |
+| herds of one affinity class                   | successive `phase`s on one `place` region           |
+| L3 memref                                     | `stream<T, block>[gx, gy] readonly/writeonly` argument |
+| partitioned L2 memref                         | `place` array of one block per owner tile           |
+| L1 `memref.alloc`                             | `place` array                                       |
+| L3 <-> partitioned L2 `dma_memcpy_nd`         | `await receive/send(buf, arg[x, y])` on owners      |
+| owned-block L2 <-> L1 `dma_memcpy_nd`         | local copy loop                                     |
+| `air.channel` put/get between tiles           | `relative_stream(dx, dy)` + `send`/`receive`        |
+| channel with `broadcast_shape` down a column  | `relative_stream(0, [1:n])` multicast               |
+| unit-offset chain (e.g. reduction)            | two streams coloured by tile parity                 |
+| `affine.if` on tile ids                       | separate `compute` blocks on the sub-rectangles     |
+
+`air-translate --air-to-spada` implements this table for the subset used by the GEMV
+example (see the spatialAIR design notes).

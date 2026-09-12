@@ -120,6 +120,10 @@ void copyChannelSteeringAttrs(Operation *src, Operation *dst);
 
 void registerAIRRtTranslations();
 
+// Registers `air-to-spada`: AIR (after -air-place-herds-by-token) -> SpaDA
+// Spatial IR (.sptl) text for the Cerebras WSE. See docs/SPADA_EMITTER_SPEC.md.
+void registerAIRToSpadaTranslation();
+
 class AsyncTokenType
     : public Type::TypeBase<AsyncTokenType, Type, TypeStorage> {
 public:
