@@ -296,7 +296,9 @@ struct ChannelInfo {
   int channelNum = 0;
   // Ring / chain along one axis (spec v2 §4; a pure chain with no wrap edge
   // reproduces v1's unit-chain behavior):
-  int64_t dx = 0, dy = 0; // short (unit) edge direction
+  int64_t dx = 0, dy = 0; // base edge net offset (any length)
+  int64_t baseStepX = 0, baseStepY = 0; // unit hop direction of the base edge
+  int64_t baseHops = 1;                 // |dx| + |dy|
   int evenChannelNum = 0, oddChannelNum = 0;
   bool hasWrap = false;
   int64_t wrapDx = 0, wrapDy = 0;         // long edge's net (Lx, Ly)
@@ -924,27 +926,36 @@ SpadaEmitter::classifyHerdChannels(HerdInfo &herd,
       }
       if (axisOk && axisKnown) {
         std::map<std::pair<int64_t, int64_t>, int> outDeg, inDeg;
-        std::set<int64_t> shortDeltas, longDeltas;
+        std::set<int64_t> deltas;
         for (auto &[p, g] : edges) {
           int64_t delta = axisIsX ? (g.gx - p.gx) : (g.gy - p.gy);
           outDeg[{p.gx, p.gy}]++;
           inDeg[{g.gx, g.gy}]++;
-          (std::abs(delta) == 1 ? shortDeltas : longDeltas).insert(delta);
+          deltas.insert(delta);
         }
         bool degreeOk = true;
         for (auto &kv : outDeg)
           degreeOk &= kv.second <= 1;
         for (auto &kv : inDeg)
           degreeOk &= kv.second <= 1;
-        if (degreeOk && shortDeltas.size() <= 1 && longDeltas.size() <= 1 &&
-            !shortDeltas.empty()) {
+        // Base edge = the shortest delta (any length: unit chains, but also
+        // the 2^s-hop edges of a tree reduction); an optional second delta is
+        // the wrap-around.
+        if (degreeOk && !deltas.empty() && deltas.size() <= 2) {
           ChannelInfo c;
           c.kind = ChannelInfo::Ring;
-          int64_t d = *shortDeltas.begin();
+          int64_t d = *deltas.begin();
+          for (int64_t cand : deltas)
+            if (std::abs(cand) < std::abs(d))
+              d = cand;
           c.dx = axisIsX ? d : 0;
           c.dy = axisIsX ? 0 : d;
-          if (!longDeltas.empty()) {
-            int64_t L = *longDeltas.begin();
+          c.baseHops = std::abs(d);
+          c.baseStepX = axisIsX ? (d > 0 ? 1 : -1) : 0;
+          c.baseStepY = axisIsX ? 0 : (d > 0 ? 1 : -1);
+          if (deltas.size() == 2) {
+            int64_t L = *deltas.begin() == d ? *std::next(deltas.begin())
+                                             : *deltas.begin();
             c.hasWrap = true;
             c.wrapDx = axisIsX ? L : 0;
             c.wrapDy = axisIsX ? 0 : L;
@@ -956,8 +967,10 @@ SpadaEmitter::classifyHerdChannels(HerdInfo &herd,
           for (auto &[p, g] : edges) {
             int64_t delta = axisIsX ? (g.gx - p.gx) : (g.gy - p.gy);
             int64_t senderCoord = axisIsX ? p.gx : p.gy;
-            int sel = std::abs(delta) == 1 ? (mod2(senderCoord) == 0 ? 0 : 1)
-                                            : 2;
+            // Parity of the sender's position in units of the base edge
+            // length keeps consecutive relays on distinct colours.
+            int sel = delta == d ? (mod2(senderCoord / c.baseHops) == 0 ? 0 : 1)
+                                 : 2;
             c.outStream[{p.gx, p.gy}] = sel;
             c.inStream[{g.gx, g.gy}] = sel;
           }
@@ -1692,14 +1705,23 @@ LogicalResult SpadaEmitter::emitHerdPhase(HerdInfo &herd) {
            << " = relative_stream(" << args << ") { hops = auto, channel = "
            << ci.channelNum << " }\n";
       } else {
+        auto baseHops = [&](raw_ostream &o) {
+          for (int64_t h = 0; h < ci.baseHops; ++h) {
+            if (h)
+              o << ", ";
+            o << "(" << ci.baseStepX << ", " << ci.baseStepY << ")";
+          }
+        };
         os << "      stream<" << ci.elemType << "> " << name
            << "_even = relative_stream(" << ci.dx << ", " << ci.dy
-           << ") { hops = [(" << ci.dx << ", " << ci.dy
-           << ")], channel = " << ci.evenChannelNum << " }\n";
+           << ") { hops = [";
+        baseHops(os);
+        os << "], channel = " << ci.evenChannelNum << " }\n";
         os << "      stream<" << ci.elemType << "> " << name
            << "_odd = relative_stream(" << ci.dx << ", " << ci.dy
-           << ") { hops = [(" << ci.dx << ", " << ci.dy
-           << ")], channel = " << ci.oddChannelNum << " }\n";
+           << ") { hops = [";
+        baseHops(os);
+        os << "], channel = " << ci.oddChannelNum << " }\n";
         if (ci.hasWrap) {
           os << "      stream<" << ci.elemType << "> " << name
              << "_wrap = relative_stream(" << ci.wrapDx << ", " << ci.wrapDy
