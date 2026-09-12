@@ -13,10 +13,11 @@
 // The @stage herd's column multicast of x.
 // CHECK: stream<f32> bx = relative_stream(0, [1:4]) { hops = auto, channel = 0 }
 
-// The @compute herd's inner-product loop, nested and flattened row-major.
+// The @compute herd's inner-product loop. Spec v2 §1: A is ranked (never a
+// channel-get destination) and indexed per-dimension, not flattened.
 // CHECK: for i16 k in [0:8] {
 // CHECK: for i16 l in [0:8] {
-// CHECK: {{.*}} = ({{.*}} + ({{.*}}[k * 8 + l] * {{.*}}[l]))
+// CHECK: {{.*}} = ({{.*}} + ({{.*}}[k, l] * {{.*}}[l]))
 
 // The @reduce herd's westward chain reduction: two streams, colour by parity.
 // CHECK: stream<f32> red_even = relative_stream(-1, 0) { hops = [(-1, 0)], channel = 1 }

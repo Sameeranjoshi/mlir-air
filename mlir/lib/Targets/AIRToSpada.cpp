@@ -195,6 +195,19 @@ static std::string fmtRect(int64_t x0, int64_t x1, int64_t y0, int64_t y1,
       .str();
 }
 
+static int64_t mod2(int64_t v) { return ((v % 2) + 2) % 2; }
+
+// Spec v2 §1: formats a ranked SpaDA array declaration shape, e.g. `8, 8`.
+static std::string formatDims(ArrayRef<int64_t> shape) {
+  std::string s;
+  for (size_t i = 0; i < shape.size(); ++i) {
+    if (i)
+      s += ", ";
+    s += std::to_string(shape[i]);
+  }
+  return s;
+}
+
 // Formats a float constant the way SpaDA literals look (`0.0`, `1.5`).
 static std::string fmtFloat(const APFloat &v) {
   double d = v.convertToDouble();
@@ -229,6 +242,7 @@ struct L2AllocInfo {
   MemRefType ty;
   std::string name; // "l2_<k>"
   int64_t blocksize = 0;
+  SmallVector<int64_t> blockShape; // spec v2 §1: declared/indexed rank
   int64_t ox0 = 0, ox1 = 0, oy0 = 0, oy1 = 0; // owner rectangle (global)
 };
 
@@ -237,6 +251,11 @@ struct HerdInfo {
   int64_t sx = 1, sy = 1;
   int64_t xloc = 0, yloc = 0;
   std::string name;
+  // Spec v2 §1: an L1 buffer that is ever the destination of an
+  // `air.channel.get` anywhere in the herd is emitted flat; every other L1
+  // buffer keeps its memref rank. Defaults to false (ranked) for allocs not
+  // present in the map.
+  DenseMap<Value, bool> l1IsFlat;
   SmallVector<Value> l1Allocs;           // in program order
   DenseMap<Value, std::string> l1Names;  // alloc result -> "<h>_l1_<j>"
 };
@@ -268,17 +287,41 @@ struct ProgramItem {
 //===----------------------------------------------------------------------===//
 
 struct ChannelInfo {
-  enum Kind { Multicast, UnitChain } kind;
+  enum Kind { Multicast, Ring } kind;
   std::string elemType;
   // Multicast:
   int axis = 1;    // 0 -> dx varies, 1 -> dy varies
   int sign = 1;     // +1 ascending, -1 descending
   int64_t n = 0;    // number of receivers
   int channelNum = 0;
-  // Unit chain:
-  int64_t dx = 0, dy = 0;
+  // Ring / chain along one axis (spec v2 §4; a pure chain with no wrap edge
+  // reproduces v1's unit-chain behavior):
+  int64_t dx = 0, dy = 0; // short (unit) edge direction
   int evenChannelNum = 0, oddChannelNum = 0;
+  bool hasWrap = false;
+  int64_t wrapDx = 0, wrapDy = 0;         // long edge's net (Lx, Ly)
+  int64_t wrapStepX = 0, wrapStepY = 0;   // unit hop direction for the wrap
+  int64_t wrapHops = 0;                   // number of hops (|Lx| + |Ly|)
+  int wrapChannelNum = 0;
+  // Per-tile stream selection for a Ring channel, keyed by global (x, y).
+  // 0 = even, 1 = odd, 2 = wrap.
+  std::map<std::pair<int64_t, int64_t>, int> outStream;
+  std::map<std::pair<int64_t, int64_t>, int> inStream;
 };
+
+static const char *ringStreamSuffix(int sel) {
+  return sel == 0 ? "even" : sel == 1 ? "odd" : "wrap";
+}
+
+static FailureOr<int> lookupRingStream(
+    Operation *errOp, const std::map<std::pair<int64_t, int64_t>, int> &m,
+    int64_t gx, int64_t gy, const char *which) {
+  auto it = m.find({gx, gy});
+  if (it == m.end())
+    return errOp->emitOpError("internal error: tile has no assigned ")
+           << which << " stream for this ring channel";
+  return it->second;
+}
 
 using ChannelMap = llvm::StringMap<ChannelInfo>;
 
@@ -287,6 +330,16 @@ using ChannelMap = llvm::StringMap<ChannelInfo>;
 struct SiteRecord {
   int64_t gx, gy;
   SmallVector<int64_t> idx;
+};
+
+// Spec v2 §2: a `completion cN = send/receive(...)` produced by an async
+// channel put/get, recorded so a later (no-result) `air.wait_all` can be
+// lowered to `await cN`. `block` is the SpaDA-emitting Block the completion
+// was declared in, so an `air.wait_all` outside that block/loop is an error
+// (SpaDA requires the await to be in the same body as the completion).
+struct CompletionRecord {
+  std::string name;
+  int depth; // affine.for nesting depth (SpaDA scope) it was declared in.
 };
 
 //===----------------------------------------------------------------------===//
@@ -353,7 +406,9 @@ private:
   LogicalResult emitHerdBody(Block &block, HerdInfo &herd, Env &env,
                               int64_t lx, int64_t ly, ChannelMap &channels,
                               DenseMap<Value, std::string> &loopVarNames,
-                              int depth, raw_ostream &o);
+                              int depth, raw_ostream &o,
+                              DenseMap<Value, CompletionRecord> &completions,
+                              int &nextCompletionId);
   FailureOr<std::string> printExpr(Value v, HerdInfo &herd, int64_t lx,
                                     int64_t ly,
                                     DenseMap<Value, std::string> &loopVarNames);
@@ -458,6 +513,7 @@ LogicalResult SpadaEmitter::collectL2Allocs() {
       blocksize *= block[d];
     }
     info.blocksize = blocksize;
+    info.blockShape.assign(block.begin(), block.end());
 
     // Enumerate every block coordinate and evaluate its owner.
     int64_t nBlocks = 1;
@@ -538,6 +594,10 @@ LogicalResult SpadaEmitter::collectHerds() {
       }
     });
 
+    // Spec v2 §1: mark every L1 buffer that is ever a channel.get
+    // destination in this herd as flat.
+    herd.walk([&](air::ChannelGetOp get) { info.l1IsFlat[get.getDst()] = true; });
+
     herdIndex[herd.getOperation()] = herds.size();
     herds.push_back(info);
   }
@@ -545,12 +605,8 @@ LogicalResult SpadaEmitter::collectHerds() {
 }
 
 LogicalResult SpadaEmitter::collectSegDmasAndProgram() {
-  ProgramItem *curGroup = nullptr;
-  std::optional<SegDmaDir> curDir;
   for (Operation &op : segmentOp.getBody().front()) {
     if (auto herd = dyn_cast<air::HerdOp>(op)) {
-      curGroup = nullptr;
-      curDir.reset();
       ProgramItem item;
       item.isHerd = true;
       item.herdIdx = herdIndex.lookup(herd.getOperation());
@@ -623,16 +679,14 @@ LogicalResult SpadaEmitter::collectSegDmasAndProgram() {
     unsigned dmaIdx = segDmas.size();
     segDmas.push_back(info);
 
-    if (curGroup && curDir && *curDir == info.dir) {
-      curGroup->dmas.push_back(dmaIdx);
-    } else {
-      ProgramItem item;
-      item.isHerd = false;
-      item.dmas.push_back(dmaIdx);
-      program.push_back(item);
-      curGroup = &program.back();
-      curDir = info.dir;
-    }
+    // Spec v2 addendum: each segment-level DMA gets its own phase (SpaDA
+    // allows at most one compute block per PE per phase; grouping
+    // consecutive same-direction DMAs, as v1 did, can put two overlapping
+    // compute-block rectangles in one phase).
+    ProgramItem item;
+    item.isHerd = false;
+    item.dmas.push_back(dmaIdx);
+    program.push_back(item);
   }
   return success();
 }
@@ -847,17 +901,66 @@ SpadaEmitter::classifyHerdChannels(HerdInfo &herd,
       ci = classifyAxis(/*xVaries=*/true);
 
     if (!ci) {
-      // Unit chain: every edge has the same (dx, dy), |dx| + |dy| == 1.
-      std::set<std::pair<int64_t, int64_t>> deltas;
-      for (auto &[p, g] : edges)
-        deltas.insert({g.gx - p.gx, g.gy - p.gy});
-      if (deltas.size() == 1) {
-        auto [dx, dy] = *deltas.begin();
-        if (std::abs(dx) + std::abs(dy) == 1) {
+      // Ring / chain along one axis (spec v2 §4). Every edge steps along a
+      // single, shared axis; short (unit) edges use the parity streams and
+      // any longer edges (the wrap-around) share a second direction and use
+      // a wrap stream. A pure chain with no long edge reproduces v1's
+      // unit-chain behavior.
+      bool axisIsX = false, axisKnown = false, axisOk = true;
+      for (auto &[p, g] : edges) {
+        int64_t ddx = g.gx - p.gx, ddy = g.gy - p.gy;
+        bool xNZ = ddx != 0, yNZ = ddy != 0;
+        if (xNZ == yNZ) { // both zero (self) or both nonzero (diagonal)
+          axisOk = false;
+          break;
+        }
+        if (!axisKnown) {
+          axisIsX = xNZ;
+          axisKnown = true;
+        } else if (axisIsX != xNZ) {
+          axisOk = false;
+          break;
+        }
+      }
+      if (axisOk && axisKnown) {
+        std::map<std::pair<int64_t, int64_t>, int> outDeg, inDeg;
+        std::set<int64_t> shortDeltas, longDeltas;
+        for (auto &[p, g] : edges) {
+          int64_t delta = axisIsX ? (g.gx - p.gx) : (g.gy - p.gy);
+          outDeg[{p.gx, p.gy}]++;
+          inDeg[{g.gx, g.gy}]++;
+          (std::abs(delta) == 1 ? shortDeltas : longDeltas).insert(delta);
+        }
+        bool degreeOk = true;
+        for (auto &kv : outDeg)
+          degreeOk &= kv.second <= 1;
+        for (auto &kv : inDeg)
+          degreeOk &= kv.second <= 1;
+        if (degreeOk && shortDeltas.size() <= 1 && longDeltas.size() <= 1 &&
+            !shortDeltas.empty()) {
           ChannelInfo c;
-          c.kind = ChannelInfo::UnitChain;
-          c.dx = dx;
-          c.dy = dy;
+          c.kind = ChannelInfo::Ring;
+          int64_t d = *shortDeltas.begin();
+          c.dx = axisIsX ? d : 0;
+          c.dy = axisIsX ? 0 : d;
+          if (!longDeltas.empty()) {
+            int64_t L = *longDeltas.begin();
+            c.hasWrap = true;
+            c.wrapDx = axisIsX ? L : 0;
+            c.wrapDy = axisIsX ? 0 : L;
+            int64_t step = L > 0 ? 1 : -1;
+            c.wrapStepX = axisIsX ? step : 0;
+            c.wrapStepY = axisIsX ? 0 : step;
+            c.wrapHops = std::abs(L);
+          }
+          for (auto &[p, g] : edges) {
+            int64_t delta = axisIsX ? (g.gx - p.gx) : (g.gy - p.gy);
+            int64_t senderCoord = axisIsX ? p.gx : p.gy;
+            int sel = std::abs(delta) == 1 ? (mod2(senderCoord) == 0 ? 0 : 1)
+                                            : 2;
+            c.outStream[{p.gx, p.gy}] = sel;
+            c.inStream[{g.gx, g.gy}] = sel;
+          }
           ci = c;
         }
       }
@@ -878,6 +981,8 @@ SpadaEmitter::classifyHerdChannels(HerdInfo &herd,
     } else {
       ci->evenChannelNum = nextChannel++;
       ci->oddChannelNum = nextChannel++;
+      if (ci->hasWrap)
+        ci->wrapChannelNum = nextChannel++;
     }
     if (nextChannel > 21)
       return chanOp.emitOpError(
@@ -892,8 +997,6 @@ SpadaEmitter::classifyHerdChannels(HerdInfo &herd,
 //===----------------------------------------------------------------------===//
 // Role key construction (spec 3.4.1).
 //===----------------------------------------------------------------------===//
-
-static int64_t mod2(int64_t v) { return ((v % 2) + 2) % 2; }
 
 LogicalResult SpadaEmitter::buildRoleKey(Block &block, Env &env,
                                           HerdInfo &herd, int64_t lx,
@@ -925,9 +1028,12 @@ LogicalResult SpadaEmitter::buildRoleKey(Block &block, Env &env,
     if (auto put = dyn_cast<air::ChannelPutOp>(op)) {
       StringRef name = put.getChanName();
       auto it = channels.find(name);
-      if (it != channels.end() && it->second.kind == ChannelInfo::UnitChain) {
-        int64_t coord = it->second.dx != 0 ? herd.xloc + lx : herd.yloc + ly;
-        key += ("P" + name + std::to_string(mod2(coord))).str();
+      if (it != channels.end() && it->second.kind == ChannelInfo::Ring) {
+        auto sel = lookupRingStream(put, it->second.outStream, herd.xloc + lx,
+                                     herd.yloc + ly, "out");
+        if (failed(sel))
+          return failure();
+        key += ("P" + name + ringStreamSuffix(*sel)).str();
       } else {
         key += ("p" + name).str();
       }
@@ -936,10 +1042,12 @@ LogicalResult SpadaEmitter::buildRoleKey(Block &block, Env &env,
     if (auto get = dyn_cast<air::ChannelGetOp>(op)) {
       StringRef name = get.getChanName();
       auto it = channels.find(name);
-      if (it != channels.end() && it->second.kind == ChannelInfo::UnitChain) {
-        int64_t d = it->second.dx != 0 ? it->second.dx : it->second.dy;
-        int64_t coord = it->second.dx != 0 ? herd.xloc + lx : herd.yloc + ly;
-        key += ("G" + name + std::to_string(mod2(coord - d))).str();
+      if (it != channels.end() && it->second.kind == ChannelInfo::Ring) {
+        auto sel = lookupRingStream(get, it->second.inStream, herd.xloc + lx,
+                                     herd.yloc + ly, "in");
+        if (failed(sel))
+          return failure();
+        key += ("G" + name + ringStreamSuffix(*sel)).str();
       } else {
         key += ("g" + name).str();
       }
@@ -1110,11 +1218,12 @@ FailureOr<std::string> SpadaEmitter::flattenAccess(
   auto ty = cast<MemRefType>(memref.getType());
   ArrayRef<int64_t> shape = ty.getShape();
   unsigned rank = shape.size();
-  SmallVector<int64_t> strides(rank, 1);
-  for (int64_t d = (int64_t)rank - 2; d >= 0; --d)
-    strides[d] = strides[d + 1] * shape[d + 1];
 
-  SmallVector<std::string> terms;
+  // Evaluate each dimension's index expression once, then either join them
+  // (spec v2 §1: a ranked, i.e. non-flat, buffer keeps its memref rank and
+  // is indexed with one expression per dimension) or flatten them
+  // row-major (a flat buffer: only a channel-get destination is flat).
+  SmallVector<std::string> dims(rank);
   for (unsigned d = 0; d < rank; ++d) {
     FailureOr<std::string> idxStr;
     if (map) {
@@ -1125,16 +1234,29 @@ FailureOr<std::string> SpadaEmitter::flattenAccess(
     }
     if (failed(idxStr))
       return failure();
-    if (strides[d] == 1)
-      terms.push_back(*idxStr);
-    else
-      terms.push_back(*idxStr + " * " + std::to_string(strides[d]));
+    dims[d] = *idxStr;
   }
+
+  bool flat = herd.l1IsFlat.lookup(memref);
+  if (!flat) {
+    std::string result;
+    for (unsigned d = 0; d < rank; ++d) {
+      if (d)
+        result += ", ";
+      result += dims[d];
+    }
+    return result;
+  }
+
+  SmallVector<int64_t> strides(rank, 1);
+  for (int64_t d = (int64_t)rank - 2; d >= 0; --d)
+    strides[d] = strides[d + 1] * shape[d + 1];
   std::string result;
-  for (size_t i = 0; i < terms.size(); ++i) {
-    if (i)
+  for (unsigned d = 0; d < rank; ++d) {
+    if (d)
       result += " + ";
-    result += terms[i];
+    result += strides[d] == 1 ? dims[d]
+                               : (dims[d] + " * " + std::to_string(strides[d]));
   }
   return result;
 }
@@ -1154,7 +1276,8 @@ static const char *loopVarName(int depth) {
 LogicalResult SpadaEmitter::emitHerdBody(
     Block &block, HerdInfo &herd, Env &env, int64_t lx, int64_t ly,
     ChannelMap &channels, DenseMap<Value, std::string> &loopVarNames,
-    int depth, raw_ostream &o) {
+    int depth, raw_ostream &o, DenseMap<Value, CompletionRecord> &completions,
+    int &nextCompletionId) {
   std::string ind((depth + 3) * 2, ' ');
   for (Operation &op : block) {
     if (isa<memref::AllocOp, memref::DeallocOp, air::HerdTerminatorOp,
@@ -1172,11 +1295,13 @@ LogicalResult SpadaEmitter::emitHerdBody(
         return ifOp.emitOpError("condition does not fold to a constant");
       if (*holds) {
         if (failed(emitHerdBody(*ifOp.getThenBlock(), herd, env, lx, ly,
-                                 channels, loopVarNames, depth, o)))
+                                 channels, loopVarNames, depth, o,
+                                 completions, nextCompletionId)))
           return failure();
       } else if (ifOp.hasElse()) {
         if (failed(emitHerdBody(*ifOp.getElseBlock(), herd, env, lx, ly,
-                                 channels, loopVarNames, depth, o)))
+                                 channels, loopVarNames, depth, o,
+                                 completions, nextCompletionId)))
           return failure();
       }
       continue;
@@ -1192,7 +1317,8 @@ LogicalResult SpadaEmitter::emitHerdBody(
       loopVarNames[forOp.getInductionVar()] = name;
       o << ind << "for i16 " << name << " in [" << lo << ":" << hi << "] {\n";
       if (failed(emitHerdBody(*forOp.getBody(), herd, env, lx, ly, channels,
-                               loopVarNames, depth + 1, o)))
+                               loopVarNames, depth + 1, o, completions,
+                               nextCompletionId)))
         return failure();
       o << ind << "}\n";
       continue;
@@ -1205,6 +1331,12 @@ LogicalResult SpadaEmitter::emitHerdBody(
                                 herd, lx, ly, loopVarNames, bufName);
       if (failed(idx))
         return failure();
+      if (herd.l1IsFlat.lookup(store.getMemRef()) &&
+          idx->find(' ') != std::string::npos)
+        return store.emitOpError(
+            "SpaDA cannot store through a computed index; only channel-get "
+            "destinations are flat and they must be read, not written, "
+            "inside loops");
       auto rhs = printExpr(store.getValueToStore(), herd, lx, ly, loopVarNames);
       if (failed(rhs))
         return failure();
@@ -1219,6 +1351,12 @@ LogicalResult SpadaEmitter::emitHerdBody(
                                 bufName);
       if (failed(idx))
         return failure();
+      if (herd.l1IsFlat.lookup(store.getMemRef()) &&
+          idx->find(' ') != std::string::npos)
+        return store.emitOpError(
+            "SpaDA cannot store through a computed index; only channel-get "
+            "destinations are flat and they must be read, not written, "
+            "inside loops");
       auto rhs =
           printExpr(store.getValueToStore(), herd, lx, ly, loopVarNames);
       if (failed(rhs))
@@ -1248,7 +1386,6 @@ LogicalResult SpadaEmitter::emitHerdBody(
             "buffer");
       SmallVector<OpFoldResult> l2Sizes =
           dstIsL2 ? dma.getMixedDstSizes() : dma.getMixedSrcSizes();
-      int64_t n = l2.blocksize;
       if (!l2Sizes.empty()) {
         int64_t prod = 1;
         for (auto s : l2Sizes) {
@@ -1266,16 +1403,87 @@ LogicalResult SpadaEmitter::emitHerdBody(
         if (prod != l2.blocksize)
           return dma.emitOpError("partial-block access not supported yet");
       }
-      const char *name = loopVarName(depth);
-      o << ind << "for i16 " << name << " in [0:" << n << "] {\n";
-      std::string idxr((depth + 4) * 2, ' ');
+      // Spec v2 §1: L2 arrays are declared with the partition block shape,
+      // and every non-flat buffer keeps its own memref rank; build a loop
+      // nest over the block's non-unit dimensions (a size-1 dimension is
+      // always index 0, so it needs no loop variable of its own) and index
+      // each side per-dimension (or, for a flat L1 buffer, flattened).
+      ArrayRef<int64_t> blockShape = l2.blockShape;
+      SmallVector<unsigned> nuPos;
+      SmallVector<int64_t> nuSize;
+      for (unsigned d = 0; d < blockShape.size(); ++d)
+        if (blockShape[d] != 1) {
+          nuPos.push_back(d);
+          nuSize.push_back(blockShape[d]);
+        }
+      Value l1Val = dstIsL2 ? src : dst;
+      bool l1Flat = herd.l1IsFlat.lookup(l1Val);
+      ArrayRef<int64_t> l1Shape = cast<MemRefType>(l1Val.getType()).getShape();
+      if (!l1Flat && (l1Shape.size() != nuSize.size() ||
+                      !std::equal(l1Shape.begin(), l1Shape.end(),
+                                  nuSize.begin())))
+        return dma.emitOpError(
+            "partitioned L2 block shape does not match the L1 buffer shape "
+            "for a whole-block copy");
+
+      SmallVector<std::string> loopVars(nuSize.size());
+      std::string curInd = ind;
+      for (size_t i = 0; i < nuSize.size(); ++i) {
+        loopVars[i] = loopVarName(depth + (int)i);
+        o << curInd << "for i16 " << loopVars[i] << " in [0:" << nuSize[i]
+          << "] {\n";
+        curInd += "  ";
+      }
+      std::string l2Access;
+      {
+        size_t c = 0;
+        for (unsigned d = 0; d < blockShape.size(); ++d) {
+          if (d)
+            l2Access += ", ";
+          l2Access += blockShape[d] == 1 ? "0" : loopVars[c++];
+        }
+      }
+      std::string l1Access;
+      if (!l1Flat) {
+        for (size_t i = 0; i < loopVars.size(); ++i) {
+          if (i)
+            l1Access += ", ";
+          l1Access += loopVars[i];
+        }
+        if (l1Access.empty())
+          l1Access = "0";
+      } else {
+        if (loopVars.empty()) {
+          l1Access = "0";
+        } else {
+          SmallVector<int64_t> strides(l1Shape.size(), 1);
+          for (int64_t d = (int64_t)l1Shape.size() - 2; d >= 0; --d)
+            strides[d] = strides[d + 1] * l1Shape[d + 1];
+          if (loopVars.size() != l1Shape.size())
+            return dma.emitOpError(
+                "cannot derive a flat index for the L1 side of a "
+                "whole-block copy: rank mismatch with the L2 block shape");
+          for (size_t d = 0; d < l1Shape.size(); ++d) {
+            if (d)
+              l1Access += " + ";
+            l1Access += strides[d] == 1
+                            ? loopVars[d]
+                            : (loopVars[d] + " * " + std::to_string(strides[d]));
+          }
+        }
+      }
+      if (l2Access.empty())
+        l2Access = "0";
       if (dstIsL2)
-        o << idxr << l2.name << "[" << name << "] = " << l1Name << "[" << name
-          << "]\n";
+        o << curInd << l2.name << "[" << l2Access << "] = " << l1Name << "["
+          << l1Access << "]\n";
       else
-        o << idxr << l1Name << "[" << name << "] = " << l2.name << "["
-          << name << "]\n";
-      o << ind << "}\n";
+        o << curInd << l1Name << "[" << l1Access << "] = " << l2.name << "["
+          << l2Access << "]\n";
+      for (size_t i = nuSize.size(); i-- > 0;) {
+        curInd.resize(curInd.size() - 2);
+        o << curInd << "}\n";
+      }
       continue;
     }
 
@@ -1291,11 +1499,23 @@ LogicalResult SpadaEmitter::emitHerdBody(
       if (ci.kind == ChannelInfo::Multicast) {
         streamName = put.getChanName().str();
       } else {
-        int64_t coord = ci.dx != 0 ? herd.xloc + lx : herd.yloc + ly;
-        streamName = put.getChanName().str() +
-                     (mod2(coord) == 0 ? "_even" : "_odd");
+        auto sel = lookupRingStream(put, ci.outStream, herd.xloc + lx,
+                                     herd.yloc + ly, "out");
+        if (failed(sel))
+          return failure();
+        streamName =
+            (put.getChanName() + "_" + ringStreamSuffix(*sel)).str();
       }
-      o << ind << "await send(" << bufName << ", " << streamName << ")\n";
+      // Spec v2 §2: an async put becomes a completion; a sync one keeps
+      // v1's blocking `await send`.
+      if (Value tok = put.getAsyncToken()) {
+        std::string cname = "c" + std::to_string(nextCompletionId++);
+        completions[tok] = {cname, depth};
+        o << ind << "completion " << cname << " = send(" << bufName << ", "
+          << streamName << ")\n";
+      } else {
+        o << ind << "await send(" << bufName << ", " << streamName << ")\n";
+      }
       continue;
     }
     if (auto get = dyn_cast<air::ChannelGetOp>(op)) {
@@ -1311,12 +1531,45 @@ LogicalResult SpadaEmitter::emitHerdBody(
       if (ci.kind == ChannelInfo::Multicast) {
         streamName = get.getChanName().str();
       } else {
-        int64_t d = ci.dx != 0 ? ci.dx : ci.dy;
-        int64_t coord = ci.dx != 0 ? herd.xloc + lx : herd.yloc + ly;
-        streamName = get.getChanName().str() +
-                     (mod2(coord - d) == 0 ? "_even" : "_odd");
+        auto sel = lookupRingStream(get, ci.inStream, herd.xloc + lx,
+                                     herd.yloc + ly, "in");
+        if (failed(sel))
+          return failure();
+        streamName =
+            (get.getChanName() + "_" + ringStreamSuffix(*sel)).str();
       }
-      o << ind << "await receive(" << bufName << ", " << streamName << ")\n";
+      // Spec v2 §2: an async get also becomes a completion; a sync one
+      // keeps v1's blocking `await receive`.
+      if (Value tok = get.getAsyncToken()) {
+        std::string cname = "c" + std::to_string(nextCompletionId++);
+        completions[tok] = {cname, depth};
+        o << ind << "completion " << cname << " = receive(" << bufName
+          << ", " << streamName << ")\n";
+      } else {
+        o << ind << "await receive(" << bufName << ", " << streamName
+          << ")\n";
+      }
+      continue;
+    }
+
+    if (auto waitAll = dyn_cast<air::WaitAllOp>(op)) {
+      // Spec v2 §2: `air.wait_all` with a result is not needed for v2's
+      // input contract (Cannon's wait_all has no result); anything else
+      // that produces a token and feeds it to further users is an error.
+      if (waitAll.getAsyncToken())
+        return waitAll.emitOpError(
+            "air.wait_all with a result is not supported; v2 only lowers "
+            "the no-result form");
+      for (Value dep : waitAll.getAsyncDependencies()) {
+        auto it = completions.find(dep);
+        if (it == completions.end())
+          continue; // not a channel completion; ignored per spec v2 §2.
+        if (it->second.depth != depth)
+          return waitAll.emitOpError(
+              "a completion's token escaped the loop/block it was declared "
+              "in; SpaDA requires the await in the same body");
+        o << ind << "await " << it->second.name << "\n";
+      }
       continue;
     }
 
@@ -1333,19 +1586,28 @@ LogicalResult SpadaEmitter::emitHerdBody(
 void SpadaEmitter::emitPlaceBlock(int64_t ux0, int64_t ux1, int64_t uy0,
                                    int64_t uy1) {
   os << "  place i16 x, i16 y in [" << fmtRect(ux0, ux1, uy0, uy1) << "] {\n";
+  // Spec v2 §1: a partitioned L2 buffer is always declared with its
+  // partition block shape (ranked).
   for (auto &l2 : l2Allocs)
     os << "    " << *spadaScalarType(l2.alloc.getDefiningOp(),
                                       l2.ty.getElementType())
-       << "[" << l2.blocksize << "] " << l2.name << "\n";
+       << "[" << formatDims(l2.blockShape) << "] " << l2.name << "\n";
   for (auto &herd : herds) {
     for (Value alloc : herd.l1Allocs) {
       auto ty = cast<MemRefType>(alloc.getType());
-      int64_t size = 1;
-      for (int64_t s : ty.getShape())
-        size *= s;
+      bool flat = herd.l1IsFlat.lookup(alloc);
+      std::string dims;
+      if (flat) {
+        int64_t size = 1;
+        for (int64_t s : ty.getShape())
+          size *= s;
+        dims = std::to_string(size);
+      } else {
+        dims = formatDims(ty.getShape());
+      }
       os << "    " << *spadaScalarType(alloc.getDefiningOp(),
                                         ty.getElementType())
-         << "[" << size << "] " << herd.l1Names.lookup(alloc) << "\n";
+         << "[" << dims << "] " << herd.l1Names.lookup(alloc) << "\n";
     }
   }
   os << "  }\n\n";
@@ -1438,6 +1700,17 @@ LogicalResult SpadaEmitter::emitHerdPhase(HerdInfo &herd) {
            << "_odd = relative_stream(" << ci.dx << ", " << ci.dy
            << ") { hops = [(" << ci.dx << ", " << ci.dy
            << ")], channel = " << ci.oddChannelNum << " }\n";
+        if (ci.hasWrap) {
+          os << "      stream<" << ci.elemType << "> " << name
+             << "_wrap = relative_stream(" << ci.wrapDx << ", " << ci.wrapDy
+             << ") { hops = [";
+          for (int64_t h = 0; h < ci.wrapHops; ++h) {
+            if (h)
+              os << ", ";
+            os << "(" << ci.wrapStepX << ", " << ci.wrapStepY << ")";
+          }
+          os << "], channel = " << ci.wrapChannelNum << " }\n";
+        }
       }
     }
     os << "    }\n";
@@ -1486,8 +1759,12 @@ LogicalResult SpadaEmitter::emitHerdPhase(HerdInfo &herd) {
       env[sizes[1]] = herd.sy;
     }
     DenseMap<Value, std::string> loopVarNames;
+    // Spec v2 §2: completion ids (`cN`) are per compute-block.
+    DenseMap<Value, CompletionRecord> completions;
+    int nextCompletionId = 0;
     if (failed(emitHerdBody(herd.op.getBody().front(), herd, env, rx, ry,
-                             channels, loopVarNames, /*depth=*/0, os)))
+                             channels, loopVarNames, /*depth=*/0, os,
+                             completions, nextCompletionId)))
       return failure();
     os << "    }\n";
   }
