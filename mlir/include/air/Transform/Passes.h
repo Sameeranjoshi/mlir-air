@@ -11,6 +11,7 @@
 
 #include "air/Transform/AIRAutomaticTilingPass.h"
 #include "air/Transform/AIRDependency.h"
+#include "air/Transform/AIRPlaceHerdsByToken.h"
 #include "air/Transform/AIRDependencyCanonicalize.h"
 #include "air/Transform/AIRDependencyParseGraph.h"
 #include "air/Transform/AIRDependencyScheduleOpt.h"

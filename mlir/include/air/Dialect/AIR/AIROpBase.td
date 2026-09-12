@@ -107,6 +107,39 @@ def MemorySpace: I32EnumAttr<"MemorySpace", "AIR Memory Space IDs",
 //
 // Usage:
 //   memref<32xi32, #air.symmetric_heap>
+// Block partition of an L2 memref over the tiles of a herd.
+//
+// On a distributed-memory machine (no shared L2, e.g. Cerebras WSE) an L2
+// memref tagged with this attribute is *distributed*: it is cut into blocks of
+// `block` elements, and block (b0, b1, ...) lives in the L1 of the herd tile
+// `owner(b0, b1, ...)`. This is DISTAL's "P: coords -> colour, F: colour ->
+// processor" composition as an AIR attribute (`block` is P, `owner` is F).
+//
+// Usage:
+//   %A2 = memref.alloc() {air.partition = #air.partition<block = [8, 8],
+//             owner = affine_map<(r, c) -> (c, r)>>} : memref<32x32xf32, 1>
+//
+// Inside a herd, a partitioned L2 memref may only be accessed by
+// air.dma_memcpy_nd whose region lies in the block(s) owned by the executing
+// tile (checked by -air-place-herds-by-token). Anything else must go through
+// an air.channel, so communication is explicit and derived from ownership.
+def Partition_Attr : air_Attr<"Partition"> {
+  let mnemonic = "partition";
+  let summary = "Block distribution of an L2 memref over herd tiles";
+  let parameters = (ins ArrayRefParameter<"int64_t">:$block,
+                        "::mlir::AffineMapAttr":$owner);
+  let assemblyFormat = "`<` `block` `=` `[` $block `]` `,` `owner` `=` $owner `>`";
+  let extraClassDeclaration = [{
+    /// Name of the discardable attribute carrying a PartitionAttr on
+    /// memref.alloc.
+    static constexpr ::llvm::StringLiteral getAttrName() { return "air.partition"; }
+    /// Tile coordinates owning block `blockCoords`, or std::nullopt if the
+    /// owner map does not fold to constants.
+    std::optional<::llvm::SmallVector<int64_t>>
+    getOwnerOfBlock(::llvm::ArrayRef<int64_t> blockCoords) const;
+  }];
+}
+
 def SymmetricHeapMemorySpace_Attr : air_Attr<"SymmetricHeapMemorySpace"> {
   let mnemonic = "symmetric_heap";
   let summary = "Symmetric-heap memory space (cross-rank XGMI-accessible HBM)";

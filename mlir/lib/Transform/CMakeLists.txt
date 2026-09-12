@@ -18,6 +18,7 @@ list(APPEND TRANSFORM_SOURCES
   AIRDmaToChannel.cpp
   AIRHerdAssignPass.cpp
   AIRHerdPlacementPass.cpp
+  AIRPlaceHerdsByToken.cpp
   AIRHerdVectorize.cpp
   AIRLinalgBufferize.cpp
   AIRLinalgCodegen.cpp

@@ -176,6 +176,40 @@ def AIRHerdAssign : Pass<"air-herd-assign", "ModuleOp"> {
   let constructor = "xilinx::air::createAIRHerdAssignPass()";
 }
 
+def AIRPlaceHerdsByToken : Pass<"air-place-herds-by-token", "ModuleOp"> {
+  let summary = "Place herds honouring affinity / concurrency tokens; check L2 ownership";
+  let constructor = "xilinx::air::createAIRPlaceHerdsByTokenPass()";
+  let options = [
+    Option<"clFabricX", "fabric-x", "int", /*default=*/"8",
+           "Number of tile columns available to each segment">,
+    Option<"clFabricY", "fabric-y", "int", /*default=*/"8",
+           "Number of tile rows available to each segment">,
+    Option<"clCheckOwnership", "check-ownership", "bool", /*default=*/"true",
+           "Verify that every in-herd access to a #air.partition L2 memref "
+           "stays inside the executing tile's own block">
+  ];
+  let description = [{
+    Implements the affinity and concurrency token lists of the AIR compute
+    model (docs/AIRComputeModel.md §1.5) on a 2D tile fabric:
+
+    * Herds sharing an `affinity` token form a class: same shape, same
+      `x_loc`/`y_loc`, sequential execution on the same tiles. On a machine
+      without shared memory this is what keeps L1-resident data alive across
+      herds.
+    * Herds sharing a `concurrency` token, or connected by an `air.channel`,
+      must be simultaneously live and get disjoint rectangles. A channel
+      between two herds of one affinity class is reported as a deadlock.
+    * Every `air.dma_memcpy_nd` inside a herd that touches an L2 memref
+      carrying `#air.partition` is checked, tile by tile (honouring enclosing
+      `affine.if` conditions on the tile ids), to stay inside the block that
+      tile owns. Non-owner access is an error: communication must be an
+      explicit channel.
+
+    The pass writes `x_loc`/`y_loc` on every herd; pre-existing values are
+    respected and checked for consistency.
+  }];
+}
+
 def AIRHerdPlacementPass : Pass<"air-place-herds", "ModuleOp"> {
   let summary = "Places herds onto a segment.";
   let constructor = "xilinx::air::createAIRHerdPlacementPass()";

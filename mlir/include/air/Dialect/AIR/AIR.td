@@ -32,6 +32,19 @@ def air_UniverseAllocOp : air_Op<"universe.alloc", [Pure]>,
   let assemblyFormat = "`(` $capacity `)` attr-dict";
 }
 
+def air_TokenAllocOp : air_Op<"token.alloc", [Pure]>,
+    Results<(outs air_AsyncToken:$token)> {
+  let summary = "Allocate a grouping token";
+  let description = [{
+    Creates an `!air.async.token` that no operation signals. It exists only to
+    group hierarchy operations under a shared `affinity` or `concurrency`
+    constraint (see docs/AIRComputeModel.md, "Token creation"). The verifier
+    rejects uses of the result as an `async` dependency.
+  }];
+  let assemblyFormat = "attr-dict `:` type($token)";
+  let hasVerifier = 1;
+}
+
 def air_RankOp : air_Op<"rank", [air_AsyncOpInterface,
                                   air_HierarchyInterface,
                                   AttrSizedOperandSegments,
@@ -148,7 +161,8 @@ def air_LaunchOp : air_Op<"launch", [air_AsyncOpInterface,
                           Arguments<(ins OptionalAttr<SymbolNameAttr>:$sym_name,
                                          Variadic<air_AsyncToken>:$async_dependencies,
                                          Variadic<Index>:$sizes,
-                                         Variadic<AnyType>:$launch_operands)>,
+                                         Variadic<AnyType>:$launch_operands,
+                                         Variadic<air_AsyncToken>:$affinity_tokens)>,
                           Results<(outs Optional<air_AsyncToken>:$async_token)> {
   let summary = "Launch";
   let description = [{
@@ -205,6 +219,8 @@ def air_LaunchOp : air_Op<"launch", [air_AsyncOpInterface,
     }
 
     /// Append the given values to kernel operands.
+    /// Add a token to the affinity list.
+    void addAffinityToken(Value token);
     void appendKernelOperands(ValueRange operands){
       getLaunchOperandsMutable().append(operands);
       for (auto oper : operands){
@@ -213,6 +229,7 @@ def air_LaunchOp : air_Op<"launch", [air_AsyncOpInterface,
     }
   }];
   let hasCanonicalizer = 1;
+  let hasVerifier = 1;
 }
 
 def air_LaunchTerminatorOp : air_Op<"launch_terminator", [HasParent<"LaunchOp">,
@@ -238,7 +255,9 @@ def air_SegmentOp : air_Op<"segment", [air_AsyncOpInterface,
                         Arguments<(ins OptionalAttr<SymbolNameAttr>:$sym_name,
                                        Variadic<air_AsyncToken>:$async_dependencies,
                                        Variadic<Index>:$sizes,
-                                       Variadic<AnyType>:$segment_operands)>,
+                                       Variadic<AnyType>:$segment_operands,
+                                       Variadic<air_AsyncToken>:$affinity_tokens,
+                                       Variadic<air_AsyncToken>:$concurrency_tokens)>,
                         Results<(outs Optional<air_AsyncToken>:$async_token)> {
   let summary = "Segment";
   let description = [{
@@ -326,6 +345,9 @@ def air_SegmentOp : air_Op<"segment", [air_AsyncOpInterface,
     }
 
     /// Append the given values to kernel operands.
+    /// Add a token to the affinity / concurrency list.
+    void addAffinityToken(Value token);
+    void addConcurrencyToken(Value token);
     void appendKernelOperands(ValueRange operands){
       getSegmentOperandsMutable().append(operands);
       for (auto oper : operands){
@@ -360,7 +382,9 @@ def air_HerdOp : air_Op<"herd", [air_AsyncOpInterface,
                                        OptionalAttr<StrAttr>:$link_with,
                                        Variadic<air_AsyncToken>:$async_dependencies,
                                        Variadic<Index>:$sizes,
-                                       Variadic<AnyType>:$herd_operands)>,
+                                       Variadic<AnyType>:$herd_operands,
+                                       Variadic<air_AsyncToken>:$affinity_tokens,
+                                       Variadic<air_AsyncToken>:$concurrency_tokens)>,
                         Results<(outs Optional<air_AsyncToken>:$async_token)> {
   let summary = "Herd";
   let description = [{
@@ -436,6 +460,9 @@ def air_HerdOp : air_Op<"herd", [air_AsyncOpInterface,
     }
 
     /// Append the given values to kernel operands.
+    /// Add a token to the affinity / concurrency list.
+    void addAffinityToken(Value token);
+    void addConcurrencyToken(Value token);
     void appendKernelOperands(ValueRange operands){
       getHerdOperandsMutable().append(operands);
       for (auto oper : operands){

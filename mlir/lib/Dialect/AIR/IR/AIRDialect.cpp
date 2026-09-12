@@ -181,6 +181,63 @@ void air::eraseAsyncDependency(Operation *op, unsigned index) {
   op->setAttr(attrName, Builder(op->getContext()).getDenseI32ArrayAttr(sizes));
 }
 
+// Optional `affinity [...]` / `concurrency [...]` token lists on hierarchy ops.
+static ParseResult
+parseTokenList(OpAsmParser &parser, StringRef keyword,
+               SmallVectorImpl<OpAsmParser::UnresolvedOperand> &tokens) {
+  if (failed(parser.parseOptionalKeyword(keyword)))
+    return success();
+  return parser.parseOperandList(tokens, OpAsmParser::Delimiter::Square);
+}
+
+static void printTokenList(OpAsmPrinter &p, StringRef keyword,
+                           OperandRange tokens) {
+  if (tokens.empty())
+    return;
+  p << keyword << " [";
+  llvm::interleaveComma(tokens, p);
+  p << "] ";
+}
+
+// Insert `token` at operand position `pos` and bump bin `bin` of the
+// operand-segment-sizes attribute.
+static void insertTokenOperand(Operation *op, unsigned pos, unsigned bin,
+                               Value token) {
+  op->insertOperands(pos, {token});
+  auto attrName =
+      OpTrait::AttrSizedOperandSegments<void>::getOperandSegmentSizeAttr();
+  auto sizeAttr = op->getAttrOfType<DenseI32ArrayAttr>(attrName);
+  SmallVector<int32_t, 8> sizes(sizeAttr.asArrayRef());
+  ++sizes[bin];
+  op->setAttr(attrName, Builder(op->getContext()).getDenseI32ArrayAttr(sizes));
+}
+
+// Scope rule (AIRComputeModel.md §1.5): affinity / concurrency tokens may not
+// cross an air.launch boundary. Any token-typed kernel argument of the launch
+// that is used in such a list inside the body is an error.
+static LogicalResult verifyNoTokenListsAcrossLaunch(air::LaunchOp launch) {
+  for (BlockArgument arg : launch.getKernelArguments()) {
+    if (!isa<air::AsyncTokenType>(arg.getType()))
+      continue;
+    for (OpOperand &use : arg.getUses()) {
+      Operation *user = use.getOwner();
+      bool inList = false;
+      if (auto seg = dyn_cast<air::SegmentOp>(user))
+        inList = llvm::is_contained(seg.getAffinityTokens(), arg) ||
+                 llvm::is_contained(seg.getConcurrencyTokens(), arg);
+      else if (auto herd = dyn_cast<air::HerdOp>(user))
+        inList = llvm::is_contained(herd.getAffinityTokens(), arg) ||
+                 llvm::is_contained(herd.getConcurrencyTokens(), arg);
+      if (inList)
+        return user->emitOpError()
+               << "uses a token passed through the enclosing air.launch in an "
+                  "affinity or concurrency list; such tokens may not cross the "
+                  "launch boundary";
+    }
+  }
+  return success();
+}
+
 void air::walkAsyncTokenConsumers(Operation *root,
                                   llvm::SetVector<Operation *> &consumers) {
   // `expanded` dedupes tokens; this is what bounds the worklist.
@@ -631,10 +688,10 @@ void air::LaunchOp::build(OpBuilder &builder, OperationState &result,
   result.addOperands(sizes);
   result.addOperands(launchOperands);
 
-  SmallVector<int32_t, 8> segmentSizes(3, 1);
-  segmentSizes.front() = asyncDependencies.size();
+  SmallVector<int32_t, 8> segmentSizes(4, 0);
+  segmentSizes[0] = asyncDependencies.size();
   segmentSizes[1] = sizes.size();
-  segmentSizes.back() = static_cast<int32_t>(launchOperands.size());
+  segmentSizes[2] = static_cast<int32_t>(launchOperands.size());
   result.addAttribute(getOperandSegmentSizeAttr(),
                       builder.getDenseI32ArrayAttr(segmentSizes));
 
@@ -677,6 +734,7 @@ void air::LaunchOp::print(OpAsmPrinter &p) {
   printAsyncDependencies(p, *this,
                          (getAsyncToken() ? getAsyncToken().getType() : Type()),
                          getAsyncDependencies());
+  printTokenList(p, "affinity", getAffinityTokens());
   p << "(";
   p.printOperands(getIds());
   p << ") in (";
@@ -743,6 +801,13 @@ ParseResult air::LaunchOp::parse(OpAsmParser &parser, OperationState &result) {
     return failure();
   if (asyncTokenType)
     result.addTypes(asyncTokenType);
+  SmallVector<OpAsmParser::UnresolvedOperand, 4> affinityTokens;
+  SmallVector<OpAsmParser::UnresolvedOperand, 4> concurrencyTokens;
+  if (parseTokenList(parser, "affinity", affinityTokens))
+    return failure();
+  if (succeeded(parser.parseOptionalKeyword("concurrency")))
+    return parser.emitError(parser.getCurrentLocation(),
+                            "air.launch may not carry a concurrency list");
 
   if (parser.parseArgumentList(tileArgs, OpAsmParser::Delimiter::Paren) ||
       parser.parseKeyword("in") || parser.parseLParen())
@@ -801,6 +866,10 @@ ParseResult air::LaunchOp::parse(OpAsmParser &parser, OperationState &result) {
     if (parser.resolveOperand(kernelOperands[i], types[i], result.operands))
       return failure();
   }
+  if (parser.resolveOperands(affinityTokens, tokenType, result.operands))
+    return failure();
+  if (parser.resolveOperands(concurrencyTokens, tokenType, result.operands))
+    return failure();
 
   if (parser.parseOptionalAttrDictWithKeyword(result.attributes))
     return failure();
@@ -817,10 +886,11 @@ ParseResult air::LaunchOp::parse(OpAsmParser &parser, OperationState &result) {
       body->addArgument(ta.type, result.location);
   }
 
-  SmallVector<int32_t, 8> segmentSizes(3, 1);
-  segmentSizes.front() = asyncDependencies.size();
+  SmallVector<int32_t, 8> segmentSizes(4, 0);
+  segmentSizes[0] = asyncDependencies.size();
   segmentSizes[1] = tileSize.size();
-  segmentSizes.back() = kernelOperands.size();
+  segmentSizes[2] = kernelOperands.size();
+  segmentSizes[3] = affinityTokens.size();
   result.addAttribute(getOperandSegmentSizeAttr(),
                       parser.getBuilder().getDenseI32ArrayAttr(segmentSizes));
   return success();
@@ -852,15 +922,19 @@ OperandRange air::LaunchOp::getSizeOperands() {
 }
 
 unsigned air::LaunchOp::getNumKernelOperands() {
-  return getNumOperands() - getAsyncDependencies().size() - getNumDims();
+  return getLaunchOperands().size();
 }
 
-OperandRange air::LaunchOp::getKernelOperands() {
-  return getOperands().drop_front(getAsyncDependencies().size() + getNumDims());
+OperandRange air::LaunchOp::getKernelOperands() { return getLaunchOperands(); }
+
+Value air::LaunchOp::getKernelOperand(unsigned i) { return getLaunchOperands()[i]; }
+
+void air::LaunchOp::addAffinityToken(Value token) {
+  insertTokenOperand(*this, getNumOperands(), 3, token);
 }
 
-Value air::LaunchOp::getKernelOperand(unsigned i) {
-  return getOperand(getAsyncDependencies().size() + getNumDims() + i);
+LogicalResult air::LaunchOp::verify() {
+  return verifyNoTokenListsAcrossLaunch(*this);
 }
 
 ArrayRef<BlockArgument> air::LaunchOp::getKernelArguments() {
@@ -1353,10 +1427,10 @@ void air::SegmentOp::build(OpBuilder &builder, OperationState &result,
   result.addOperands(sizes);
   result.addOperands(segmentOperands);
 
-  SmallVector<int32_t, 8> segmentSizes(3, 1);
-  segmentSizes.front() = asyncDependencies.size();
+  SmallVector<int32_t, 8> segmentSizes(5, 0);
+  segmentSizes[0] = asyncDependencies.size();
   segmentSizes[1] = sizes.size();
-  segmentSizes.back() = static_cast<int32_t>(segmentOperands.size());
+  segmentSizes[2] = static_cast<int32_t>(segmentOperands.size());
   result.addAttribute(getOperandSegmentSizeAttr(),
                       builder.getDenseI32ArrayAttr(segmentSizes));
 
@@ -1398,6 +1472,8 @@ void air::SegmentOp::print(OpAsmPrinter &p) {
   printAsyncDependencies(p, *this,
                          (getAsyncToken() ? getAsyncToken().getType() : Type()),
                          getAsyncDependencies());
+  printTokenList(p, "affinity", getAffinityTokens());
+  printTokenList(p, "concurrency", getConcurrencyTokens());
 
   if (getNumDims()) {
     p << " unroll(";
@@ -1467,6 +1543,12 @@ ParseResult air::SegmentOp::parse(OpAsmParser &parser, OperationState &result) {
     return failure();
   if (asyncTokenType)
     result.addTypes(asyncTokenType);
+  SmallVector<OpAsmParser::UnresolvedOperand, 4> affinityTokens;
+  SmallVector<OpAsmParser::UnresolvedOperand, 4> concurrencyTokens;
+  if (parseTokenList(parser, "affinity", affinityTokens))
+    return failure();
+  if (parseTokenList(parser, "concurrency", concurrencyTokens))
+    return failure();
 
   Type indexType = parser.getBuilder().getIndexType();
 
@@ -1528,6 +1610,10 @@ ParseResult air::SegmentOp::parse(OpAsmParser &parser, OperationState &result) {
     if (parser.resolveOperand(kernelOperands[i], types[i], result.operands))
       return failure();
   }
+  if (parser.resolveOperands(affinityTokens, tokenType, result.operands))
+    return failure();
+  if (parser.resolveOperands(concurrencyTokens, tokenType, result.operands))
+    return failure();
 
   if (parser.parseOptionalAttrDictWithKeyword(result.attributes))
     return failure();
@@ -1543,10 +1629,12 @@ ParseResult air::SegmentOp::parse(OpAsmParser &parser, OperationState &result) {
       body->addArgument(ta.type, result.location);
   }
 
-  SmallVector<int32_t, 8> segmentSizes(3, 1);
-  segmentSizes.front() = asyncDependencies.size();
+  SmallVector<int32_t, 8> segmentSizes(5, 0);
+  segmentSizes[0] = asyncDependencies.size();
   segmentSizes[1] = tileSize.size();
-  segmentSizes.back() = kernelOperands.size();
+  segmentSizes[2] = kernelOperands.size();
+  segmentSizes[3] = affinityTokens.size();
+  segmentSizes[4] = concurrencyTokens.size();
   result.addAttribute(getOperandSegmentSizeAttr(),
                       parser.getBuilder().getDenseI32ArrayAttr(segmentSizes));
   return success();
@@ -1578,16 +1666,12 @@ OperandRange air::SegmentOp::getSizeOperands() {
 }
 
 unsigned air::SegmentOp::getNumKernelOperands() {
-  return getNumOperands() - getAsyncDependencies().size() - getNumDims();
+  return getSegmentOperands().size();
 }
 
-OperandRange air::SegmentOp::getKernelOperands() {
-  return getOperands().drop_front(getAsyncDependencies().size() + getNumDims());
-}
+OperandRange air::SegmentOp::getKernelOperands() { return getSegmentOperands(); }
 
-Value air::SegmentOp::getKernelOperand(unsigned i) {
-  return getOperand(getAsyncDependencies().size() + getNumDims() + i);
-}
+Value air::SegmentOp::getKernelOperand(unsigned i) { return getSegmentOperands()[i]; }
 
 ArrayRef<BlockArgument> air::SegmentOp::getKernelArguments() {
   return getBody().front().getArguments().drop_front(getNumDims() * 2);
@@ -1749,6 +1833,14 @@ LogicalResult air::SegmentOp::verify() {
   return verifyAllocMemorySpace(*this, air::MemorySpace::L2, "air.segment");
 }
 
+void air::SegmentOp::addAffinityToken(Value token) {
+  insertTokenOperand(*this, getNumOperands() - getConcurrencyTokens().size(),
+                     3, token);
+}
+void air::SegmentOp::addConcurrencyToken(Value token) {
+  insertTokenOperand(*this, getNumOperands(), 4, token);
+}
+
 //
 // HerdOp
 //
@@ -1764,10 +1856,10 @@ void air::HerdOp::build(OpBuilder &builder, OperationState &result,
   result.addOperands(sizes);
   result.addOperands(launchOperands);
 
-  SmallVector<int32_t, 8> segmentSizes(3, 1);
-  segmentSizes.front() = asyncDependencies.size();
+  SmallVector<int32_t, 8> segmentSizes(5, 0);
+  segmentSizes[0] = asyncDependencies.size();
   segmentSizes[1] = sizes.size();
-  segmentSizes.back() = static_cast<int32_t>(launchOperands.size());
+  segmentSizes[2] = static_cast<int32_t>(launchOperands.size());
   result.addAttribute(getOperandSegmentSizeAttr(),
                       builder.getDenseI32ArrayAttr(segmentSizes));
 
@@ -1810,6 +1902,8 @@ void air::HerdOp::print(OpAsmPrinter &p) {
   printAsyncDependencies(p, *this,
                          (getAsyncToken() ? getAsyncToken().getType() : Type()),
                          getAsyncDependencies());
+  printTokenList(p, "affinity", getAffinityTokens());
+  printTokenList(p, "concurrency", getConcurrencyTokens());
   p << " tile (";
   p.printOperands(getIds());
   p << ") in (";
@@ -1876,6 +1970,12 @@ ParseResult air::HerdOp::parse(OpAsmParser &parser, OperationState &result) {
     return failure();
   if (asyncTokenType)
     result.addTypes(asyncTokenType);
+  SmallVector<OpAsmParser::UnresolvedOperand, 4> affinityTokens;
+  SmallVector<OpAsmParser::UnresolvedOperand, 4> concurrencyTokens;
+  if (parseTokenList(parser, "affinity", affinityTokens))
+    return failure();
+  if (parseTokenList(parser, "concurrency", concurrencyTokens))
+    return failure();
 
   if (parser.parseKeyword("tile"))
     return failure();
@@ -1937,6 +2037,10 @@ ParseResult air::HerdOp::parse(OpAsmParser &parser, OperationState &result) {
     if (parser.resolveOperand(kernelOperands[i], types[i], result.operands))
       return failure();
   }
+  if (parser.resolveOperands(affinityTokens, tokenType, result.operands))
+    return failure();
+  if (parser.resolveOperands(concurrencyTokens, tokenType, result.operands))
+    return failure();
 
   if (parser.parseOptionalAttrDictWithKeyword(result.attributes))
     return failure();
@@ -1953,10 +2057,12 @@ ParseResult air::HerdOp::parse(OpAsmParser &parser, OperationState &result) {
       body->addArgument(ta.type, result.location);
   }
 
-  SmallVector<int32_t, 8> segmentSizes(3, 1);
-  segmentSizes.front() = asyncDependencies.size();
+  SmallVector<int32_t, 8> segmentSizes(5, 0);
+  segmentSizes[0] = asyncDependencies.size();
   segmentSizes[1] = tileSize.size();
-  segmentSizes.back() = kernelOperands.size();
+  segmentSizes[2] = kernelOperands.size();
+  segmentSizes[3] = affinityTokens.size();
+  segmentSizes[4] = concurrencyTokens.size();
   result.addAttribute(getOperandSegmentSizeAttr(),
                       parser.getBuilder().getDenseI32ArrayAttr(segmentSizes));
   return success();
@@ -1988,16 +2094,12 @@ OperandRange air::HerdOp::getSizeOperands() {
 }
 
 unsigned air::HerdOp::getNumKernelOperands() {
-  return getNumOperands() - getAsyncDependencies().size() - getNumDims();
+  return getHerdOperands().size();
 }
 
-OperandRange air::HerdOp::getKernelOperands() {
-  return getOperands().drop_front(getAsyncDependencies().size() + getNumDims());
-}
+OperandRange air::HerdOp::getKernelOperands() { return getHerdOperands(); }
 
-Value air::HerdOp::getKernelOperand(unsigned i) {
-  return getOperand(getAsyncDependencies().size() + getNumDims() + i);
-}
+Value air::HerdOp::getKernelOperand(unsigned i) { return getHerdOperands()[i]; }
 
 ArrayRef<BlockArgument> air::HerdOp::getKernelArguments() {
   return getBody().front().getArguments().drop_front(getNumDims() * 2);
@@ -2052,6 +2154,52 @@ LogicalResult air::HerdOp::verify() {
   if (failed(verifyAllocMemorySpace(*this, air::MemorySpace::L1, "air.herd")))
     return failure();
   return verifyComputeMemoryAccess(*this, air::MemorySpace::L1);
+}
+
+void air::HerdOp::addAffinityToken(Value token) {
+  insertTokenOperand(*this, getNumOperands() - getConcurrencyTokens().size(),
+                     3, token);
+}
+void air::HerdOp::addConcurrencyToken(Value token) {
+  insertTokenOperand(*this, getNumOperands(), 4, token);
+}
+
+//
+// PartitionAttr
+//
+
+std::optional<SmallVector<int64_t>>
+air::PartitionAttr::getOwnerOfBlock(ArrayRef<int64_t> blockCoords) const {
+  AffineMap map = getOwner().getValue();
+  if (map.getNumDims() != blockCoords.size() || map.getNumSymbols() != 0)
+    return std::nullopt;
+  SmallVector<Attribute> operands;
+  Builder b(map.getContext());
+  for (int64_t v : blockCoords)
+    operands.push_back(b.getIndexAttr(v));
+  SmallVector<Attribute> results;
+  if (failed(map.constantFold(operands, results)))
+    return std::nullopt;
+  SmallVector<int64_t> out;
+  for (Attribute r : results)
+    out.push_back(cast<IntegerAttr>(r).getInt());
+  return out;
+}
+
+//
+// TokenAllocOp
+//
+
+LogicalResult air::TokenAllocOp::verify() {
+  for (OpOperand &use : getToken().getUses()) {
+    auto asyncOp = dyn_cast<air::AsyncOpInterface>(use.getOwner());
+    if (asyncOp && llvm::is_contained(asyncOp.getAsyncDependencies(), getToken()))
+      return emitOpError() << "result is used as an async dependency by "
+                           << use.getOwner()->getName()
+                           << "; a grouping token is never signaled and may "
+                              "only appear in affinity or concurrency lists";
+  }
+  return success();
 }
 
 //
